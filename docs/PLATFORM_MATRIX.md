@@ -5,7 +5,7 @@
 | 平台 | 目标版本/桌面 | 剪贴板监听 | 全局快捷键 | 自动粘贴 | 凭据存储 | 当前状态 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Windows | Windows 11 x64 | 受限：原生适配器已实现，兼容性验收中 | 计划完整 | 受限：已实现 UIPI 降级，实机自动粘贴待验收 | DPAPI/Credential Locker | 一期 Phase 1.3 进行中 |
-| macOS | 当前受支持 macOS arm64/x64 | 计划完整 | 需辅助功能权限 | 需辅助功能权限 | Keychain | 二期 |
+| macOS | macOS 26.2 arm64 已测；x64 待测 | 受限：原生适配器已实现，长稳与桌面生命周期待验收 | 计划完整 | 受限：TextEdit 允许/拒绝状态已测，需辅助功能权限 | Keychain 计划中 | 二期 Phase 2.1 进行中 |
 | Ubuntu | GNOME X11 | 计划完整 | 计划完整 | 计划完整 | Secret Service | 三期 |
 | Ubuntu/Fedora | GNOME Wayland | 配套扩展或受限 | 桌面接口决定 | 通常受限 | Secret Service | 三期高风险 |
 | Fedora/KDE | Plasma Wayland | 待验证 | 待验证 | 可能受限 | KWallet/Secret Service | 三期 |
@@ -24,10 +24,15 @@
 
 ## macOS 验收
 
-- NSPasteboard changeCount 轮询周期与空闲 CPU。
-- 辅助功能权限被拒绝、撤销和重新授予。
-- 多 Space、多显示器、全屏应用和焦点恢复。
-- 签名、公证、Keychain 和 `osx-arm64`/`osx-x64` 包。
+- [x] `NSPasteboard.changeCount` 生命周期、去重、取消、有界队列、反馈抑制和 100/500 ms 退避；AOT 监听探针平均 CPU 0.001%，`DroppedEvents=0`。
+- [x] Text、HTML、RTF、PNG、TIFF、文件 URL、UTI 清单、完整写回和纯文本写回。
+- [x] TextEdit 目标捕获、切换到 Finder 后恢复目标并发送 Command+V。
+- [~] 辅助功能允许与独立应用身份拒绝已实测；系统设置入口、撤销后同一身份重试和重新授予待完成。
+- [~] Finder、Safari、Chrome、Preview 和 `pbcopy` CLI 已实测；可见 Terminal UI、Office 和远程桌面未验证。
+- [ ] 菜单栏、全局快捷键、登录启动、单实例、多 Space、多显示器、全屏应用和睡眠唤醒。
+- [~] `osx-arm64` Native AOT 0 告警并实际启动；`osx-x64`、签名、公证、Keychain 和正式安装包待完成。
+
+详细证据、性能样本和未验证项见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 
 ## Linux 验收
 

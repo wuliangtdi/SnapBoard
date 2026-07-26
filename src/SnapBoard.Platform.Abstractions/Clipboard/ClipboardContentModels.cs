@@ -22,6 +22,8 @@ public enum ClipboardBitmapEncoding
 {
     DeviceIndependentBitmap = 1,
     DeviceIndependentBitmapV5 = 2,
+    PortableNetworkGraphics = 3,
+    TaggedImageFileFormat = 4,
 }
 
 public sealed record ClipboardBitmapData(

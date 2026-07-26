@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
-> 最后更新：2026-07-26
-> 当前阶段：Phase 1.3 Windows 剪贴板适配器进行中，Phase 1.1/1.2 基线并行推进
+> 最后更新：2026-07-27
+> 当前阶段：Phase 2.1 macOS 原生剪贴板适配器进行中，Phase 1 后续项保留
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -15,7 +15,7 @@
 | Phase 1.2 UI 生命周期 | 进行中 | 第 2 版命令中心 UI、核心交互与真实 Headless/Skia 视觉测试已完成 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | 原生适配器、自动/集成测试和记事本实机通过；兼容性矩阵未完成 |
 | Phase 1.4-1.8 | 未开始 | 数据、搜索、快速粘贴、WebDAV 和发布待后续执行 |
-| Phase 2 macOS | 未开始 | 复用领域、应用、存储和同步协议 |
+| Phase 2 macOS | 进行中 | arm64 原生监听、格式读写、目标恢复、自动粘贴及权限降级已通过；桌面生命周期与发布链路待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -55,11 +55,11 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 单元/架构/Headless/Windows 平台测试 | 通过 | 38 项测试；其中 21 项 Windows 测试覆盖生命周期、去重、重试、溢出、反馈抑制、格式往返、ANSI Text、聚合预算和 UIPI 降级 |
-| `osx-arm64` Native AOT | 通过 | 原生可执行文件约 23 MB；完整未剥离发布目录约 91 MB；0 个 AOT/裁剪警告 |
+| 全量自动测试 | 通过 | 52 项：47 项通过、5 项 Windows 原生集成因当前为 macOS 跳过；macOS 项目 19/19，Desktop Headless 8/8 |
+| `osx-arm64` Native AOT | 通过 | arm64 Mach-O 可执行文件 23,906,928 字节，剥离后发布目录约 91.68 MiB；0 个 AOT/裁剪警告并实际启动三次 |
 | `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 26,828,288 字节；无 CoreCLR/JIT 文件；0 个 AOT/裁剪警告；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
-| 可见窗口运行内存 | 未达标 | Windows AOT 三次峰值 PWS 184.38/207.12/218.20 MiB，Private Bytes 214.54/239.21/250.13 MiB；不是托盘常驻样本 |
+| 可见窗口运行内存 | 未达标 | macOS AOT 三次峰值 Physical Footprint 194.78/194.74/194.94 MiB；Windows AOT 三次峰值 PWS 184.38/207.12/218.20 MiB；都不是托盘常驻样本 |
 
 ## 4. 重要发现
 
@@ -79,7 +79,7 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
 
 第 2 版命令中心已按 1487 x 1058 参考画布完成视觉对照，最终报告见根目录 `design-qa.md`。Avalonia Headless 使用真实 Skia 渲染器产出稳定截图，不依赖宿主桌面和显示器缩放。
 
-本次 macOS arm64 AOT 可见窗口样本为 152.5 MB Physical Footprint，明显高于项目目标。该结果不能解释为“已满足 100 MB”，Phase 1.1 必须继续拆分 UI 依赖、比较图标库与控件成本，并在托盘关闭窗口后重新建立三次以上稳定样本。当前没有实现托盘和窗口卸载，因此尚不能测量正式的“托盘常驻、窗口关闭”场景。
+2026-07-27 重新发布最终 macOS arm64 AOT 后，三次可见窗口峰值 Physical Footprint 为 194.78/194.74/194.94 MiB，Lifetime Peak 为 198.64/198.75/198.72 MiB。2026-07-26 的 152.5 MB 单次数据仅保留为历史样本，不能替代本轮复测。结果明显高于项目目标，不能解释为“已满足 100 MB”；当前没有实现菜单栏常驻和窗口卸载，因此仍不能测量正式的“托盘常驻、窗口关闭”场景。
 
 ### 4.5 Windows 剪贴板与 AOT 基线
 
@@ -87,13 +87,19 @@ Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipb
 
 Windows 11 打包版记事本的交互式复制已由探针捕获，来源识别为 `Notepad`，队列丢弃计数为 0。浏览器控制因无法可靠确认 URL 被安全机制终止；Explorer、UWP/WinUI、管理员窗口、Office 和远程桌面未执行，不能标记为通过。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
+### 4.6 macOS 剪贴板与权限基线
+
+macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消的 100 ms 活跃/500 ms 空闲退避轮询、有界 Channel 和实例 nonce 来源标记。原生读取支持纯文本、HTML、RTF、PNG、TIFF、文件 URL 与 UTI 清单；Finder 的 `file:///.file/id=...` 引用优先通过同时提供的 `NSFilenamesPboardType` 还原真实路径。写回、纯文本写回和自写事件抑制均由原生集成测试覆盖。
+
+辅助功能允许状态下，TextEdit 自动粘贴以及“捕获 TextEdit -> 切换 Finder -> 恢复 TextEdit -> Command+V”均实机通过。独立 ad-hoc 应用身份的拒绝状态返回 `AccessibilityPermissionDenied`，剪贴板仍写入成功并显示“已复制，请手动粘贴”，TextEdit 未收到注入。来源应用识别固定按 best effort 处理，本轮样本均诚实降级为 `Unknown`。完整记录见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
+
 ## 5. 下一执行顺序
 
-1. 完成浏览器、Explorer、UWP/WinUI、管理员窗口、Office 和远程桌面交互验收。
-2. 建立纯 Avalonia、Material Icons、Ursa 和最终壳的内存/启动 A/B 测量。
-3. 在 GitHub 上验证 Windows/macOS/Linux CI 与 AOT Job。
-4. 完成 SQLite CRUD/FTS5/AOT 基准和托盘关闭窗口后的常驻样本。
-5. 记录 Phase 1.1 ADR，并继续单实例、托盘和桌面采集生命周期接线。
+1. 将 macOS 监听器接入桌面采集生命周期，并实现菜单栏、全局快捷键、登录启动和单实例。
+2. 增加辅助功能设置入口与授权引导，完成撤销/重新授予、多 Space、多显示器、全屏和睡眠唤醒测试。
+3. 建立纯 Avalonia、Material Icons、Ursa 和最终壳的内存/启动 A/B 测量，并在窗口卸载后重测常驻内存。
+4. 在 GitHub 上验证 Windows/macOS/Linux CI 与 AOT Job；补齐 `osx-x64`，但不以 arm64 结果代替 Intel。
+5. 后续完成 Keychain、应用 Bundle、签名、公证和正式安装包，不在 Phase 2.1 伪装完成。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -156,7 +162,35 @@ Windows 11 打包版记事本的交互式复制已由探针捕获，来源识别
   - 当前没有托盘和窗口卸载，以上数据不能表述为托盘常驻内存。
 ```
 
-## 8. 更新规则
+## 8. 2026-07-27 执行记录：macOS 原生剪贴板一期
+
+```text
+日期：2026-07-27
+阶段/任务：Phase 2.1 macOS 原生剪贴板适配器、写回与自动粘贴权限闭环
+状态：[~] 核心平台能力完成；菜单栏、设置引导、Keychain、Intel 与发布链路未完成
+完成内容：
+  - 新增显式 AppKit/Objective-C Runtime/CoreGraphics/Accessibility 互操作，不引入 Xamarin.Mac、MAUI、Mac Catalyst 或运行时程序集扫描。
+  - 使用 NSPasteboard changeCount、有界 Channel、可取消轮询和 100/500 ms 退避；轮询 tick 不读取正文、不访问 SQLite/网络。
+  - 支持 Text、HTML、RTF、PNG、TIFF、文件 URL、UTI 清单、完整写回、纯文本写回和实例 nonce 反馈抑制。
+  - 保存并恢复目标 NSRunningApplication，在辅助功能允许时发送 Command+V；拒绝或失败时结构化降级为“已复制，请手动粘贴”。
+  - Desktop 组合根按 OperatingSystem.IsMacOS() 显式注册四个共享端口，并保留 Windows 注册与测试。
+验证结果：
+  - .NET SDK 10.0.302；arm64；macOS 26.2 (25C56)；locked restore 通过。
+  - Release build 0 警告、0 错误；全量 52 项中 47 项通过、5 项 Windows 原生测试按平台跳过。
+  - macOS 测试 19/19；dotnet format --verify-no-changes 通过；NuGet 直接/传递漏洞为 0。
+  - osx-arm64 Native AOT 生成 arm64 Mach-O，0 个 AOT/裁剪警告，实际启动三次并检测到主窗口。
+  - TextEdit、Finder、Safari、Chrome、Preview、pbcopy CLI、允许/拒绝辅助功能状态均记录真实结果；可见 Terminal UI 复制未完成。
+性能数据：
+  - 三次启动到可见窗口：3974.77/1288.41/919.26 ms。
+  - 峰值 Physical Footprint：194.78/194.74/194.94 MiB；峰值 RSS：162.11/162.55/162.08 MiB。
+  - 10 秒窗口采样平均 CPU：0.014/0.015/0.017%；能耗增量：26.541/25.098/33.354 mJ。
+  - AOT 监听探针 10 秒计量平均 CPU 0.001%、能耗增量 1.360 mJ、44 次 interrupt wakeups、DroppedEvents=0。
+限制：
+  - 没有菜单栏常驻和窗口卸载，不能声称常驻内存低于 100 MB；当前可见窗口样本明确超标。
+  - 未验证 osx-x64、睡眠唤醒、多 Space、多显示器、全屏、Office、远程桌面、签名、公证或 Keychain。
+```
+
+## 9. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

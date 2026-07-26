@@ -3,8 +3,8 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：Phase 1.0 收尾，Phase 1.1/1.2 基线并行推进
-> 实现状态：第 2 版命令中心 UI 与 Headless 视觉测试完成；可见窗口内存仍需优化
+> 当前阶段：Phase 2.1 macOS 原生剪贴板适配器进行中，Phase 1 后续项保留
+> 实现状态：macOS arm64 原生监听、格式读写、目标恢复和自动粘贴已通过实机验证；菜单栏、Keychain 与发布链路未完成
 > 总体顺序：Windows -> macOS -> Linux
 
 ## 1. 项目目标
@@ -88,7 +88,7 @@ Microsoft.Data.Sqlite 10.0.10
 | 中文名 | `闪剪` |
 | 根命名空间 | `SnapBoard` |
 | 许可证 | MIT |
-| 源码托管 | GitHub |
+| 源码托管 | [GitHub - wuliangtdi/SnapBoard](https://github.com/wuliangtdi/SnapBoard) |
 | 构建与发布 | GitHub Actions 在对应操作系统 Runner 构建 Native AOT，并上传 GitHub Releases |
 | 第一种同步后端 | WebDAV，兼容用户自建服务、Nextcloud 和 NAS |
 | Windows 验收环境 | 已有 Windows 11 测试环境 |
@@ -96,7 +96,7 @@ Microsoft.Data.Sqlite 10.0.10
 | 本地数据库加密 | 先完成 SQLCipher/AOT 性能验证，通过后再决定是否默认启用 |
 | GNOME Wayland | 接受配套 Shell 扩展或功能受限模式，并明确标注支持等级 |
 
-GitHub 组织或用户名尚未确定，因此最终仓库 URL、应用标识和 macOS Bundle Identifier 在创建远程仓库时补充。
+源码仓库已确定为 `wuliangtdi/SnapBoard`。应用标识、macOS Bundle Identifier、签名团队和公证凭据仍在发布阶段补充。
 
 ### 3.2 已确认的实施边界
 
@@ -629,12 +629,14 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 
 #### 2.1 平台能力
 
-- [ ] 使用 `NSPasteboard.changeCount` 监听剪贴板变化并选择低 CPU 轮询周期。
-- [ ] 读取和写入文本、HTML、RTF、图片、文件 URL 和常用 UTI。
+- [x] 使用 `NSPasteboard.changeCount` 监听剪贴板变化并选择低 CPU 轮询周期。
+- [x] 读取和写入文本、HTML、RTF、PNG/TIFF 图片、文件 URL 和常用 UTI。
 - [ ] 实现菜单栏、全局快捷键、登录启动和单实例。
-- [ ] 实现目标应用恢复和自动粘贴。
-- [ ] 实现辅助功能权限引导、状态检测和受限模式。
+- [x] 实现目标应用恢复和自动粘贴。
+- [~] 实现辅助功能权限引导、状态检测和受限模式：平台状态检测与“已复制，请手动粘贴”降级已完成，设置入口和授权引导 UI 待实现。
 - [ ] 使用 Keychain 保存设备和同步密钥。
+
+当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics 互操作。轮询 tick 只读取 `changeCount` 并向有界 Channel 写入轻量事件；正文、SQLite 和网络不进入轮询路径。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。来源应用无法由 NSPasteboard 可靠确定时固定返回 `Unknown`，不做猜测。完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 
 #### 2.2 跨平台一致性
 
@@ -642,14 +644,14 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 - [ ] 适配 macOS 键盘、菜单、窗口阴影和焦点行为。
 - [ ] 复用核心 UI，只允许必要的平台差异。
 - [ ] 验证 Intel 与 Apple Silicon。
-- [ ] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布。
+- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：`osx-arm64` 本机 0 个 AOT/裁剪警告并实际启动，`osx-x64` 待 Intel 或对应 Runner 验证。
 
 #### 2.3 发布
 
 - [ ] 完成应用签名、Hardened Runtime、公证和 DMG/PKG。
 - [ ] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release。
-- [ ] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试。
-- [ ] 更新平台支持矩阵和已知限制。
+- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：三次 arm64 AOT 可见窗口及允许/拒绝权限已记录，睡眠唤醒、多 Space 和多显示器待验证。
+- [x] 更新平台支持矩阵和已知限制。
 
 退出条件：Windows 与 macOS 数据一致同步，macOS 正式包通过签名和公证。
 

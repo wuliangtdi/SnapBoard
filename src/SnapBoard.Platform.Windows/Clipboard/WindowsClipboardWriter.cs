@@ -212,9 +212,21 @@ internal sealed class WindowsClipboardWriter(
                 return new PayloadBuildResult([], 0, true);
             }
 
-            uint format = request.Bitmap.Encoding == ClipboardBitmapEncoding.DeviceIndependentBitmapV5
-                ? WindowsNativeConstants.ClipboardFormatDeviceIndependentBitmapV5
-                : WindowsNativeConstants.ClipboardFormatDeviceIndependentBitmap;
+            uint format = request.Bitmap.Encoding switch
+            {
+                ClipboardBitmapEncoding.DeviceIndependentBitmap =>
+                    WindowsNativeConstants.ClipboardFormatDeviceIndependentBitmap,
+                ClipboardBitmapEncoding.DeviceIndependentBitmapV5 =>
+                    WindowsNativeConstants.ClipboardFormatDeviceIndependentBitmapV5,
+                _ => 0,
+            };
+            if (format == 0)
+            {
+                // PNG/TIFF 是 macOS 的编码数据，不能伪装成 Windows DIB 写入。
+                // 后续若要跨平台转码，应由独立的图片编解码服务显式完成。
+                return new PayloadBuildResult([], 0, true);
+            }
+
             payloads.Add(new ClipboardPayload(format, request.Bitmap.Data.ToArray(), false));
         }
 

@@ -309,6 +309,13 @@
           "SnapBoard.Domain": "[1.0.0, )"
         }
       },
+      "snapboard.platform.macos": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Domain": "[1.0.0, )",
+          "SnapBoard.Platform.Abstractions": "[1.0.0, )"
+        }
+      },
       "snapboard.platform.windows": {
         "type": "Project",
         "dependencies": {

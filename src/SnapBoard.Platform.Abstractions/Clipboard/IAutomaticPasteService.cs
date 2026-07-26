@@ -23,6 +23,7 @@ public enum AutomaticPasteFailureReason
     TargetActivationFailed = 4,
     InputInjectionBlocked = 5,
     PlatformUnavailable = 6,
+    AccessibilityPermissionDenied = 7,
 }
 
 public sealed record AutomaticPasteResult(

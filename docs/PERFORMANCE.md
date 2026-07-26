@@ -64,6 +64,7 @@ dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests
 - 大载荷流式处理，缓存同时限制条目数和总字节数。
 - 原生句柄、Bitmap、Stream、SQLite 连接和 CancellationTokenSource 明确释放。
 - 后台队列有界；超出容量时记录计数并采用明确合并策略。
+- macOS 轮询 tick 只读取 `NSPasteboard.changeCount` 并写入轻量事件；正文读取、SQLite 和网络请求不得进入 tick。
 - 空闲状态不使用高频轮询；WebDAV 默认 10 到 30 秒拉取。
 
 ## 6. 当前基线
@@ -111,3 +112,24 @@ scripts/windows/Measure-SnapBoardProcess.ps1 `
 | 3 | 280.25 ms | 218.20 MiB | 250.13 MiB | 1272 |
 
 结论：本轮只验证可见主窗口，三次 Private Working Set 峰值均超过 120 MiB 失败线，不能宣称达到内存目标。当前尚未实现托盘和窗口卸载，因此没有“托盘常驻低于 100 MB”的有效样本；后续必须完成 UI 依赖 A/B、窗口关闭回落和 10 分钟托盘场景。
+
+### 6.3 2026-07-27 macOS arm64 原生适配器可见窗口样本
+
+版本：`phase2/macos-clipboard` 最终提交工作树。主机为 Mac mini（Apple M4，10 核，16 GB），`uname -m=arm64`，macOS 26.2 (25C56)，.NET SDK 10.0.302。构建为 Release、`osx-arm64`、self-contained Native AOT；产物是 23,906,928 字节的 arm64 Mach-O，剥离后发布目录约 91.68 MiB，发布输出为 0 个 AOT/裁剪警告。
+
+采样脚本为 `scripts/macos/Measure-SnapBoardProcess.sh`。每轮启动独立 AOT 进程，通过 `CGWindowListCopyWindowInfo` 检测该 PID 的可见主窗口，以此记录启动终点；随后每秒调用公开的 `proc_pid_rusage(RUSAGE_INFO_V6)` 采样 10 秒。Physical Footprint、Resident Size、进程 CPU 时间、`ri_energy_nj` 和 interrupt wakeups 均来自同一进程计数器。该方法不是重启后的 OS-cold，也不等同于活动监视器的相对 Energy Impact 指数。
+
+```bash
+scripts/macos/Measure-SnapBoardProcess.sh \
+  artifacts/publish/osx-arm64-aot-final-20260727/SnapBoard.Desktop 3 10
+```
+
+| 轮次 | 启动到可见窗口 | 峰值 Physical Footprint | 峰值 RSS | Lifetime Peak | 平均 CPU | 能耗增量 | Interrupt wakeups |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 3974.77 ms | 194.78 MiB | 162.11 MiB | 198.64 MiB | 0.014% | 26.541 mJ | 327 |
+| 2 | 1288.41 ms | 194.74 MiB | 162.55 MiB | 198.75 MiB | 0.015% | 25.098 mJ | 315 |
+| 3 | 919.26 ms | 194.94 MiB | 162.08 MiB | 198.72 MiB | 0.017% | 33.354 mJ | 330 |
+
+轮询开销另用同一份最终代码发布的 AOT 探针测量，避免把尚未接入桌面生命周期的监听器与普通窗口空闲混为一谈。探针实际执行 `WatchAsync` 12 秒，在中间 10 秒计量窗口内无剪贴板变化：平均 CPU 0.001%、能耗增量 1.360 mJ、44 次 interrupt wakeups、最终 Physical Footprint 6.41 MiB、RSS 27.17 MiB，`DroppedEvents=0`。该数据验证轮询退避开销，不代表完整桌面应用内存。
+
+结论：轮询 CPU 满足当前空闲预算，但完整可见窗口三次 Physical Footprint 均约 195 MiB，明确超过 120 MB 失败线。第一轮启动 3.97 秒也必须继续调查。当前尚未实现菜单栏常驻和窗口卸载，因此没有“常驻低于 100 MB”的有效样本；2026-07-26 的单次旧样本只能作为历史数据，不能替代本轮三次复测。

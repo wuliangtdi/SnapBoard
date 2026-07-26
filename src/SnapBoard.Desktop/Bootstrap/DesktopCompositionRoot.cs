@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.MacOS;
 using SnapBoard.Platform.Windows;
 
 namespace SnapBoard.Desktop.Bootstrap;
@@ -20,6 +21,10 @@ internal static class DesktopCompositionRoot
         if (OperatingSystem.IsWindows())
         {
             AddWindowsClipboardServices(services);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            AddMacOSClipboardServices(services);
         }
 
         return services.BuildServiceProvider(new ServiceProviderOptions
@@ -41,5 +46,19 @@ internal static class DesktopCompositionRoot
             provider.GetRequiredService<WindowsClipboardAdapter>());
         services.AddSingleton<IAutomaticPasteService>(provider =>
             provider.GetRequiredService<WindowsClipboardAdapter>());
+    }
+
+    [SupportedOSPlatform("macos")]
+    private static void AddMacOSClipboardServices(IServiceCollection services)
+    {
+        services.AddSingleton<MacOSClipboardAdapter>();
+        services.AddSingleton<IClipboardMonitor>(provider =>
+            provider.GetRequiredService<MacOSClipboardAdapter>());
+        services.AddSingleton<IClipboardContentReader>(provider =>
+            provider.GetRequiredService<MacOSClipboardAdapter>());
+        services.AddSingleton<IClipboardWriter>(provider =>
+            provider.GetRequiredService<MacOSClipboardAdapter>());
+        services.AddSingleton<IAutomaticPasteService>(provider =>
+            provider.GetRequiredService<MacOSClipboardAdapter>());
     }
 }
