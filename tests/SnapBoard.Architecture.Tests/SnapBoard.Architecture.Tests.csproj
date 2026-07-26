@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SnapBoard.Domain\SnapBoard.Domain.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Application\SnapBoard.Application.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Infrastructure\SnapBoard.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Platform.Windows\SnapBoard.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Platform.MacOS\SnapBoard.Platform.MacOS.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Platform.Linux\SnapBoard.Platform.Linux.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Sync.Contracts\SnapBoard.Sync.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Sync.WebDav\SnapBoard.Sync.WebDav.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:SnapBoard.Desktop.Controls"
+             x:Class="SnapBoard.Desktop.Controls.SyntaxHighlightedCodeView"
+             x:Name="Root"
+             x:DataType="controls:SyntaxHighlightedCodeView">
+    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Auto">
+        <ItemsControl Margin="0,12,0,10"
+                      ItemsSource="{Binding Lines, ElementName=Root}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="controls:CodePreviewLine">
+                    <Grid Height="24" ColumnDefinitions="42,1,*">
+                        <TextBlock Margin="0,0,8,0"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Cascadia Mono, JetBrains Mono, Menlo, Consolas, monospace"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource TertiaryTextBrush}"
+                                   Text="{Binding Number}" />
+                        <Border Grid.Column="1"
+                                Background="{DynamicResource DividerBrush}" />
+                        <ItemsControl Grid.Column="2"
+                                      Margin="14,0,14,0"
+                                      VerticalAlignment="Center"
+                                      ItemsSource="{Binding Tokens}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="controls:CodePreviewToken">
+                                    <TextBlock VerticalAlignment="Center"
+                                               FontFamily="Cascadia Mono, JetBrains Mono, Menlo, Consolas, monospace"
+                                               FontSize="14"
+                                               Foreground="{Binding Foreground}"
+                                               LetterSpacing="0"
+                                               Text="{Binding Text}"
+                                               TextWrapping="NoWrap" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </ScrollViewer>
+</UserControl>

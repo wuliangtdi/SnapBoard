@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SnapBoard.Application/SnapBoard.Application.csproj" />
+    <Project Path="src/SnapBoard.Desktop/SnapBoard.Desktop.csproj" />
+    <Project Path="src/SnapBoard.Domain/SnapBoard.Domain.csproj" />
+    <Project Path="src/SnapBoard.Infrastructure/SnapBoard.Infrastructure.csproj" />
+    <Project Path="src/SnapBoard.Platform.Abstractions/SnapBoard.Platform.Abstractions.csproj" />
+    <Project Path="src/SnapBoard.Platform.Linux/SnapBoard.Platform.Linux.csproj" />
+    <Project Path="src/SnapBoard.Platform.MacOS/SnapBoard.Platform.MacOS.csproj" />
+    <Project Path="src/SnapBoard.Platform.Windows/SnapBoard.Platform.Windows.csproj" />
+    <Project Path="src/SnapBoard.Sync.Contracts/SnapBoard.Sync.Contracts.csproj" />
+    <Project Path="src/SnapBoard.Sync.WebDav/SnapBoard.Sync.WebDav.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SnapBoard.Application.Tests/SnapBoard.Application.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Architecture.Tests/SnapBoard.Architecture.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Desktop.HeadlessTests/SnapBoard.Desktop.HeadlessTests.csproj" />
+    <Project Path="tests/SnapBoard.Domain.Tests/SnapBoard.Domain.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Infrastructure.Tests/SnapBoard.Infrastructure.Tests.csproj" />
+    <Project Path="tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests.csproj" />
+    <Project Path="tests/SnapBoard.Platform.Linux.Tests/SnapBoard.Platform.Linux.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Platform.MacOS.Tests/SnapBoard.Platform.MacOS.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Platform.Windows.Tests/SnapBoard.Platform.Windows.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Sync.WebDav.Tests/SnapBoard.Sync.WebDav.Tests.csproj" />
+  </Folder>
+</Solution>

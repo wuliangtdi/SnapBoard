@@ -1,0 +1,510 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:SnapBoard.Desktop.Controls"
+        xmlns:vm="using:SnapBoard.Desktop.ViewModels"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="1180"
+        d:DesignHeight="840"
+        x:Class="SnapBoard.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Width="1305"
+        Height="900"
+        MinWidth="980"
+        MinHeight="700"
+        Background="{DynamicResource AppBackgroundBrush}"
+        WindowStartupLocation="CenterScreen"
+        Title="SnapBoard - 闪剪">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="64,64,*,60">
+        <Border Grid.Row="0"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="24,0" ColumnDefinitions="216,*,Auto">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="10">
+                    <Image Width="54"
+                           Height="54"
+                           Stretch="Uniform"
+                           Source="/Assets/snapboard-logo.png" />
+                    <StackPanel VerticalAlignment="Center" Spacing="0">
+                        <TextBlock FontSize="17"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   Text="{Binding ProductName}" />
+                        <TextBlock FontSize="12"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Text="{Binding ProductNameChinese}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <Grid Grid.Column="1"
+                      Margin="12,0,22,0"
+                      Width="660"
+                      HorizontalAlignment="Left"
+                      VerticalAlignment="Center">
+                    <TextBox x:Name="SearchBox"
+                             Classes="search-box"
+                             PlaceholderText="{Binding SearchWatermark}"
+                             Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <materialIcons:MaterialIcon Margin="16,0,0,0"
+                                                Width="21"
+                                                Height="21"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource SecondaryTextBrush}"
+                                                IsHitTestVisible="False"
+                                                Kind="TextSearchVariant" />
+                    <Button Classes="icon"
+                            Width="32"
+                            Height="32"
+                            Margin="0,0,7,0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Command="{Binding ClearSearchCommand}"
+                            IsVisible="{Binding HasSearchText}"
+                            ToolTip.Tip="清除搜索">
+                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="CloseCircleOutline" />
+                    </Button>
+                </Grid>
+
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="4">
+                    <Button x:Name="SyncButton"
+                            Classes="header-command"
+                            Command="{Binding SyncCommand}"
+                            ToolTip.Tip="立即同步">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon Width="19"
+                                                        Height="19"
+                                                        Foreground="{DynamicResource SuccessBrush}"
+                                                        Kind="WebSync" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding LastSyncText}" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Classes="icon" ToolTip.Tip="设置">
+                        <materialIcons:MaterialIcon Width="21" Height="21" Kind="SettingsApplications" />
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="外观" />
+                                <MenuItem Header="快捷键" />
+                                <MenuItem Header="同步" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+
+                    <Button x:Name="CompactModeButton"
+                            Classes="icon"
+                            Command="{Binding ToggleCompactModeCommand}"
+                            ToolTip.Tip="切换紧凑模式">
+                        <materialIcons:MaterialIcon Width="21" Height="21" Kind="ViewCompactOutline" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="28,0" ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ToggleButton x:Name="AllFilterButton"
+                                  Classes="filter"
+                                  Command="{Binding SelectFilterCommand}"
+                                  CommandParameter="All"
+                                  IsChecked="{Binding IsAllFilterSelected, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="ClipboardMultipleOutline" />
+                            <TextBlock VerticalAlignment="Center" Text="全部" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="TextFilterButton"
+                                  Classes="filter"
+                                  Command="{Binding SelectFilterCommand}"
+                                  CommandParameter="Text"
+                                  IsChecked="{Binding IsTextFilterSelected, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatText" />
+                            <TextBlock VerticalAlignment="Center" Text="文本" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="ImageFilterButton"
+                                  Classes="filter"
+                                  Command="{Binding SelectFilterCommand}"
+                                  CommandParameter="Image"
+                                  IsChecked="{Binding IsImageFilterSelected, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="ImageMultipleOutline" />
+                            <TextBlock VerticalAlignment="Center" Text="图片" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="CodeFilterButton"
+                                  Classes="filter"
+                                  Command="{Binding SelectFilterCommand}"
+                                  CommandParameter="Code"
+                                  IsChecked="{Binding IsCodeFilterSelected, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="CodeTags" />
+                            <TextBlock VerticalAlignment="Center" Text="代码" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="LinkFilterButton"
+                                  Classes="filter"
+                                  Command="{Binding SelectFilterCommand}"
+                                  CommandParameter="Link"
+                                  IsChecked="{Binding IsLinkFilterSelected, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="LinkBoxOutline" />
+                            <TextBlock VerticalAlignment="Center" Text="链接" />
+                        </StackPanel>
+                    </ToggleButton>
+                </StackPanel>
+
+                <Button Grid.Column="1"
+                        Classes="header-command"
+                        Command="{Binding ToggleSortCommand}"
+                        ToolTip.Tip="切换排序方向">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Width="18" Height="18" Kind="SortVariant" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding SortLabel}" />
+                        <materialIcons:MaterialIcon Width="16" Height="16" Kind="MenuDown" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="{Binding HistoryColumnWidth}" />
+                <ColumnDefinition Width="{Binding PreviewColumnWidth}" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="0,0,1,0">
+                <Grid RowDefinitions="54,*">
+                    <Border Grid.Row="0"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="0,0,0,1">
+                        <Grid Margin="35,0,15,0" ColumnDefinitions="*,127,84">
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="内容预览" />
+                            <TextBlock Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="来源应用" />
+                            <TextBlock Grid.Column="2"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="时间" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="1">
+                        <ListBox x:Name="HistoryList"
+                                 Classes="history-list"
+                                 Margin="14,0,0,0"
+                                 DoubleTapped="OnHistoryDoubleTapped"
+                                 ItemContainerTheme="{StaticResource HistoryListBoxItemTheme}"
+                                 ItemsSource="{Binding VisibleItems}"
+                                 SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ClipboardHistoryItemViewModel">
+                                    <Grid RowDefinitions="*,1">
+                                        <Grid Margin="16,0,15,0" ColumnDefinitions="*,127,84">
+                                            <Grid ColumnDefinitions="40,*,Auto,Auto" VerticalAlignment="Center">
+                                                <Border Width="36"
+                                                        Height="36"
+                                                        CornerRadius="6"
+                                                        Background="{DynamicResource HoverSurfaceBrush}">
+                                                    <materialIcons:MaterialIcon Width="22"
+                                                                                Height="22"
+                                                                                HorizontalAlignment="Center"
+                                                                                VerticalAlignment="Center"
+                                                                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                                                                Kind="{Binding TypeIcon}" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1"
+                                                            Margin="30,0,10,0"
+                                                            VerticalAlignment="Center"
+                                                            Spacing="4">
+                                                    <TextBlock FontSize="14"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                                               MaxLines="1"
+                                                               Text="{Binding Title}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               MaxLines="1"
+                                                               Text="{Binding Subtitle}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <Border Grid.Column="2"
+                                                        Width="52"
+                                                        Height="34"
+                                                        Margin="0,0,8,0"
+                                                        CornerRadius="4"
+                                                        Background="#EAF1FB"
+                                                        BorderBrush="{DynamicResource DividerBrush}"
+                                                        BorderThickness="1"
+                                                        IsVisible="{Binding HasThumbnail}">
+                                                    <materialIcons:MaterialIcon Width="20"
+                                                                                Height="20"
+                                                                                HorizontalAlignment="Center"
+                                                                                VerticalAlignment="Center"
+                                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                                Kind="ImageMultipleOutline" />
+                                                </Border>
+                                                <Border Grid.Column="3"
+                                                        Width="34"
+                                                        Height="34"
+                                                        Margin="0,0,8,0"
+                                                        CornerRadius="5"
+                                                        Background="#0078D4"
+                                                        IsVisible="{Binding HasColorSwatch}" />
+                                            </Grid>
+
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="7">
+                                                <materialIcons:MaterialIcon Width="18"
+                                                                            Height="18"
+                                                                            Foreground="{DynamicResource AccentBrush}"
+                                                                            Kind="{Binding SourceIcon}" />
+                                                <TextBlock VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource PrimaryTextBrush}"
+                                                           MaxWidth="118"
+                                                           Text="{Binding SourceApplication}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+
+                                            <TextBlock Grid.Column="2"
+                                                       HorizontalAlignment="Right"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="{Binding TimestampText}" />
+                                        </Grid>
+                                        <Border Grid.Row="1"
+                                                Margin="15,0,0,0"
+                                                Background="{DynamicResource DividerBrush}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding HasNoVisibleItems}"
+                                    Spacing="8">
+                            <materialIcons:MaterialIcon Width="36"
+                                                        Height="36"
+                                                        HorizontalAlignment="Center"
+                                                        Foreground="{DynamicResource TertiaryTextBrush}"
+                                                        Kind="ClipboardSearchOutline" />
+                            <TextBlock HorizontalAlignment="Center"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Text="没有匹配记录" />
+                            <TextBlock HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="调整搜索或筛选条件" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="1"
+                  IsVisible="{Binding HasVisibleItems}"
+                  RowDefinitions="70,300,72,*"
+                  Background="{DynamicResource SurfaceBrush}">
+                <Border Grid.Row="0"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid Margin="18,0,14,0" ColumnDefinitions="*,Auto">
+                        <StackPanel Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="9">
+                            <Border Width="32"
+                                    Height="32"
+                                    CornerRadius="5"
+                                    Background="{DynamicResource HoverSurfaceBrush}">
+                                <materialIcons:MaterialIcon Width="18"
+                                                            Height="18"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Kind="{Binding SelectedItem.TypeIcon}" />
+                            </Border>
+                            <TextBlock VerticalAlignment="Center"
+                                       FontWeight="SemiBold"
+                                       Text="{Binding SelectedItem.KindLabel}" />
+                            <Border Width="1" Height="14" Background="{DynamicResource DividerBrush}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="{Binding SelectedItem.CharacterCountText}" />
+                            <Border Width="1" Height="14" Background="{DynamicResource DividerBrush}" />
+                            <materialIcons:MaterialIcon Width="17"
+                                                        Height="17"
+                                                        Foreground="{DynamicResource AccentBrush}"
+                                                        Kind="{Binding SelectedItem.SourceIcon}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       MaxWidth="116"
+                                       Text="{Binding SelectedItem.SourceApplication}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <Border Width="1" Height="14" Background="{DynamicResource DividerBrush}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="{Binding SelectedItem.TimestampText}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
+                            <Button Classes="icon"
+                                    Command="{Binding TogglePinCommand}"
+                                    Foreground="{DynamicResource WarningBrush}"
+                                    ToolTip.Tip="置顶">
+                                <materialIcons:MaterialIcon Width="20" Height="20" Kind="StarBorder" />
+                            </Button>
+                            <Button Classes="icon"
+                                    Command="{Binding CopyCommand}"
+                                    ToolTip.Tip="复制">
+                                <materialIcons:MaterialIcon Width="20" Height="20" Kind="ContentCopy" />
+                            </Button>
+                            <Button Classes="icon"
+                                    Command="{Binding PasteCommand}"
+                                    ToolTip.Tip="粘贴">
+                                <materialIcons:MaterialIcon Width="20" Height="20" Kind="ClipboardArrowRightOutline" />
+                            </Button>
+                            <Button Classes="icon"
+                                    Command="{Binding DeleteCommand}"
+                                    Foreground="{DynamicResource DangerBrush}"
+                                    ToolTip.Tip="删除">
+                                <materialIcons:MaterialIcon Width="20" Height="20" Kind="DeleteEmptyOutline" />
+                            </Button>
+                            <Button Classes="icon" ToolTip.Tip="更多操作">
+                                <materialIcons:MaterialIcon Width="20" Height="20" Kind="DotsHorizontalCircleOutline" />
+                                <Button.Flyout>
+                                    <MenuFlyout>
+                                        <MenuItem Header="复制为纯文本" Command="{Binding CopyCommand}" />
+                                        <MenuItem Header="在新窗口打开" Command="{Binding OpenSelectedItemCommand}" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Margin="14,12,14,10"
+                        CornerRadius="6"
+                        Background="{DynamicResource SubtleSurfaceBrush}"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="1">
+                    <controls:SyntaxHighlightedCodeView x:Name="CodePreview"
+                                                        Code="{Binding SelectedItem.Content}" />
+                </Border>
+
+                <Border Grid.Row="2"
+                        Padding="18,0"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="0,0,0,1">
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
+                               Text="{Binding SelectedItem.Subtitle}"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <ScrollViewer Grid.Row="3"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="18,18,24,20"
+                          ColumnDefinitions="130,*"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowSpacing="18">
+                        <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" Text="类型" />
+                        <TextBlock Grid.Column="1" Text="{Binding SelectedItem.KindLabel}" />
+
+                        <TextBlock Grid.Row="1" Foreground="{DynamicResource SecondaryTextBrush}" Text="语言" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedItem.Language}" />
+
+                        <TextBlock Grid.Row="2" Foreground="{DynamicResource SecondaryTextBrush}" Text="字符数" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedItem.CharacterCountText}" />
+
+                        <TextBlock Grid.Row="3" Foreground="{DynamicResource SecondaryTextBrush}" Text="来源窗口" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedItem.SourceWindow}" />
+
+                        <TextBlock Grid.Row="4" Foreground="{DynamicResource SecondaryTextBrush}" Text="位置" />
+                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <materialIcons:MaterialIcon Width="18"
+                                                        Height="18"
+                                                        Foreground="{DynamicResource SecondaryTextBrush}"
+                                                        Kind="FolderOpenOutline" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding SelectedItem.Location}" />
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="5" Foreground="{DynamicResource SecondaryTextBrush}" Text="备注" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedItem.Notes}" />
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="3"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid Margin="24,0" ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="12">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding RecordCountText}" />
+                    <Border Width="1" Height="16" Background="{DynamicResource DividerBrush}" />
+                    <materialIcons:MaterialIcon Width="18"
+                                                Height="18"
+                                                Foreground="{DynamicResource SecondaryTextBrush}"
+                                                Kind="Laptop" />
+                    <TextBlock VerticalAlignment="Center" Text="{Binding DeviceName}" />
+                    <Border Width="1" Height="16" Background="{DynamicResource DividerBrush}" />
+                    <materialIcons:MaterialIcon Width="18"
+                                                Height="18"
+                                                Foreground="{DynamicResource SuccessBrush}"
+                                                Kind="CheckCircle" />
+                    <TextBlock VerticalAlignment="Center" Text="{Binding LastSyncText}" />
+                </StackPanel>
+
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="{Binding StatusMessage}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

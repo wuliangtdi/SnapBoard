@@ -1,0 +1,47 @@
+# Build output
+bin/
+obj/
+artifacts/
+BenchmarkDotNet.Artifacts/
+
+# IDE and editor state
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# JetBrains Rider
+*.DotSettings.user
+
+# Test output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Native AOT and platform packaging output
+publish/
+packages/
+*.dSYM/
+*.app/
+*.dmg
+*.msix
+*.msixbundle
+*.AppImage
+*.deb
+*.rpm
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local configuration and credentials
+*.local.json
+*.secrets.json
+.env
+.env.*
+!.env.example

@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  package:
+    name: Package ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            archive: SnapBoard-win-x64.zip
+          - os: macos-latest
+            rid: osx-arm64
+            archive: SnapBoard-osx-arm64.tar.gz
+          - os: ubuntu-latest
+            rid: linux-x64
+            archive: SnapBoard-linux-x64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Publish Native AOT
+        shell: bash
+        run: |
+          version="0.0.0-dev"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          dotnet publish src/SnapBoard.Desktop/SnapBoard.Desktop.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishAot=true \
+            -p:Version="$version" \
+            -o artifacts/publish/${{ matrix.rid }}
+
+      - name: Create Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "artifacts/publish/${{ matrix.rid }}/*" -DestinationPath "artifacts/${{ matrix.archive }}"
+          $hash = (Get-FileHash "artifacts/${{ matrix.archive }}" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.archive }}" | Set-Content "artifacts/${{ matrix.archive }}.sha256"
+
+      - name: Create Unix archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tar -C "artifacts/publish/${{ matrix.rid }}" -czf "artifacts/${{ matrix.archive }}" .
+          cd artifacts
+          shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.rid }}
+          path: |
+            artifacts/${{ matrix.archive }}
+            artifacts/${{ matrix.archive }}.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --generate-notes --verify-tag
