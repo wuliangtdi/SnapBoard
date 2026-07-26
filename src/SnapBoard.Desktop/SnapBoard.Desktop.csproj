@@ -33,6 +33,7 @@
     <ProjectReference Include="..\SnapBoard.Domain\SnapBoard.Domain.csproj" />
     <ProjectReference Include="..\SnapBoard.Infrastructure\SnapBoard.Infrastructure.csproj" />
     <ProjectReference Include="..\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
+    <ProjectReference Include="..\SnapBoard.Platform.Windows\SnapBoard.Platform.Windows.csproj" />
     <ProjectReference Include="..\SnapBoard.Sync.Contracts\SnapBoard.Sync.Contracts.csproj" />
     <ProjectReference Include="..\SnapBoard.Sync.WebDav\SnapBoard.Sync.WebDav.csproj" />
   </ItemGroup>

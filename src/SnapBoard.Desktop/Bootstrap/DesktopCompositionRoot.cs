@@ -1,5 +1,8 @@
+using System.Runtime.Versioning;
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Desktop.ViewModels;
+using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Windows;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
@@ -14,10 +17,29 @@ internal static class DesktopCompositionRoot
         ServiceCollection services = new();
         services.AddSingleton<MainViewModel>();
 
+        if (OperatingSystem.IsWindows())
+        {
+            AddWindowsClipboardServices(services);
+        }
+
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
             ValidateScopes = true,
         });
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AddWindowsClipboardServices(IServiceCollection services)
+    {
+        services.AddSingleton<WindowsClipboardAdapter>();
+        services.AddSingleton<IClipboardMonitor>(provider =>
+            provider.GetRequiredService<WindowsClipboardAdapter>());
+        services.AddSingleton<IClipboardContentReader>(provider =>
+            provider.GetRequiredService<WindowsClipboardAdapter>());
+        services.AddSingleton<IClipboardWriter>(provider =>
+            provider.GetRequiredService<WindowsClipboardAdapter>());
+        services.AddSingleton<IAutomaticPasteService>(provider =>
+            provider.GetRequiredService<WindowsClipboardAdapter>());
     }
 }

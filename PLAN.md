@@ -540,7 +540,7 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 - [ ] 完成纯 Avalonia、Ursa 和最终壳的三组 A/B 测试。
 - [x] 完成 SqlSugar 两种包型的初步 AOT 准入测试并记录淘汰原因。
 - [ ] 完成 Microsoft.Data.Sqlite 的 CRUD、事务、分页、FTS5、迁移和 AOT 冒烟测试。
-- [ ] 建立 Windows 内存采样脚本和可重复测试说明。
+- [x] 建立 Windows 内存采样脚本和可重复测试说明。
 - [ ] 根据结果确认 Ursa 使用范围并完成直接 SQLite 基线。
 - [ ] 记录 ADR 和基线报告。
 
@@ -561,13 +561,15 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 
 #### 1.3 Windows 剪贴板适配器
 
-- [ ] 使用消息窗口和 `AddClipboardFormatListener` 监听变化。
-- [ ] 使用剪贴板序列号去重，处理剪贴板被占用和延迟渲染。
-- [ ] 读取 Text、Unicode、HTML、RTF、Bitmap、File List 和格式清单。
-- [ ] 实现来源应用识别和权限失败降级。
-- [ ] 实现本应用写入标记和反馈循环抑制。
-- [ ] 实现写回剪贴板、纯文本粘贴和自动粘贴。
-- [ ] 覆盖管理员窗口、UWP/WinUI、Office、浏览器、远程桌面等兼容性场景。
+- [x] 使用消息窗口和 `AddClipboardFormatListener` 监听变化。
+- [~] 使用剪贴板序列号去重，处理剪贴板被占用和延迟渲染。
+- [x] 读取 Text、Unicode、HTML、RTF、Bitmap、File List 和格式清单。
+- [~] 实现来源应用识别和权限失败降级。
+- [x] 实现本应用写入标记和反馈循环抑制。
+- [~] 实现写回剪贴板、纯文本粘贴和自动粘贴。
+- [~] 覆盖管理员窗口、UWP/WinUI、Office、浏览器、远程桌面等兼容性场景。
+
+当前已完成独立 STA 消息线程、message-only window、序列去重、有界队列、有限退避、格式读写、来源标记和 UIPI 保守降级。自动测试覆盖真实 Windows 剪贴板往返和反馈抑制，交互式实机仅完成 Windows 11 打包版记事本；延迟渲染 owner、管理员窗口、UWP/WinUI、Office、浏览器、Explorer 文件复制和远程桌面仍待验收，详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
 退出条件：连续复制 10,000 次不死锁、不漏掉正常事件、不产生无限自复制。
 

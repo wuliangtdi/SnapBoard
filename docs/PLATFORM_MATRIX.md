@@ -4,7 +4,7 @@
 
 | 平台 | 目标版本/桌面 | 剪贴板监听 | 全局快捷键 | 自动粘贴 | 凭据存储 | 当前状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Windows | Windows 11 x64 | 计划完整 | 计划完整 | 计划完整，受 UIPI 限制 | DPAPI/Credential Locker | 一期进行中 |
+| Windows | Windows 11 x64 | 受限：原生适配器已实现，兼容性验收中 | 计划完整 | 受限：已实现 UIPI 降级，实机自动粘贴待验收 | DPAPI/Credential Locker | 一期 Phase 1.3 进行中 |
 | macOS | 当前受支持 macOS arm64/x64 | 计划完整 | 需辅助功能权限 | 需辅助功能权限 | Keychain | 二期 |
 | Ubuntu | GNOME X11 | 计划完整 | 计划完整 | 计划完整 | Secret Service | 三期 |
 | Ubuntu/Fedora | GNOME Wayland | 配套扩展或受限 | 桌面接口决定 | 通常受限 | Secret Service | 三期高风险 |
@@ -13,12 +13,14 @@
 
 ## Windows 11 验收
 
-- AddClipboardFormatListener 消息生命周期。
-- 剪贴板占用和延迟渲染重试。
+- [x] `AddClipboardFormatListener` 消息生命周期、取消和退出清理。
+- [~] 剪贴板占用和延迟渲染重试：有限退避与自动测试已完成，真实 delayed-rendering owner 待验收。
 - 多显示器、DPI、前台窗口恢复和全局快捷键冲突。
-- 普通权限应用与管理员应用之间的 UIPI 降级提示。
+- [~] 普通权限应用与管理员应用之间的 UIPI 降级逻辑已实现，管理员目标实机待验收。
 - 托盘、开机启动、单实例和退出清理。
-- `win-x64` Native AOT、Private Working Set 和句柄长期增长。
+- [~] `win-x64` Native AOT 本机 0 警告通过，三次可见窗口 PWS/Private Bytes/句柄已记录；GitHub Runner 和长期增长待验证。
+
+外部应用交互状态：Windows 11 打包版记事本已通过；浏览器、Explorer 文件复制、UWP/WinUI、管理员窗口、Office 和远程桌面尚未通过。详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
 ## macOS 验收
 

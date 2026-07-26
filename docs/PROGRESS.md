@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-26
-> 当前阶段：Phase 1.0 收尾，Phase 1.1/1.2 基线并行推进
+> 当前阶段：Phase 1.3 Windows 剪贴板适配器进行中，Phase 1.1/1.2 基线并行推进
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -10,10 +10,10 @@
 | 阶段 | 状态 | 当前结论 |
 | --- | --- | --- |
 | Phase 0 规划与决策 | 已完成 | 名称、MIT、三期平台、WebDAV 和同步范围已确认 |
-| Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS arm64 AOT 已通过 |
-| Phase 1.1 AOT/内存基线 | 进行中 | AOT 可见窗口单次样本 152.5 MB，超过目标；Ursa/图标/UI 依赖 A/B 待执行 |
+| Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
+| Phase 1.1 AOT/内存基线 | 进行中 | Windows AOT 可见窗口三次峰值 PWS 184.38-218.20 MiB，超过目标；UI 依赖 A/B 待执行 |
 | Phase 1.2 UI 生命周期 | 进行中 | 第 2 版命令中心 UI、核心交互与真实 Headless/Skia 视觉测试已完成 |
-| Phase 1.3 Windows 剪贴板 | 未开始 | 等待 Windows 11 实机和 GitHub Windows Runner |
+| Phase 1.3 Windows 剪贴板 | 进行中 | 原生适配器、自动/集成测试和记事本实机通过；兼容性矩阵未完成 |
 | Phase 1.4-1.8 | 未开始 | 数据、搜索、快速粘贴、WebDAV 和发布待后续执行 |
 | Phase 2 macOS | 未开始 | 复用领域、应用、存储和同步协议 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
@@ -44,7 +44,7 @@
 
 - [ ] 在 GitHub 创建远程仓库并推送，验证所有 Actions Job。
 - [ ] 在 Windows Runner 完成 `win-x64` Native AOT 发布。
-- [ ] 在 Windows 11 实机启动空壳并记录 Private Working Set/Private Bytes。
+- [x] 在 Windows 11 实机启动 `win-x64` AOT 壳并记录冷启动、Private Working Set、Private Bytes 和句柄。
 - [ ] 完成 Ursa 与纯 Avalonia 的 A/B 基准，决定是否引入运行时依赖。
 - [ ] 将当前 PNG 品牌图标转换为 Windows `.ico`、macOS `.icns`，补充应用标识和后续签名配置。
 - [ ] 优化可见窗口内存，完成纯 Avalonia、Material Icons、Ursa 和最终壳的可重复 A/B 测量。
@@ -55,11 +55,11 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 单元/架构/Headless 测试 | 通过 | 18 项测试；其中 7 项 Desktop 测试覆盖 ViewModel、XAML 渲染、搜索、筛选和紧凑模式 |
+| 单元/架构/Headless/Windows 平台测试 | 通过 | 38 项测试；其中 21 项 Windows 测试覆盖生命周期、去重、重试、溢出、反馈抑制、格式往返、ANSI Text、聚合预算和 UIPI 降级 |
 | `osx-arm64` Native AOT | 通过 | 原生可执行文件约 23 MB；完整未剥离发布目录约 91 MB；0 个 AOT/裁剪警告 |
-| `win-x64` Native AOT | 待验证 | 必须在 Windows Runner 构建 |
+| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 26,828,288 字节；无 CoreCLR/JIT 文件；0 个 AOT/裁剪警告；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
-| 可见窗口运行内存 | 未达标 | macOS arm64 AOT 单次样本 Physical Footprint 152.5 MB、峰值 195.2 MB；超过 100/120 MB 预算线 |
+| 可见窗口运行内存 | 未达标 | Windows AOT 三次峰值 PWS 184.38/207.12/218.20 MiB，Private Bytes 214.54/239.21/250.13 MiB；不是托盘常驻样本 |
 
 ## 4. 重要发现
 
@@ -81,13 +81,19 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
 
 本次 macOS arm64 AOT 可见窗口样本为 152.5 MB Physical Footprint，明显高于项目目标。该结果不能解释为“已满足 100 MB”，Phase 1.1 必须继续拆分 UI 依赖、比较图标库与控件成本，并在托盘关闭窗口后重新建立三次以上稳定样本。当前没有实现托盘和窗口卸载，因此尚不能测量正式的“托盘常驻、窗口关闭”场景。
 
+### 4.5 Windows 剪贴板与 AOT 基线
+
+Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipboardFormatListener`、`GetClipboardSequenceNumber`、有界 Channel 和有限退避。真实 Windows 剪贴板集成测试覆盖 Unicode/ANSI Text、HTML、RTF、DIB、File List、格式清单、来源进程、自定义来源标记和反馈抑制；自动粘贴覆盖 UIPI 结构化降级，并校验 x64 `INPUT` ABI 为 40 字节。
+
+Windows 11 打包版记事本的交互式复制已由探针捕获，来源识别为 `Notepad`，队列丢弃计数为 0。浏览器控制因无法可靠确认 URL 被安全机制终止；Explorer、UWP/WinUI、管理员窗口、Office 和远程桌面未执行，不能标记为通过。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
+
 ## 5. 下一执行顺序
 
-1. 建立纯 Avalonia、Material Icons、Ursa 和最终壳的内存/启动 A/B 测量脚本。
-2. 在 Windows 11 测量 Private Working Set、Private Bytes 和冷启动，确认平台差异。
+1. 完成浏览器、Explorer、UWP/WinUI、管理员窗口、Office 和远程桌面交互验收。
+2. 建立纯 Avalonia、Material Icons、Ursa 和最终壳的内存/启动 A/B 测量。
 3. 在 GitHub 上验证 Windows/macOS/Linux CI 与 AOT Job。
 4. 完成 SQLite CRUD/FTS5/AOT 基准和托盘关闭窗口后的常驻样本。
-5. 记录 Phase 1.1 ADR，随后继续单实例、托盘和 Windows 剪贴板监听器。
+5. 记录 Phase 1.1 ADR，并继续单实例、托盘和桌面采集生命周期接线。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -124,7 +130,33 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
   - 做 UI 依赖与图标库 A/B，建立 Windows 可重复内存脚本并实现窗口关闭后的常驻测量。
 ```
 
-## 7. 更新规则
+## 7. 2026-07-26 执行记录：Windows 剪贴板一期
+
+```text
+日期：2026-07-26
+阶段/任务：Phase 1.3 Windows 剪贴板适配器与 Windows 实机基线
+状态：[~] 核心适配器完成；兼容性矩阵与 10,000 次长稳退出条件未完成
+完成内容：
+  - 新增 Windows 剪贴板监听、读取、写回、纯文本写回和自动粘贴平台端口。
+  - 使用独立 STA 消息线程、隐藏消息窗口和 AddClipboardFormatListener。
+  - 增加序列去重、有界队列、有限退避、来源识别、来源标记和反馈抑制。
+  - 支持 Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、CF_HDROP 和格式清单。
+  - 自动粘贴在高完整性/未知权限/SendInput 失败时返回“已复制，请手动粘贴”。
+  - 新增 Windows 探针和可重复性能采样脚本。
+验证结果：
+  - .NET SDK 10.0.302；locked restore 通过。
+  - Release build 0 警告、0 错误；全量 38 项测试通过。
+  - dotnet format --verify-no-changes 通过；NuGet 直接/传递漏洞为 0。
+  - win-x64 Native AOT 生成原生 EXE，0 个 AOT/裁剪警告。
+  - Windows 11 打包版记事本交互复制通过；其他外部应用场景未完成。
+性能数据：
+  - 3 次进程冷启动到主窗口：489.82/279.49/280.25 ms。
+  - 30 秒可见窗口峰值 PWS：184.38/207.12/218.20 MiB。
+  - 峰值 Private Bytes：214.54/239.21/250.13 MiB；句柄：1276/1275/1272。
+  - 当前没有托盘和窗口卸载，以上数据不能表述为托盘常驻内存。
+```
+
+## 8. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

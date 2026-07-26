@@ -32,6 +32,12 @@ dotnet test SnapBoard.slnx --configuration Release --no-build --no-restore
 - 平台实机：全局快捷键、托盘、焦点恢复、权限和自动粘贴必须人工加自动脚本联合验收。
 - 长稳测试：8 小时、10,000 次变化、网络断开恢复和多次休眠唤醒。
 
+Windows 剪贴板测试分为三层：
+
+- 确定性测试：消息宿主生命周期、启动取消、序列去重、有限重试、队列溢出、来源标记、反馈抑制、`INPUT` ABI 和 UIPI 结果映射。
+- Windows 原生集成测试：真实系统剪贴板监听、Unicode/ANSI Text、HTML、RTF、DIB、File List、格式清单、来源进程和自写事件抑制；测试集合禁用并行，非 Windows 自动跳过。
+- 交互式桌面测试：外部应用复制、前台恢复、自动粘贴和权限边界。实际结果记录在 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`，不能由 fake 或 Headless 测试替代。
+
 ## 4. 测试数据安全
 
 测试样本只能使用生成数据，禁止把真实剪贴板历史、WebDAV 密码、恢复码和真实令牌提交到仓库。测试失败输出正文时必须截断并脱敏。
@@ -47,4 +53,4 @@ Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTest
 - 1487 x 1058 真实 Skia 窗口渲染和稳定截图。
 - 从渲染窗口输入搜索文本、激活代码筛选和切换紧凑模式。
 
-尚未覆盖托盘、原生全局快捷键、多显示器、DPI、辅助技术和真实系统剪贴板；这些必须在目标平台实机测试中补齐。
+当前全量 38 项测试中，Windows 平台项目 21 项，Desktop Headless 7 项。真实 Windows 剪贴板自动集成已覆盖，但托盘、原生全局快捷键、多显示器、DPI、辅助技术、管理员目标和完整外部应用矩阵仍需目标平台实机补齐。

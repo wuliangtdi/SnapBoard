@@ -408,6 +408,7 @@
           "SnapBoard.Domain": "[1.0.0, )",
           "SnapBoard.Infrastructure": "[1.0.0, )",
           "SnapBoard.Platform.Abstractions": "[1.0.0, )",
+          "SnapBoard.Platform.Windows": "[1.0.0, )",
           "SnapBoard.Sync.Contracts": "[1.0.0, )",
           "SnapBoard.Sync.WebDav": "[1.0.0, )"
         }
@@ -429,6 +430,13 @@
         "type": "Project",
         "dependencies": {
           "SnapBoard.Domain": "[1.0.0, )"
+        }
+      },
+      "snapboard.platform.windows": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Domain": "[1.0.0, )",
+          "SnapBoard.Platform.Abstractions": "[1.0.0, )"
         }
       },
       "snapboard.sync.contracts": {

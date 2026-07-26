@@ -23,4 +23,7 @@
     <Project Path="tests/SnapBoard.Platform.Windows.Tests/SnapBoard.Platform.Windows.Tests.csproj" />
     <Project Path="tests/SnapBoard.Sync.WebDav.Tests/SnapBoard.Sync.WebDav.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/SnapBoard.WindowsClipboardProbe/SnapBoard.WindowsClipboardProbe.csproj" />
+  </Folder>
 </Solution>

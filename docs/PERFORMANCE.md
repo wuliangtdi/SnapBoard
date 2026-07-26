@@ -70,6 +70,7 @@ dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests
 
 - Release 构建：0 警告、0 错误。
 - `osx-arm64` Native AOT：已成功发布。
+- `win-x64` Native AOT：已在 Windows 11 x64 本机成功发布，0 个 AOT/裁剪警告。
 - 依赖漏洞：当前直接与传递包未发现已知漏洞。
 
 ### 6.1 2026-07-26 命令中心可见窗口样本
@@ -90,3 +91,23 @@ dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests
 - Windows 11 的 Private Working Set/Private Bytes 和 macOS Physical Footprint 各三次样本。
 - 检查字体、位图、图标字典、Skia 表面、窗口缓存和未释放 View/Binding 对象的增量。
 - Ursa 增量：尚未测试，当前正式依赖图未引用 Ursa。
+
+### 6.2 2026-07-26 Windows 11 x64 可见窗口样本
+
+版本：`phase1/windows-clipboard` 本次提交工作树。构建为 Release、`win-x64`、self-contained Native AOT；产物 `SnapBoard.Desktop.exe` 为 26,828,288 字节，发布目录中不存在 `coreclr.dll` 或 `clrjit.dll`。主机为 Windows 11 Pro 10.0.28000、AMD Ryzen 9 7945HX、100,617,691,136 字节物理内存。
+
+采样脚本为 `scripts/windows/Measure-SnapBoardProcess.ps1`。每次启动独立进程，以 `MainWindowHandle != 0` 作为“进程冷启动到主窗口”终点，随后通过 `Win32_PerfFormattedData_PerfProc_Process` 每秒采集 30 秒。该方法不是重启/干净 VM 后的 OS-cold，也不是托盘常驻测量。
+
+```powershell
+scripts/windows/Measure-SnapBoardProcess.ps1 `
+  -ExecutablePath artifacts/publish/win-x64-aot-final/SnapBoard.Desktop.exe `
+  -Runs 3 -SampleSeconds 30
+```
+
+| 轮次 | 启动到主窗口 | 峰值 Private Working Set | 峰值 Private Bytes | 峰值句柄 |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 489.82 ms | 184.38 MiB | 214.54 MiB | 1276 |
+| 2 | 279.49 ms | 207.12 MiB | 239.21 MiB | 1275 |
+| 3 | 280.25 ms | 218.20 MiB | 250.13 MiB | 1272 |
+
+结论：本轮只验证可见主窗口，三次 Private Working Set 峰值均超过 120 MiB 失败线，不能宣称达到内存目标。当前尚未实现托盘和窗口卸载，因此没有“托盘常驻低于 100 MB”的有效样本；后续必须完成 UI 依赖 A/B、窗口关闭回落和 10 分钟托盘场景。
