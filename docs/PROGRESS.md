@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-27
-> 当前阶段：Phase 1.2/1.3 Windows 收口进行中；macOS 原生剪贴板适配器已合入 `main`
+> 当前阶段：Phase 2 macOS 桌面生命周期与发布验证收口中；Phase 1 后续项保留
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -15,7 +15,7 @@
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI 写回与自动粘贴及 10,000 次功能压力通过；外部应用矩阵和资源增长预算未完成 |
 | Phase 1.4-1.8 | 未开始 | 数据、搜索、快速粘贴、WebDAV 和发布待后续执行 |
-| Phase 2 macOS | 进行中 | arm64 原生监听、格式读写、目标恢复、自动粘贴及权限降级已合入 `main`；桌面生命周期与发布链路待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、生命周期、菜单栏、自定义快捷键、Keychain 与本地 DMG/PKG 已验证；登录启动交互、Intel、Developer ID、公证和环境矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -46,7 +46,7 @@
 - [ ] 在 Windows Runner 完成 `win-x64` Native AOT 发布。
 - [x] 在 Windows 11 实机启动 `win-x64` AOT 壳并记录冷启动、Private Working Set、Private Bytes 和句柄。
 - [ ] 完成 Ursa 与纯 Avalonia 的 A/B 基准，决定是否引入运行时依赖。
-- [~] 已将品牌图标转换为透明 Windows 多尺寸 `.ico`，并接入 EXE、标题栏、任务栏和托盘；macOS `.icns`、应用标识和签名配置待完成。
+- [~] 已从现有透明品牌图生成 Windows 多尺寸 `.ico` 和 macOS 标准 `.icns`，并接入 EXE/App Bundle、标题栏、Dock/Finder 与托盘/Template 状态图标；Developer ID 正式签名身份待配置。
 - [ ] 优化可见窗口内存，完成纯 Avalonia、Material Icons、Ursa 和最终壳的可重复 A/B 测量。
 
 ## 3. 已验证基线
@@ -55,11 +55,12 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | Windows 11 共 79 项：74 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 项目 37/37，Desktop Headless 14/14 |
-| `osx-arm64` Native AOT | 通过 | arm64 Mach-O 可执行文件 23,906,928 字节，剥离后发布目录约 91.68 MiB；0 个 AOT/裁剪警告并实际启动三次 |
+| 全量自动测试 | 通过 | macOS arm64 共 103 项：96 项通过、7 项 Windows 原生测试按平台跳过、0 项失败；macOS 36/36，Desktop Headless 21/21 |
+| `osx-arm64` Native AOT | 通过 | App Bundle 内 arm64 Mach-O 为 24,430,144 字节；0 个 AOT/裁剪警告，裸产物与 DMG 挂载 Bundle 均已实际启动 |
 | `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 27,746,304 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | AOT 三次可见窗口峰值 PWS 84.47/85.12/109.50 MiB；关闭窗口后最终 PWS 66.22/66.86/130.38 MiB，最终 Private Bytes 130.67/140.51/180.64 MiB，不能声称常驻低于 100 MB |
+| macOS 窗口/后台内存 | 未达标 | 最终 AOT 三次可见窗口峰值 Physical Footprint 205.63/206.16/205.44 MiB；关闭全部窗口 3 秒后为 107.81/107.53/107.64 MiB，仍高于 100 MB |
 
 ## 4. 重要发现
 
@@ -79,7 +80,7 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
 
 第 2 版命令中心已按 1487 x 1058 参考画布完成视觉对照，最终报告见根目录 `design-qa.md`。Avalonia Headless 使用真实 Skia 渲染器产出稳定截图，不依赖宿主桌面和显示器缩放。
 
-2026-07-27 重新发布最终 macOS arm64 AOT 后，三次可见窗口峰值 Physical Footprint 为 194.78/194.74/194.94 MiB，Lifetime Peak 为 198.64/198.75/198.72 MiB。2026-07-26 的 152.5 MB 单次数据仅保留为历史样本，不能替代本轮复测。结果明显高于项目目标，不能解释为“已满足 100 MB”；当前没有实现菜单栏常驻和窗口卸载，因此仍不能测量正式的“托盘常驻、窗口关闭”场景。
+2026-07-27 完成 macOS 桌面生命周期与单实例所有权锁后重新发布最终 arm64 AOT，三次可见窗口峰值 Physical Footprint 为 205.63/206.16/205.44 MiB；关闭全部窗口并保持菜单栏进程 3 秒后为 107.81/107.53/107.64 MiB，Physical Footprint 回落 97.81/98.62/97.80 MiB。该短样本证明窗口可释放并后台常驻，但不是 10 分钟或 8 小时长稳，且仍高于 100 MB 目标。2026-07-26 的 152.5 MB 和 Phase 2.1 的约 195 MiB 数据仅保留为历史样本，不能替代本轮复测。
 
 ### 4.5 Windows 剪贴板与 AOT 基线
 
@@ -99,13 +100,21 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
 
 设置窗口已复用主窗口的品牌图、白色表面、浅灰背景、蓝色主命令、图标和 6 px 圆角体系。Release XAML 构建、640 x 520 Headless/Skia 真实帧、创建/重建、自定义快捷键录入与应用均通过；JIT 和 Native AOT 设置窗口已实际启动。Windows 桌面截图组件因本机 D3D11 设备暂停错误 `0x887A0005` 未取得桌面合成截图，但 Headless PNG 已完成视觉复核；物理按键仍保留为交互验收项。
 
+### 4.8 macOS 桌面生命周期、权限与发布
+
+macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道、带确认的第二实例命令、Carbon 全局快捷键、ServiceManagement 登录启动、AppKit Template 状态项、Accessibility 权限服务、Security.framework Keychain 服务和窗口原生定位。Desktop 生命周期协调器只依赖平台抽象，主窗口、快速窗口和设置窗口按需创建、关闭释放并可重复打开；最后窗口关闭不退出应用，状态菜单可暂停/恢复记录并明确退出。AppKit 调用统一切入 Avalonia UI 线程，状态项及窗口原生对象使用成对 retain/release。
+
+实机已验证关闭全部窗口后进程和状态项继续存在、第二实例复用原进程并打开主窗口、三类窗口重复关闭/重建、菜单打开主/快速/设置窗口、暂停/恢复记录和菜单退出。默认 `Command+Shift+V` 及自定义 `Option+Control+A` 均由系统真实按键事件打开快速窗口；自定义配置重启后仍注册，最后恢复默认。快速窗口打开前保存目标应用，既有 TextEdit 恢复与自动粘贴结果继续有效。设置页仅显示 Command/Option/Control/Shift、登录启动、辅助功能和 Bundle 能力，不显示 Windows 术语。
+
+稳定 Bundle ID 为 `com.wuliangtdi.snapboard`，标准 `.icns` 和浅色/深色 Template 状态图标已接入。最终 `osx-arm64` DMG 校验通过，挂载后的 App Bundle 实际后台启动并显示状态项，PKG 可展开；应用使用 Hardened Runtime ad-hoc 签名，PKG 未签名。当前钥匙串没有 Developer ID Application/Installer 身份，也未配置公证凭据，因此正式签名、Gatekeeper 接受和公证均未执行，不能标记完成。
+
 ## 5. 下一执行顺序
 
-1. 补齐 Windows 托盘菜单点击、物理热键、多显示器/DPI、真实开机启动和 8 小时后台常驻验收。
-2. 在隔离测试数据下完成 Explorer、Chrome/Edge/Firefox，并在用户明确允许后验证管理员窗口/UIPI；Office 和远程桌面只记录实际执行结果。
-3. 分析 10,000 次压力测试的 Private Bytes 增长，完成 10 分钟与 8 小时资源增长门槛。
-4. 进入 Phase 1.4 SQLite Schema、迁移、单写队列、Blob、FTS5 和策略链。
-5. 在 GitHub 上验证 Windows/macOS/Linux CI 与 AOT Job，并继续保留 macOS Intel、签名、公证和桌面生命周期待办。
+1. 在用户确认会修改系统设置后，实测 macOS 登录启动启用/禁用与重新登录，以及辅助功能撤销、拒绝和同一稳定签名身份重新授权。
+2. 在具备相应硬件/场景时验证睡眠唤醒、多 Space、多显示器、Retina、全屏应用、Office、远程桌面和可见 Terminal UI。
+3. 配置 Developer ID Application/Installer 与公证凭据，在 GitHub macOS arm64/x64 Runner 分别执行 locked restore、AOT、签名、公证和 Release；不得由 arm64 推断 x64。
+4. 分析 macOS 10,000 次压力测试约 15.05 MiB RSS、+2 线程、+2 文件描述符以及后台超过 100 MB 的原因，完成 10 分钟和 8 小时长稳。
+5. 继续 Windows 未完成验收并进入 Phase 1.4 SQLite Schema、迁移、单写队列、Blob、FTS5 和策略链。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -173,7 +182,7 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
 ```text
 日期：2026-07-27
 阶段/任务：Phase 2.1 macOS 原生剪贴板适配器、写回与自动粘贴权限闭环
-状态：[~] 核心平台能力完成；菜单栏、设置引导、Keychain、Intel 与发布链路未完成
+状态：[~] 当时核心平台能力完成；当时菜单栏、设置引导、Keychain、Intel 与发布链路未完成，后续状态见第 10 节
 完成内容：
   - 新增显式 AppKit/Objective-C Runtime/CoreGraphics/Accessibility 互操作，不引入 Xamarin.Mac、MAUI、Mac Catalyst 或运行时程序集扫描。
   - 使用 NSPasteboard changeCount、有界 Channel、可取消轮询和 100/500 ms 退避；轮询 tick 不读取正文、不访问 SQLite/网络。
@@ -227,7 +236,39 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
   - 托盘菜单点击、物理热键、多显示器/DPI、真实开机启动、Explorer、浏览器、管理员窗口、Office 和远程桌面未完成。
 ```
 
-## 10. 更新规则
+## 10. 2026-07-27 执行记录：macOS 桌面生命周期与发布验证
+
+```text
+日期：2026-07-27
+阶段/任务：Phase 2 macOS 桌面生命周期、自定义快捷键、权限、Keychain 与发布链路
+状态：[~] 核心实现和 arm64 本机验证完成；正式签名/公证、Intel 与环境矩阵未完成
+完成内容：
+  - 实现单实例、第二实例激活、后台常驻、三类窗口按需创建/释放、状态菜单、暂停和明确退出。
+  - 实现 Carbon 自定义快捷键直接录入、冲突回滚、默认恢复和持久化；UI 使用 macOS 修饰键名称。
+  - 实现设置页辅助功能状态/受限模式、用户触发的授权入口、ServiceManagement 登录启动能力和 Keychain 密钥服务。
+  - 从现有透明品牌图生成标准 ICNS，接入 App Bundle/Dock/Finder/窗口图标和 Template 状态图标。
+  - 增加 arm64/x64 独立 CI/Release 路径、Hardened Runtime、Developer ID/公证门槛及 DMG/PKG 脚本。
+验证结果：
+  - .NET SDK 10.0.302；locked restore、Release build、format 校验、漏洞审计均通过。
+  - 全量 103 项：96 项通过、7 项 Windows 原生测试按平台跳过、0 项失败；macOS 36/36、Desktop Headless 21/21。
+  - osx-arm64 Native AOT 为 24,430,144 字节 arm64 Mach-O，0 个 AOT/裁剪警告；裸产物和 DMG 内 App Bundle 均实际启动。
+  - 菜单栏、关闭窗口后台常驻、第二实例、自定义快捷键及重启持久化、暂停/恢复、三类窗口重开和明确退出实测通过。
+  - 当前辅助功能权限显示已授权；独立 ad-hoc 拒绝降级沿用 Phase 2.1 实测。Keychain 临时密钥新增/读取/删除通过。
+  - 10,000 次原生事件：Write/Read/Marker/Feedback/Dropped 均为 0 失败；RSS 61.36 -> 76.41 MiB，线程 18 -> 20，FD 50 -> 52。
+性能数据：
+  - 启动到主窗口：764.83/627.65/565.32 ms。
+  - 可见峰值 Physical Footprint：205.63/206.16/205.44 MiB；RSS：170.50/170.25/170.36 MiB。
+  - 关闭窗口 3 秒后 Physical Footprint：107.81/107.53/107.64 MiB；RSS：172.25/171.86/172.03 MiB。
+  - 平均 CPU：0.023/0.026/0.023%；能耗：85.471/101.381/97.013 mJ；wakeups：406/415/419。
+发布结果：
+  - DMG/PKG 本机生成；DMG 校验及挂载启动通过；Bundle 使用 ad-hoc Hardened Runtime 签名，PKG 未签名，公证跳过。
+限制：
+  - 未实测登录启动开关/重新登录、权限撤销后重授予、睡眠唤醒、多 Space、多显示器、Retina、全屏、Office、远程桌面或可见 Terminal UI。
+  - 主机只有一台 1920 x 1080 非 Retina 显示器；后台 Physical Footprint 仍超过 100 MB，10,000 次资源增长也未满足严格预算。
+  - 本机没有 Developer ID 身份/公证凭据，未执行正式签名、公证或 Gatekeeper 接受验证；osx-x64 未发布、未启动。
+```
+
+## 11. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

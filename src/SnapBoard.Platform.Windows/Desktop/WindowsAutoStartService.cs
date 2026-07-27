@@ -24,6 +24,8 @@ public sealed class WindowsAutoStartService : IAutoStartService
             : $"\"{executablePath}\" --background";
     }
 
+    public AutoStartAvailability Availability => AutoStartAvailability.Available;
+
     public bool IsEnabled()
     {
         if (_command.Length == 0)

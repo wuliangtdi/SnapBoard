@@ -42,12 +42,22 @@
 - 所有协议 DTO 具有版本、大小上限和字段验证。
 - 解密成功不代表内容可信；解压比、长度、哈希和 MIME 仍需校验。
 
-## 7. 依赖安全
+## 7. macOS 权限、身份与 Keychain
+
+- 辅助功能状态刷新只调用无提示的预检 API；只有设置页中用户主动执行“请求权限”或“打开系统设置”命令时，平台服务才请求 TCC 或跳转系统设置。应用启动、窗口打开和后台轮询不得自动弹出权限提示。
+- 权限拒绝、撤销、目标恢复失败或事件注入失败不阻止剪贴板写入；结果进入受限模式并提示用户手动粘贴。UI 只消费平台无关状态，不直接引用 Accessibility、CoreGraphics 或 AppKit。
+- App Bundle Identifier 固定为 `com.wuliangtdi.snapboard`。开发裸程序明确标记为开发身份，不把它的 TCC/登录启动状态当成正式 Bundle 状态；撤销和重新授权必须使用相同 Bundle ID 与稳定 Developer ID 签名身份实测。
+- `MacOSKeychainSecretStore` 使用 Security.framework Generic Password 项，Service 固定为 `com.wuliangtdi.snapboard`，账户名经过长度与控制字符校验，单项上限 64 KiB。新增、读取、覆盖和删除返回结构化状态，临时明文缓冲区使用后清零，不回退为 JSON、plist 或其他明文凭据文件。
+- 正式包的 entitlement 集为空并启用 Hardened Runtime；本机 ad-hoc 验证包因 Native AOT 原生库加载仅使用独立的 `disable-library-validation` entitlement。正式发布不得沿用该本地 entitlement，且 Developer ID Application、Developer ID Installer 和公证凭据必须同时存在才允许进入正式签名路径。
+
+本轮当前 App Bundle 的辅助功能状态为已授权，Keychain 临时密钥新增/读取/删除已通过。为避免未经确认修改系统安全和登录项，没有执行同一身份撤销后重新授权或登录启动开关；本机也没有 Developer ID 身份和公证凭据，因此只验证了 ad-hoc Hardened Runtime、未签名 PKG 和公证跳过路径。
+
+## 8. 依赖安全
 
 NuGet restore 开启漏洞审计并将警告视为错误。Microsoft.Data.Sqlite 10.0.10 的原始传递依赖会选择已公告的 SQLitePCLRaw 2.1.11，仓库显式固定 `SQLitePCLRaw.bundle_e_sqlite3 2.1.12`，测试要求 SQLite >= 3.50.2。
 
 Dependabot 每周检查 NuGet 和 GitHub Actions。升级原生依赖后必须重新执行三个平台的 AOT、数据库版本和基本 CRUD 测试。
 
-## 8. 报告漏洞
+## 9. 报告漏洞
 
 GitHub 仓库创建后启用 Private Vulnerability Reporting。正式发布前在 README 和 `SECURITY.md` 补充受支持版本和私密联系渠道，禁止要求报告者在公开 Issue 中粘贴敏感剪贴板样本。

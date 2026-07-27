@@ -24,6 +24,31 @@ public sealed class MacOSClipboardEventQueueTests
         Assert.Equal(1, queue.DroppedEventCount);
     }
 
+    [Fact]
+    public async Task TenThousandEventsAreAccountedForWithoutBlockingProducer()
+    {
+        const int eventCount = 10_000;
+        const int capacity = 256;
+        MacOSClipboardEventQueue queue = new(capacity);
+
+        for (ulong sequence = 1; sequence <= eventCount; sequence++)
+        {
+            Assert.True(queue.TryWrite(Change(sequence)));
+        }
+
+        queue.Complete();
+        List<ulong> retainedSequences = [];
+        await foreach (ClipboardChangedEvent change in queue.ReadAllAsync(CancellationToken.None))
+        {
+            retainedSequences.Add(change.SequenceNumber);
+        }
+
+        Assert.Equal(capacity, retainedSequences.Count);
+        Assert.Equal((ulong)(eventCount - capacity + 1), retainedSequences[0]);
+        Assert.Equal((ulong)eventCount, retainedSequences[^1]);
+        Assert.Equal(eventCount, retainedSequences.Count + queue.DroppedEventCount);
+    }
+
     private static ClipboardChangedEvent Change(ulong sequence) =>
         new(sequence, DateTimeOffset.UnixEpoch);
 }

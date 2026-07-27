@@ -14,6 +14,7 @@ public static class TestAppBuilder
     public static AppBuilder BuildAvaloniaApp()
     {
         App.EnableNativeWindowsLifecycle = false;
+        App.EnableNativeMacOSLifecycle = false;
         return AppBuilder.Configure<App>()
             .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions

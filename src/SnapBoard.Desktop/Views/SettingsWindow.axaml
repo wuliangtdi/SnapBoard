@@ -120,7 +120,7 @@
                                         Width="40"
                                         Height="40"
                                         Command="{Binding RestoreDefaultHotKeyCommand}"
-                                        ToolTip.Tip="恢复默认快捷键 Ctrl+Shift+V">
+                                        ToolTip.Tip="{Binding DefaultHotKeyToolTip}">
                                     <materialIcons:MaterialIcon Width="18" Height="18" Kind="Restore" />
                                 </Button>
                             </Grid>
@@ -153,7 +153,7 @@
                                         Margin="10,0,0,0"
                                         VerticalAlignment="Center"
                                         Spacing="3">
-                                <TextBlock FontWeight="SemiBold" Text="开机启动" />
+                                <TextBlock FontWeight="SemiBold" Text="登录启动" />
                                 <TextBlock FontSize="12"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="{Binding AutoStartStatus}" />
@@ -161,6 +161,7 @@
                             <ToggleSwitch Grid.Column="2"
                                           Classes="settings-toggle"
                                           VerticalAlignment="Center"
+                                          IsEnabled="{Binding IsAutoStartAvailable}"
                                           IsChecked="{Binding IsAutoStartEnabled, Mode=TwoWay}"
                                           OffContent="未开启"
                                           OnContent="已开启" />
@@ -172,6 +173,75 @@
                            FontSize="12"
                            Foreground="{DynamicResource TertiaryTextBrush}"
                            Text="快捷键至少需要一个修饰键；冲突时会保留原有配置。" />
+
+                <StackPanel Margin="0,12,0,0"
+                            Spacing="10"
+                            IsVisible="{Binding IsPermissionSectionVisible}">
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="权限与受限模式" />
+                    <Border Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Grid Margin="20,17" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+                            <Border Width="36"
+                                    Height="36"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource SelectionSurfaceBrush}">
+                                <materialIcons:MaterialIcon Width="20"
+                                                            Height="20"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{DynamicResource AccentBrush}"
+                                                            Kind="ShieldKeyOutline" />
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Margin="10,0,12,0"
+                                        Spacing="3">
+                                <TextBlock FontWeight="SemiBold" Text="辅助功能权限" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding AccessibilityPermissionStatus}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{DynamicResource TertiaryTextBrush}"
+                                           Text="{Binding ApplicationIdentityStatus}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                <Button Classes="primary-command"
+                                        Command="{Binding RequestAccessibilityPermissionCommand}"
+                                        ToolTip.Tip="请求辅助功能权限">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="ShieldCheckOutline" />
+                                        <TextBlock VerticalAlignment="Center" Text="请求授权" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="icon"
+                                        Width="40"
+                                        Height="40"
+                                        Command="{Binding OpenAccessibilitySettingsCommand}"
+                                        ToolTip.Tip="打开系统设置">
+                                    <materialIcons:MaterialIcon Width="18" Height="18" Kind="OpenInNew" />
+                                </Button>
+                            </StackPanel>
+                            <Border Grid.Row="1"
+                                    Grid.Column="1"
+                                    Grid.ColumnSpan="2"
+                                    Margin="10,14,0,0"
+                                    Padding="10,7"
+                                    Background="{DynamicResource HoverSurfaceBrush}"
+                                    CornerRadius="5"
+                                    IsVisible="{Binding IsRestrictedMode}">
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="自动粘贴不可用；复制和手动粘贴保持可用。" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 
@@ -183,7 +253,7 @@
                 <TextBlock VerticalAlignment="Center"
                            FontSize="12"
                            Foreground="{DynamicResource SecondaryTextBrush}"
-                           Text="设置会保存在当前 Windows 用户下" />
+                           Text="{Binding SettingsScopeDescription}" />
                 <Button Grid.Column="1"
                         Classes="primary-command"
                         VerticalAlignment="Center"

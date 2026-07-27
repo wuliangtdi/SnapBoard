@@ -5,6 +5,10 @@
     <ProjectReference Include="..\SnapBoard.Domain\SnapBoard.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

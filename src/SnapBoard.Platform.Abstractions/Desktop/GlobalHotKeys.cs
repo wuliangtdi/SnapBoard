@@ -8,6 +8,7 @@ public enum GlobalHotKeyModifiers : uint
     Control = 0x0002,
     Shift = 0x0004,
     Windows = 0x0008,
+    Meta = Windows,
     NoRepeat = 0x4000,
 }
 
@@ -16,10 +17,17 @@ public readonly record struct GlobalHotKeyGesture(
     uint VirtualKey,
     string DisplayName)
 {
-    public static GlobalHotKeyGesture Default { get; } = new(
+    public static GlobalHotKeyGesture WindowsDefault { get; } = new(
         GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Shift | GlobalHotKeyModifiers.NoRepeat,
         0x56,
         "Ctrl+Shift+V");
+
+    public static GlobalHotKeyGesture MacOSDefault { get; } = new(
+        GlobalHotKeyModifiers.Meta | GlobalHotKeyModifiers.Shift | GlobalHotKeyModifiers.NoRepeat,
+        0x09,
+        "Command+Shift+V");
+
+    public static GlobalHotKeyGesture Default => WindowsDefault;
 }
 
 public enum GlobalHotKeyRegistrationStatus
@@ -55,6 +63,10 @@ public interface IGlobalHotKeyService : IAsyncDisposable
     GlobalHotKeyGesture? CurrentGesture { get; }
 
     GlobalHotKeyGesture ConfiguredGesture { get; }
+
+    GlobalHotKeyGesture DefaultGesture { get; }
+
+    string ModifierDisplayNames { get; }
 
     GlobalHotKeyGestureCreationResult CreateGesture(
         GlobalHotKeyModifiers modifiers,

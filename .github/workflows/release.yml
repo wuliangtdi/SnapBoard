@@ -23,9 +23,6 @@ jobs:
           - os: windows-latest
             rid: win-x64
             archive: SnapBoard-win-x64.zip
-          - os: macos-latest
-            rid: osx-arm64
-            archive: SnapBoard-osx-arm64.tar.gz
           - os: ubuntu-latest
             rid: linux-x64
             archive: SnapBoard-linux-x64.tar.gz
@@ -39,6 +36,9 @@ jobs:
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 
+      - name: Restore locked dependencies
+        run: dotnet restore SnapBoard.slnx --locked-mode
+
       - name: Publish Native AOT
         shell: bash
         run: |
@@ -50,6 +50,7 @@ jobs:
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \
+            --no-restore \
             -p:PublishAot=true \
             -p:Version="$version" \
             -o artifacts/publish/${{ matrix.rid }}
@@ -78,9 +79,128 @@ jobs:
             artifacts/${{ matrix.archive }}.sha256
           if-no-files-found: error
 
+  macos-package:
+    name: Package ${{ matrix.rid }} App Bundle
+    runs-on: ${{ matrix.os }}
+    env:
+      APP_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+      APP_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+      APP_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+      INSTALLER_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_BASE64 }}
+      INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD }}
+      INSTALLER_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
+      KEYCHAIN_PASSWORD: ${{ secrets.APPLE_BUILD_KEYCHAIN_PASSWORD }}
+      NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_ID }}
+      NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+      NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Validate Apple release credentials
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          required=(
+            APP_CERTIFICATE APP_CERTIFICATE_PASSWORD APP_SIGN_IDENTITY
+            INSTALLER_CERTIFICATE INSTALLER_CERTIFICATE_PASSWORD INSTALLER_SIGN_IDENTITY
+            KEYCHAIN_PASSWORD NOTARY_APPLE_ID NOTARY_PASSWORD NOTARY_TEAM_ID
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} != 0 )); then
+            printf 'Missing required Apple release secret: %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
+      - name: Import Apple signing identities
+        if: env.APP_CERTIFICATE != ''
+        shell: bash
+        run: |
+          keychain="$RUNNER_TEMP/snapboard-signing.keychain-db"
+          app_certificate="$RUNNER_TEMP/developer-id-application.p12"
+          printf '%s' "$APP_CERTIFICATE" | base64 -D > "$app_certificate"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$app_certificate" -k "$keychain" -P "$APP_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          if [[ -n "$INSTALLER_CERTIFICATE" ]]; then
+            installer_certificate="$RUNNER_TEMP/developer-id-installer.p12"
+            printf '%s' "$INSTALLER_CERTIFICATE" | base64 -D > "$installer_certificate"
+            security import "$installer_certificate" -k "$keychain" -P "$INSTALLER_CERTIFICATE_PASSWORD" -T /usr/bin/productsign
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain"
+
+      - name: Configure notarization profile
+        if: env.NOTARY_APPLE_ID != ''
+        shell: bash
+        run: |
+          xcrun notarytool store-credentials snapboard-ci \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --team-id "$NOTARY_TEAM_ID"
+
+      - name: Build App Bundle, DMG, and PKG
+        shell: bash
+        run: |
+          version="0.0.0-dev"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ -n "$APP_SIGN_IDENTITY" ]]; then
+            export SNAPBOARD_SIGN_IDENTITY="$APP_SIGN_IDENTITY"
+          fi
+          if [[ -n "$INSTALLER_SIGN_IDENTITY" ]]; then
+            export SNAPBOARD_INSTALLER_IDENTITY="$INSTALLER_SIGN_IDENTITY"
+          fi
+          if [[ -n "$NOTARY_APPLE_ID" ]]; then
+            export SNAPBOARD_NOTARY_PROFILE="snapboard-ci"
+          fi
+          mkdir -p "artifacts/macos/${{ matrix.rid }}"
+          scripts/macos/Package-SnapBoard.sh \
+            --runtime "${{ matrix.rid }}" \
+            --version "$version" \
+            --build-number "$GITHUB_RUN_NUMBER" \
+            --output "artifacts/macos/${{ matrix.rid }}" \
+            | tee "artifacts/macos/${{ matrix.rid }}/package-result-${{ matrix.rid }}.txt"
+
+      - name: Remove temporary signing keychain
+        if: always() && env.APP_CERTIFICATE != ''
+        shell: bash
+        run: security delete-keychain "$RUNNER_TEMP/snapboard-signing.keychain-db" || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.rid }}
+          path: |
+            artifacts/macos/${{ matrix.rid }}/SnapBoard-${{ matrix.rid }}.dmg
+            artifacts/macos/${{ matrix.rid }}/SnapBoard-${{ matrix.rid }}.pkg
+            artifacts/macos/${{ matrix.rid }}/SnapBoard-${{ matrix.rid }}.sha256
+            artifacts/macos/${{ matrix.rid }}/package-result-${{ matrix.rid }}.txt
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs: [package, macos-package]
     runs-on: ubuntu-latest
 
     steps:
@@ -95,4 +215,13 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/* --generate-notes --verify-tag
+        shell: bash
+        run: |
+          mapfile -t release_files < <(
+            find artifacts -type f ! -name 'package-result-*.txt' -print | sort
+          )
+          if (( ${#release_files[@]} == 0 )); then
+            echo "No release artifacts were downloaded." >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" "${release_files[@]}" --generate-notes --verify-tag

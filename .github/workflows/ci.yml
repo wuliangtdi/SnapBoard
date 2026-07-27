@@ -55,6 +55,8 @@ jobs:
             rid: win-x64
           - os: macos-latest
             rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
           - os: ubuntu-latest
             rid: linux-x64
 
@@ -67,12 +69,16 @@ jobs:
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 
+      - name: Restore locked dependencies
+        run: dotnet restore SnapBoard.slnx --locked-mode
+
       - name: Publish Native AOT shell
         run: >-
           dotnet publish src/SnapBoard.Desktop/SnapBoard.Desktop.csproj
           --configuration Release
           --runtime ${{ matrix.rid }}
           --self-contained true
+          --no-restore
           -p:PublishAot=true
           -p:Version=0.0.0-ci
           -o artifacts/${{ matrix.rid }}

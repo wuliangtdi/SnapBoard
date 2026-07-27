@@ -2,17 +2,9 @@ using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Security.Principal;
+using SnapBoard.Platform.Abstractions.Desktop;
 
 namespace SnapBoard.Platform.Windows.Desktop;
-
-public enum SingleInstanceCommand : byte
-{
-    ActivateMainWindow = 1,
-    ShowQuickWindow = 2,
-    ShowSettingsWindow = 3,
-    Exit = 4,
-    RemainInBackground = 5,
-}
 
 /// <summary>
 /// Windows 单实例协调器。互斥量只负责进程所有权，命名管道只传递固定的一字节命令，

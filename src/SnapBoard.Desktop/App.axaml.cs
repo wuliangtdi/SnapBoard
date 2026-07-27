@@ -13,9 +13,12 @@ namespace SnapBoard.Desktop;
 public partial class App : AvaloniaApplication, IDisposable
 {
     private ServiceProvider? _services;
+    private MacOSDesktopLifecycleCoordinator? _macOSLifecycle;
     private WindowsDesktopLifecycleCoordinator? _windowsLifecycle;
 
     internal static bool EnableNativeWindowsLifecycle { get; set; } = true;
+
+    internal static bool EnableNativeMacOSLifecycle { get; set; } = true;
 
     public override void Initialize()
     {
@@ -49,6 +52,34 @@ public partial class App : AvaloniaApplication, IDisposable
                 return;
             }
 
+            if (OperatingSystem.IsMacOS() && EnableNativeMacOSLifecycle)
+            {
+                bool launchedAsLoginItem = _services
+                    .GetRequiredService<ILaunchContextService>()
+                    .WasLaunchedAsLoginItem();
+                DesktopStartupMode startupMode = Program.GetStartupMode(
+                    desktop.Args,
+                    launchedAsLoginItem);
+                _macOSLifecycle = new MacOSDesktopLifecycleCoordinator(
+                    new AvaloniaDesktopApplicationLifetime(desktop),
+                    _services.GetRequiredService<MainViewModel>(),
+                    _services.GetRequiredService<IClipboardWriter>(),
+                    _services.GetRequiredService<IAutomaticPasteService>(),
+                    _services.GetRequiredService<IGlobalHotKeyService>(),
+                    _services.GetRequiredService<IAutoStartService>(),
+                    _services.GetRequiredService<IAccessibilityPermissionService>(),
+                    _services.GetRequiredService<IPlatformWindowPlacementService>(),
+                    _services.GetRequiredService<IDesktopMenuBarService>(),
+                    _services.GetRequiredService<ClipboardCaptureCoordinator>(),
+                    Program.MacSingleInstanceCoordinator);
+                _macOSLifecycle.Initialize(startupMode);
+                desktop.Exit += OnDesktopExit;
+
+                base.OnFrameworkInitializationCompleted();
+                _macOSLifecycle.CompleteStartup(startupMode);
+                return;
+            }
+
             desktop.MainWindow = new MainWindow
             {
                 DataContext = _services.GetRequiredService<MainViewModel>(),
@@ -68,7 +99,12 @@ public partial class App : AvaloniaApplication, IDisposable
         {
             _windowsLifecycle?.Dispose();
         }
+        else if (OperatingSystem.IsMacOS())
+        {
+            _macOSLifecycle?.Dispose();
+        }
 
+        _macOSLifecycle = null;
         _windowsLifecycle = null;
         _services?.Dispose();
         _services = null;

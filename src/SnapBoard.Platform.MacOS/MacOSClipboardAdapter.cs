@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.MacOS.Clipboard;
+using SnapBoard.Platform.MacOS.Desktop;
 
 namespace SnapBoard.Platform.MacOS;
 
@@ -20,6 +22,7 @@ public sealed class MacOSClipboardAdapter :
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly MacOSClipboardSettings _settings;
     private readonly IMacOSPasteboardNative _pasteboard;
+    private readonly IPlatformMainThreadDispatcher _dispatcher;
     private readonly IAsyncDelay _delay;
     private readonly MacOSClipboardEventQueue _eventQueue;
     private readonly MacOSClipboardFeedbackGuard _feedbackGuard = new();
@@ -31,7 +34,23 @@ public sealed class MacOSClipboardAdapter :
 
     [SupportedOSPlatform("macos")]
     public MacOSClipboardAdapter(MacOSClipboardOptions? options = null)
-        : this(CreateNativeDependencies(options ?? new MacOSClipboardOptions()))
+        : this(CreateNativeDependencies(
+            options ?? new MacOSClipboardOptions(),
+            DirectPlatformMainThreadDispatcher.Instance))
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            throw new PlatformNotSupportedException("The macOS clipboard adapter requires macOS.");
+        }
+    }
+
+    [SupportedOSPlatform("macos")]
+    public MacOSClipboardAdapter(
+        IPlatformMainThreadDispatcher dispatcher,
+        MacOSClipboardOptions? options = null)
+        : this(CreateNativeDependencies(
+            options ?? new MacOSClipboardOptions(),
+            dispatcher ?? throw new ArgumentNullException(nameof(dispatcher))))
     {
         if (!OperatingSystem.IsMacOS())
         {
@@ -44,7 +63,8 @@ public sealed class MacOSClipboardAdapter :
             dependencies.Settings,
             dependencies.Pasteboard,
             dependencies.PasteNative,
-            dependencies.Delay)
+            dependencies.Delay,
+            dependencies.Dispatcher)
     {
     }
 
@@ -52,13 +72,18 @@ public sealed class MacOSClipboardAdapter :
         MacOSClipboardSettings settings,
         IMacOSPasteboardNative pasteboard,
         IMacOSPasteNative pasteNative,
-        IAsyncDelay delay)
+        IAsyncDelay delay,
+        IPlatformMainThreadDispatcher? dispatcher = null)
     {
         _settings = settings;
         _pasteboard = pasteboard;
+        _dispatcher = dispatcher ?? DirectPlatformMainThreadDispatcher.Instance;
         _delay = delay;
         _eventQueue = new MacOSClipboardEventQueue(settings.EventQueueCapacity);
-        _automaticPaste = new MacOSAutomaticPaste(pasteNative, settings, delay);
+        _automaticPaste = new MacOSAutomaticPaste(
+            new MainThreadMacOSPasteNative(pasteNative, _dispatcher),
+            settings,
+            delay);
     }
 
     public long DroppedEventCount => _eventQueue.DroppedEventCount;
@@ -110,7 +135,7 @@ public sealed class MacOSClipboardAdapter :
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        return new ValueTask<ClipboardReadResult>(Task.Run(() =>
+        return _dispatcher.InvokeAsync(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             lock (_nativeGate)
@@ -118,7 +143,7 @@ public sealed class MacOSClipboardAdapter :
                 cancellationToken.ThrowIfCancellationRequested();
                 return _pasteboard.Read(change);
             }
-        }, cancellationToken));
+        }, cancellationToken);
     }
 
     public ValueTask<ClipboardWriteResult> WriteAsync(
@@ -128,7 +153,7 @@ public sealed class MacOSClipboardAdapter :
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(request);
 
-        return new ValueTask<ClipboardWriteResult>(Task.Run(() =>
+        return _dispatcher.InvokeAsync(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             lock (_nativeGate)
@@ -143,7 +168,7 @@ public sealed class MacOSClipboardAdapter :
 
                 return result;
             }
-        }, cancellationToken));
+        }, cancellationToken);
     }
 
     public ValueTask<ClipboardWriteResult> WritePlainTextAsync(
@@ -199,11 +224,8 @@ public sealed class MacOSClipboardAdapter :
         Exception? completionError = null;
         try
         {
-            long lastChangeCount;
-            lock (_nativeGate)
-            {
-                lastChangeCount = _pasteboard.GetChangeCount();
-            }
+            long lastChangeCount = await GetChangeCountAsync(cancellationToken)
+                .ConfigureAwait(false);
 
             MacOSPollingBackoff backoff = new(_settings);
             while (true)
@@ -212,11 +234,8 @@ public sealed class MacOSClipboardAdapter :
                     backoff.CurrentInterval,
                     cancellationToken).ConfigureAwait(false);
 
-                long currentChangeCount;
-                lock (_nativeGate)
-                {
-                    currentChangeCount = _pasteboard.GetChangeCount();
-                }
+                long currentChangeCount = await GetChangeCountAsync(cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (currentChangeCount == lastChangeCount)
                 {
@@ -268,11 +287,23 @@ public sealed class MacOSClipboardAdapter :
         }
     }
 
+    private ValueTask<long> GetChangeCountAsync(CancellationToken cancellationToken) =>
+        _dispatcher.InvokeAsync(() =>
+        {
+            lock (_nativeGate)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return _pasteboard.GetChangeCount();
+            }
+        }, cancellationToken);
+
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
     [SupportedOSPlatform("macos")]
-    private static NativeDependencies CreateNativeDependencies(MacOSClipboardOptions options)
+    private static NativeDependencies CreateNativeDependencies(
+        MacOSClipboardOptions options,
+        IPlatformMainThreadDispatcher dispatcher)
     {
         MacOSClipboardSettings settings = options.ToSettings();
         MacOSClipboardOriginMarker marker = new();
@@ -281,12 +312,14 @@ public sealed class MacOSClipboardAdapter :
             settings,
             new MacOSPasteboardNative(settings, marker),
             new MacOSPasteNative(),
-            delay);
+            delay,
+            dispatcher);
     }
 
     private sealed record NativeDependencies(
         MacOSClipboardSettings Settings,
         IMacOSPasteboardNative Pasteboard,
         IMacOSPasteNative PasteNative,
-        IAsyncDelay Delay);
+        IAsyncDelay Delay,
+        IPlatformMainThreadDispatcher Dispatcher);
 }

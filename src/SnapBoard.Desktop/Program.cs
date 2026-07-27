@@ -1,5 +1,7 @@
 using Avalonia;
 using SnapBoard.Desktop.Bootstrap;
+using SnapBoard.Platform.Abstractions.Desktop;
+using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.Windows.Desktop;
 
 namespace SnapBoard.Desktop;
@@ -7,6 +9,8 @@ namespace SnapBoard.Desktop;
 internal static class Program
 {
     internal static WindowsSingleInstanceCoordinator? SingleInstanceCoordinator { get; private set; }
+
+    internal static MacOSSingleInstanceCoordinator? MacSingleInstanceCoordinator { get; private set; }
 
     // Avalonia 启动前不能访问 UI、第三方组件或依赖 SynchronizationContext 的代码。
     // AOT、数据库和平台服务初始化统一放在 App 创建后的组合根中。
@@ -35,6 +39,28 @@ internal static class Program
 
             coordinator?.StartListening();
         }
+        else if (OperatingSystem.IsMacOS())
+        {
+            SingleInstanceCommand command = GetSingleInstanceCommand(args);
+            if (!MacOSSingleInstanceCoordinator.TryAcquire(
+                    "com.wuliangtdi.snapboard",
+                    command,
+                    out MacOSSingleInstanceCoordinator? coordinator,
+                    out bool primaryNotified))
+            {
+                return primaryNotified ? 0 : 2;
+            }
+
+            MacSingleInstanceCoordinator = coordinator;
+            if (command == SingleInstanceCommand.Exit)
+            {
+                coordinator?.Dispose();
+                MacSingleInstanceCoordinator = null;
+                return 0;
+            }
+
+            coordinator?.StartListening();
+        }
 
         try
         {
@@ -45,6 +71,10 @@ internal static class Program
             if (OperatingSystem.IsWindows())
             {
                 DisposeSingleInstanceCoordinator();
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                DisposeMacOSSingleInstanceCoordinator();
             }
         }
     }
@@ -59,7 +89,9 @@ internal static class Program
             .WithInterFont()
             .LogToTrace();
 
-    internal static DesktopStartupMode GetStartupMode(IReadOnlyList<string>? args)
+    internal static DesktopStartupMode GetStartupMode(
+        IReadOnlyList<string>? args,
+        bool launchedAsLoginItem = false)
     {
         if (args?.Contains("--background", StringComparer.OrdinalIgnoreCase) == true)
         {
@@ -74,6 +106,11 @@ internal static class Program
         if (args?.Contains("--settings", StringComparer.OrdinalIgnoreCase) == true)
         {
             return DesktopStartupMode.SettingsWindow;
+        }
+
+        if (launchedAsLoginItem)
+        {
+            return DesktopStartupMode.Background;
         }
 
         return DesktopStartupMode.MainWindow;
@@ -102,6 +139,11 @@ internal static class Program
             return SingleInstanceCommand.RemainInBackground;
         }
 
+        if (args.Contains("--close-windows", StringComparer.OrdinalIgnoreCase))
+        {
+            return SingleInstanceCommand.CloseWindows;
+        }
+
         return SingleInstanceCommand.ActivateMainWindow;
     }
 
@@ -110,5 +152,12 @@ internal static class Program
     {
         SingleInstanceCoordinator?.Dispose();
         SingleInstanceCoordinator = null;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("macos")]
+    private static void DisposeMacOSSingleInstanceCoordinator()
+    {
+        MacSingleInstanceCoordinator?.Dispose();
+        MacSingleInstanceCoordinator = null;
     }
 }

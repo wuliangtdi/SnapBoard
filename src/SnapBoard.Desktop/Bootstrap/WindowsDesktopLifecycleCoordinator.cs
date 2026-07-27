@@ -565,6 +565,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 break;
             case SingleInstanceCommand.RemainInBackground:
                 break;
+            case SingleInstanceCommand.CloseWindows:
+                CloseAllWindows();
+                break;
         }
     }
 

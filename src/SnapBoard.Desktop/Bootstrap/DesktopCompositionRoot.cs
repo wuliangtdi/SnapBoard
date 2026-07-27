@@ -3,7 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
+using SnapBoard.Platform.Abstractions.Security;
 using SnapBoard.Platform.MacOS;
+using SnapBoard.Platform.MacOS.Desktop;
+using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
 using SnapBoard.Platform.Windows.Desktop;
 
@@ -57,6 +60,7 @@ internal static class DesktopCompositionRoot
     [SupportedOSPlatform("macos")]
     private static void AddMacOSClipboardServices(IServiceCollection services)
     {
+        services.AddSingleton<IPlatformMainThreadDispatcher, AvaloniaMainThreadDispatcher>();
         services.AddSingleton<MacOSClipboardAdapter>();
         services.AddSingleton<IClipboardMonitor>(provider =>
             provider.GetRequiredService<MacOSClipboardAdapter>());
@@ -66,5 +70,13 @@ internal static class DesktopCompositionRoot
             provider.GetRequiredService<MacOSClipboardAdapter>());
         services.AddSingleton<IAutomaticPasteService>(provider =>
             provider.GetRequiredService<MacOSClipboardAdapter>());
+        services.AddSingleton<IGlobalHotKeyService, MacOSGlobalHotKeyService>();
+        services.AddSingleton<IAutoStartService, MacOSAutoStartService>();
+        services.AddSingleton<IAccessibilityPermissionService, MacOSAccessibilityPermissionService>();
+        services.AddSingleton<IPlatformWindowPlacementService, MacOSWindowPlacementService>();
+        services.AddSingleton<IDesktopMenuBarService, MacOSMenuBarService>();
+        services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
+        services.AddSingleton<IPlatformSecretStore, MacOSKeychainSecretStore>();
+        services.AddSingleton<ClipboardCaptureCoordinator>();
     }
 }

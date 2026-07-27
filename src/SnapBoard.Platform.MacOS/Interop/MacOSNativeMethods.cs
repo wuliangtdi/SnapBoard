@@ -44,6 +44,21 @@ internal static partial class MacOSNativeMethods
         nint argument);
 
     [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
+    internal static partial nint SendIntPtrWithIntPtrIntPtr(
+        nint receiver,
+        nint selector,
+        nint firstArgument,
+        nint secondArgument);
+
+    [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
+    internal static partial nint SendIntPtrWithIntPtrIntPtrIntPtr(
+        nint receiver,
+        nint selector,
+        nint firstArgument,
+        nint secondArgument,
+        nint thirdArgument);
+
+    [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
     internal static partial nint SendIntPtrWithNUInt(
         nint receiver,
         nint selector,
@@ -113,6 +128,19 @@ internal static partial class MacOSNativeMethods
         nint receiver,
         nint selector,
         nint argument);
+
+    [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
+    internal static partial void SendVoidWithIntPtrIntPtr(
+        nint receiver,
+        nint selector,
+        nint firstArgument,
+        nint secondArgument);
+
+    [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
+    internal static partial void SendVoidWithByte(
+        nint receiver,
+        nint selector,
+        byte argument);
 
     [LibraryImport(ApplicationServices, EntryPoint = "AXIsProcessTrusted")]
     internal static partial byte AXIsProcessTrusted();

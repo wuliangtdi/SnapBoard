@@ -69,6 +69,10 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
         }
     }
 
+    public GlobalHotKeyGesture DefaultGesture => GlobalHotKeyGesture.WindowsDefault;
+
+    public string ModifierDisplayNames => "Ctrl、Alt、Shift 或 Win";
+
     public GlobalHotKeyGestureCreationResult CreateGesture(
         GlobalHotKeyModifiers modifiers,
         string keyName) => WindowsHotKeyKeyMap.CreateGesture(modifiers, keyName);
@@ -455,7 +459,7 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
         {
         }
 
-        return GlobalHotKeyGesture.Default;
+        return GlobalHotKeyGesture.WindowsDefault;
     }
 
     private static string SerializeGesture(GlobalHotKeyGesture gesture) => string.Create(

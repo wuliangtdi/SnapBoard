@@ -12,6 +12,7 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
+        Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
     }
 
@@ -57,6 +58,14 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void OnWindowActivated(object? sender, EventArgs e)
+    {
+        if (DataContext is SettingsViewModel viewModel)
+        {
+            viewModel.RefreshAccessibilityPermission();
+        }
+    }
+
     private void OnCloseClicked(object? sender, RoutedEventArgs e)
     {
         if (DataContext is SettingsViewModel viewModel)
@@ -87,7 +96,7 @@ public partial class SettingsWindow : Window
 
         if (modifiers.HasFlag(KeyModifiers.Meta))
         {
-            result |= GlobalHotKeyModifiers.Windows;
+            result |= GlobalHotKeyModifiers.Meta;
         }
 
         return result;

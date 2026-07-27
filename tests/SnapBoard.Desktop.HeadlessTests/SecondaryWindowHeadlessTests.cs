@@ -94,6 +94,33 @@ public sealed class SecondaryWindowHeadlessTests
         Assert.False(viewModel.HasPendingHotKeyChange);
     }
 
+    [Fact]
+    public void AutoStartToggleUpdatesAvailableService()
+    {
+        FakeAutoStartService autoStart = new();
+        SettingsViewModel viewModel = new(new FakeGlobalHotKeyService(), autoStart);
+
+        viewModel.IsAutoStartEnabled = true;
+
+        Assert.True(autoStart.IsEnabled());
+        Assert.Equal(1, autoStart.SetCount);
+        Assert.Equal("已启用登录启动", viewModel.AutoStartStatus);
+    }
+
+    [Fact]
+    public void DevelopmentExecutableDisablesAutoStartWithoutWritingPlatformState()
+    {
+        FakeAutoStartService autoStart = new(AutoStartAvailability.RequiresAppBundle);
+        SettingsViewModel viewModel = new(new FakeGlobalHotKeyService(), autoStart);
+
+        viewModel.IsAutoStartEnabled = true;
+
+        Assert.False(viewModel.IsAutoStartEnabled);
+        Assert.False(viewModel.IsAutoStartAvailable);
+        Assert.Equal(0, autoStart.SetCount);
+        Assert.Equal("开发裸程序不支持；正式 App Bundle 可启用", viewModel.AutoStartStatus);
+    }
+
     private static SettingsWindow CreateSettingsWindow(
         IGlobalHotKeyService hotKeyService,
         IAutoStartService autoStartService) => new()
@@ -113,6 +140,10 @@ public sealed class SecondaryWindowHeadlessTests
 
         public GlobalHotKeyGesture ConfiguredGesture { get; private set; } =
             GlobalHotKeyGesture.Default;
+
+        public GlobalHotKeyGesture DefaultGesture => GlobalHotKeyGesture.WindowsDefault;
+
+        public string ModifierDisplayNames => "Ctrl、Alt、Shift 或 Win";
 
         public GlobalHotKeyGestureCreationResult CreateGesture(
             GlobalHotKeyModifiers modifiers,
@@ -191,10 +222,21 @@ public sealed class SecondaryWindowHeadlessTests
     {
         private bool _enabled;
 
+        public FakeAutoStartService(
+            AutoStartAvailability availability = AutoStartAvailability.Available)
+        {
+            Availability = availability;
+        }
+
+        public AutoStartAvailability Availability { get; }
+
+        public int SetCount { get; private set; }
+
         public bool IsEnabled() => _enabled;
 
         public AutoStartUpdateResult SetEnabled(bool enabled)
         {
+            SetCount++;
             _enabled = enabled;
             return new AutoStartUpdateResult(AutoStartUpdateStatus.Updated);
         }

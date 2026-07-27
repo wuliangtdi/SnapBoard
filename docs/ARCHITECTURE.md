@@ -85,3 +85,16 @@ sequenceDiagram
 ## 7. 演进方式
 
 平台能力和同步服务都通过接口增加实现，不通过条件语句渗透到 Domain。只有当两个以上实现出现真实重复且接口稳定时才抽象公共基类；在此之前优先保持小而明确的适配器。
+
+## 8. 桌面生命周期与平台安全边界
+
+Desktop 是窗口生命周期与依赖组合根，但不直接调用 AppKit、Carbon、CoreGraphics、Accessibility、Security.framework 或 ServiceManagement。`Platform.Abstractions` 定义单实例、状态菜单、全局快捷键、登录启动、辅助功能、平台主线程、启动上下文和密钥存储端口；`Platform.MacOS` 负责原生实现，Windows/Linux 继续使用各自适配器或显式不可用实现。
+
+macOS 生命周期遵循以下约束：
+
+- 首实例持有每用户非阻塞 `flock` 所有权锁和 Unix socket；锁负责进程所有权，socket 只发送有界命令并等待确认。即使首实例尚未开始接收命令，第二实例也不能删除活跃 socket 或启动第二套窗口、热键和剪贴板监听资源。
+- Desktop 协调主/快速/设置窗口的按需创建和关闭释放；最后窗口关闭不退出，只有明确退出命令才按窗口、监听、热键、状态项、单实例和应用生命周期顺序释放。
+- AppKit 对象创建、窗口定位、权限查询和状态菜单操作经 `IPlatformMainThreadDispatcher` 切换到 Avalonia UI 线程。跨托管/Objective-C 边界持有的状态项等对象显式 retain，并在移除后成对 release。
+- 快速窗口打开前通过平台启动上下文保存目标应用；关闭不覆盖目标，粘贴完成后由自动粘贴服务恢复并二次校验目标，再发送 Command+V 或降级为手动粘贴。
+- 快捷键设置只传递平台无关的修饰键和键名，UI 不接触 Carbon；平台服务负责映射、冲突检测、注册失败回滚、持久化和默认值恢复。
+- 同步层后续只通过 `IPlatformSecretStore` 访问凭据。macOS 实现把二进制密钥保存在 Keychain，Infrastructure/Application 不依赖 Security.framework，也不存在明文配置回退。

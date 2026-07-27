@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.MacOS;
@@ -38,6 +39,7 @@ internal static class Program
                 "write-formats" => await WriteFormatsAsync(adapter, args, cancellation.Token),
                 "paste-text" => await PasteTextAsync(adapter, args, cancellation.Token),
                 "permission" => PrintPermission(adapter, args),
+                "stress" => await StressAsync(adapter, args, cancellation.Token),
                 _ => UnknownCommand(),
             };
         }
@@ -178,6 +180,128 @@ internal static class Program
         return granted ? 0 : 5;
     }
 
+    private static async Task<int> StressAsync(
+        MacOSClipboardAdapter adapter,
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        int eventCount = ReadIntOption(args, "--events", 10_000);
+        int readInterval = ReadIntOption(args, "--read-interval", 250);
+        int warmupCount = ReadIntOption(args, "--warmup", 100);
+        int writeFailures = 0;
+        int readFailures = 0;
+        int markerFailures = 0;
+        long emittedFeedbackEvents = 0;
+
+        using CancellationTokenSource watchCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task watchTask = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (ClipboardChangedEvent _ in
+                    adapter.WatchAsync(watchCancellation.Token))
+                {
+                    Interlocked.Increment(ref emittedFeedbackEvents);
+                }
+            }
+            catch (OperationCanceledException) when (watchCancellation.IsCancellationRequested)
+            {
+            }
+        }, CancellationToken.None);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
+        for (int index = 1; index <= warmupCount; index++)
+        {
+            await adapter.WritePlainTextAsync(
+                $"SnapBoard stress warmup {index:D3}",
+                cancellationToken);
+        }
+
+        await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
+        long initialRss = GetWorkingSet();
+        long peakRss = initialRss;
+        int initialThreads = GetThreadCount();
+        int initialFileDescriptors = GetFileDescriptorCount();
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        for (int index = 1; index <= eventCount; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string text = $"SnapBoard stress event {index:D5}";
+            ClipboardWriteResult write =
+                await adapter.WritePlainTextAsync(text, cancellationToken);
+            if (!IsSuccessful(write.Status))
+            {
+                writeFailures++;
+            }
+
+            if (!write.FeedbackMarkerWritten)
+            {
+                markerFailures++;
+            }
+
+            if (index % readInterval == 0 || index == eventCount)
+            {
+                ClipboardReadResult read = await adapter.ReadAsync(
+                    new ClipboardChangedEvent(write.SequenceNumber, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (read.Status != ClipboardReadStatus.Success || read.Snapshot?.Text != text ||
+                    read.Snapshot.IsFromCurrentApplication != true)
+                {
+                    readFailures++;
+                }
+
+                peakRss = Math.Max(peakRss, GetWorkingSet());
+            }
+        }
+
+        stopwatch.Stop();
+        await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+        watchCancellation.Cancel();
+        await watchTask;
+        long droppedEvents = adapter.DroppedEventCount;
+        await adapter.DisposeAsync();
+
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+        long finalRss = GetWorkingSet();
+        int finalThreads = GetThreadCount();
+        int finalFileDescriptors = GetFileDescriptorCount();
+        string result =
+            $"Events={eventCount}; Warmup={warmupCount}; " +
+            $"DurationMs={stopwatch.Elapsed.TotalMilliseconds:F2}; " +
+            $"WriteFailures={writeFailures}; ReadFailures={readFailures}; " +
+            $"MarkerFailures={markerFailures}; FeedbackEvents={emittedFeedbackEvents}; " +
+            $"DroppedEvents={droppedEvents}; " +
+            $"InitialRssMiB={ToMiB(initialRss):F2}; PeakRssMiB={ToMiB(peakRss):F2}; " +
+            $"FinalRssMiB={ToMiB(finalRss):F2}; Threads={initialThreads}->{finalThreads}; " +
+            $"FileDescriptors={initialFileDescriptors}->{finalFileDescriptors}";
+        Console.WriteLine(result);
+        WriteOutputIfRequested(args, [result]);
+        return writeFailures == 0 && readFailures == 0 && markerFailures == 0 &&
+            emittedFeedbackEvents == 0 && droppedEvents == 0
+                ? 0
+                : 6;
+    }
+
+    private static long GetWorkingSet()
+    {
+        using Process process = Process.GetCurrentProcess();
+        return process.WorkingSet64;
+    }
+
+    private static int GetThreadCount()
+    {
+        using Process process = Process.GetCurrentProcess();
+        return process.Threads.Count;
+    }
+
+    private static int GetFileDescriptorCount() =>
+        Directory.EnumerateFileSystemEntries("/dev/fd").Count();
+
+    private static double ToMiB(long bytes) => bytes / 1048576d;
+
     private static ClipboardBitmapData ReadBitmap(string imagePath)
     {
         string fullPath = Path.GetFullPath(imagePath);
@@ -273,5 +397,8 @@ internal static class Program
             "  paste-text --text <text> --delay 3 " +
             "[--after-capture-delay 5] [--output <path>]");
         Console.WriteLine("  permission [--output <path>]");
+        Console.WriteLine(
+            "  stress [--events 10000] [--warmup 100] " +
+            "[--read-interval 250] [--output <path>]");
     }
 }

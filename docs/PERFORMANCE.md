@@ -132,7 +132,7 @@ scripts/macos/Measure-SnapBoardProcess.sh \
 
 轮询开销另用同一份最终代码发布的 AOT 探针测量，避免把尚未接入桌面生命周期的监听器与普通窗口空闲混为一谈。探针实际执行 `WatchAsync` 12 秒，在中间 10 秒计量窗口内无剪贴板变化：平均 CPU 0.001%、能耗增量 1.360 mJ、44 次 interrupt wakeups、最终 Physical Footprint 6.41 MiB、RSS 27.17 MiB，`DroppedEvents=0`。该数据验证轮询退避开销，不代表完整桌面应用内存。
 
-结论：轮询 CPU 满足当前空闲预算，但完整可见窗口三次 Physical Footprint 均约 195 MiB，明确超过 120 MB 失败线。第一轮启动 3.97 秒也必须继续调查。当前尚未实现菜单栏常驻和窗口卸载，因此没有“常驻低于 100 MB”的有效样本；2026-07-26 的单次旧样本只能作为历史数据，不能替代本轮三次复测。
+当时结论：轮询 CPU 满足空闲预算，但完整可见窗口三次 Physical Footprint 均约 195 MiB，明确超过 120 MB 失败线。第一轮启动 3.97 秒也必须继续调查；该阶段尚未实现菜单栏常驻和窗口卸载，因此没有有效后台样本。桌面生命周期完成后的数据已由 6.6 节取代，2026-07-26 的单次旧样本同样只保留为历史记录。
 
 ### 6.4 2026-07-27 Windows 11 x64 生命周期收口样本
 
@@ -161,3 +161,34 @@ scripts/windows/Measure-SnapBoardProcess.ps1 `
 在 `phase1/windows-completion` 的自定义快捷键与设置页样式变更上，使用 .NET SDK 10.0.302 重新发布 `win-x64` self-contained Native AOT。`SnapBoard.Desktop.exe` 为 27,746,304 字节，发布输出为 0 个 AOT/裁剪警告；原生 EXE 已实际打开标题为 `SnapBoard 设置` 的窗口，并通过第二实例 `--exit` 正常结束。
 
 本次只验证新增 UI 与快捷键映射没有破坏 Native AOT，不重新采集启动、内存、CPU 和句柄，因此 6.4 的三轮性能样本仍是当前正式基线，不能用本节冒烟替代，也不能据此声称托盘常驻低于 100 MB。
+
+### 6.6 2026-07-27 macOS arm64 桌面生命周期最终样本
+
+版本：`phase2/macos-completion` 最终代码工作树。主机为 Mac mini（Apple M4，10 核，16 GB）、macOS 26.2 (25C56)、arm64、.NET SDK 10.0.302。构建为 Release、`osx-arm64`、self-contained Native AOT；App Bundle 主程序为 24,430,144 字节 arm64 Mach-O，发布输出为 0 个 AOT/裁剪警告。
+
+更新后的 `scripts/macos/Measure-SnapBoardProcess.sh` 每轮启动独立 AOT 进程，以 CoreGraphics 检测主窗口作为启动终点，采样可见窗口 10 秒；随后通过第二实例 `--close-windows` 关闭主/快速/设置窗口，确认没有该 PID 的可见窗口后继续采样菜单栏后台状态 3 秒，最后发送 `--exit`。Physical Footprint、RSS、Lifetime Peak、线程、文件描述符、进程 CPU、`ri_energy_nj` 和 interrupt wakeups 均来自同一 PID。该短样本验证窗口释放路径，不等于 10 分钟常驻、8 小时长稳或重启系统后的 OS-cold。
+
+```bash
+scripts/macos/Measure-SnapBoardProcess.sh \
+  artifacts/macos/SnapBoard.app/Contents/MacOS/SnapBoard 3 10 3
+```
+
+| 轮次 | 启动到主窗口 | 可见峰值 Physical | 可见峰值 RSS | 后台 Physical | 后台 RSS | Physical 回落 | Lifetime Peak | 最大线程 | 最大 FD | 平均 CPU | 能耗 | Wakeups |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 764.83 ms | 205.63 MiB | 170.50 MiB | 107.81 MiB | 172.25 MiB | 97.81 MiB | 209.75 MiB | 15 | 45 | 0.023% | 85.471 mJ | 406 |
+| 2 | 627.65 ms | 206.16 MiB | 170.25 MiB | 107.53 MiB | 171.86 MiB | 98.62 MiB | 209.67 MiB | 15 | 45 | 0.026% | 101.381 mJ | 415 |
+| 3 | 565.32 ms | 205.44 MiB | 170.36 MiB | 107.64 MiB | 172.03 MiB | 97.80 MiB | 206.19 MiB | 15 | 45 | 0.023% | 97.013 mJ | 419 |
+
+关闭窗口后 Physical Footprint 明显回落，但三轮可见窗口为 205.44-206.16 MiB，后台为 107.53-107.81 MiB，仍超过 100 MB 失败线。3 秒观察期不足以判断是否会继续回落；在完成至少 10 分钟和 8 小时采样前，不能声称常驻低于 100 MB。RSS 在窗口关闭后没有同步回落，说明 RSS 不能替代 Physical Footprint 判断 macOS 可回收内存。
+
+同一最终代码使用真实 `NSPasteboard.generalPasteboard` 连续执行 100 次预热和 10,000 次纯文本写入，每 250 次读回正文及来源标记，同时运行监听器检查反馈事件和 Channel 丢弃：
+
+```text
+Events=10000; Warmup=100; DurationMs=2070.96;
+WriteFailures=0; ReadFailures=0; MarkerFailures=0;
+FeedbackEvents=0; DroppedEvents=0;
+InitialRssMiB=61.36; PeakRssMiB=75.75; FinalRssMiB=76.41;
+Threads=18->20; FileDescriptors=50->52
+```
+
+压力测试没有死锁、写入/抽样读回失败、来源标记失败、反馈循环或队列丢弃，但最终 RSS 比初始高 15.05 MiB，线程增加 2、文件描述符增加 2，未满足 `< 8 MiB` 严格资源预算。单次两秒级压力结果不能证明 8 小时稳定，后续必须区分一次性 AppKit/.NET 初始化与持续增长。

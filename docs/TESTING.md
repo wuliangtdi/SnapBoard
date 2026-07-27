@@ -51,9 +51,18 @@ dotnet run --project tools/SnapBoard.WindowsClipboardProbe -c Release -- stress 
 
 macOS 剪贴板测试同样分为三层：
 
-- 确定性测试：生命周期、`changeCount` 相邻去重与有符号溢出、100/500 ms 轮询退避、队列溢出、取消、实例 nonce 反馈抑制、来源 `Unknown` 降级、PNG/TIFF 元数据和辅助功能拒绝/激活/注入失败映射。
-- macOS 原生自动测试：真实 `NSPasteboard.generalPasteboard` 的 Text、HTML、RTF、PNG、TIFF、两个文件 URL、UTI 清单、完整写回、非法 DIB 拒绝、跨适配器事件和自写事件抑制；集合使用 `DisableParallelization=true`，非 macOS 自动跳过。
-- 交互式桌面测试：TextEdit、Finder、Safari、Chrome、Preview、目标应用恢复、Command+V 以及辅助功能允许/拒绝。实际结果记录在 `docs/MACOS_CLIPBOARD_VALIDATION.md`；`pbcopy` CLI 结果不能冒充可见 Terminal UI 复制。
+- 确定性测试：剪贴板生命周期、`changeCount` 去重/溢出、轮询退避、队列溢出、取消、反馈抑制、来源降级、PNG/TIFF、权限失败映射，以及单实例命令/确认、窗口生命周期、状态菜单、暂停、退出、主线程调度、快捷键映射/冲突/回滚/持久化/默认恢复、登录启动能力和权限状态。
+- macOS 原生自动测试：真实 `NSPasteboard.generalPasteboard` 的 Text、HTML、RTF、PNG、TIFF、两个文件 URL、UTI 清单、完整写回、非法 DIB 拒绝、跨适配器事件和自写事件抑制；`flock` 所有权、真实 Unix socket 确认、首实例监听前不可抢占与不完整客户端超时；Keychain 临时密钥新增、读取、覆盖和删除。集合使用 `DisableParallelization=true`，非 macOS 自动跳过。
+- 交互式桌面测试：TextEdit、Finder、Safari、Chrome、Preview、目标应用恢复、Command+V、辅助功能允许/拒绝、菜单栏、关闭窗口后台常驻、第二实例、自定义物理快捷键和明确退出。实际结果记录在 `docs/MACOS_CLIPBOARD_VALIDATION.md`；`pbcopy` CLI 结果不能冒充可见 Terminal UI 复制。
+
+macOS 10,000 次原生事件压力测试使用：
+
+```bash
+dotnet run --project tools/SnapBoard.MacOSClipboardProbe -c Release --no-build -- \
+  stress --events 10000 --warmup 100 --read-interval 250
+```
+
+探针并行运行真实监听器，检查每次写入、定期读回、来源标记、反馈事件、Channel 丢弃、RSS、线程和文件描述符。事件功能通过与 `< 8 MiB` 资源预算分别判定，不能用零错误掩盖资源增长。
 
 ## 4. 测试数据安全
 
@@ -63,7 +72,7 @@ macOS 剪贴板测试同样分为三层：
 
 Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTests` 已独立切换到 xUnit 3.2.2，仓库其余测试继续使用 xUnit 2.9.3；项目文件显式移除继承的 v2 引用，避免同一测试程序集混用两个主版本。
 
-当前 Desktop Headless 共 14 项测试，覆盖：
+当前 Desktop Headless 共 21 项测试，覆盖：
 
 - 默认命令中心数据与选择状态。
 - 搜索、类型筛选、删除和紧凑模式 ViewModel 行为。
@@ -71,5 +80,9 @@ Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTest
 - 从渲染窗口输入搜索文本、激活代码筛选和切换紧凑模式。
 - Desktop 组合根在 macOS/Windows 上将四个剪贴板端口显式注册为同一个平台适配器实例。
 - 快速窗口真实 XAML 渲染、设置窗口 640 x 520 真实帧与关闭后重新创建、自定义快捷键录入与应用、后台第二实例不激活主窗口，以及暂停记录时持续排空 100 个事件但不读取正文、恢复后继续读取。
+- macOS 三类窗口按需创建/关闭/重建、状态菜单命令、关闭窗口后台常驻、第二实例激活、暂停/恢复、资源释放、退出顺序和已保存快捷键启动冲突后回退默认。
+- 设置页 macOS Command/Option/Control/Shift 术语、直接组合键录入、辅助功能状态/受限模式、登录启动能力、恢复默认和无 Windows 专属文字。
 
-2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行全量 79 项测试：74 项通过、5 项仅限 macOS 原生环境的测试跳过、0 项失败。Windows 平台项目 37/37，macOS 平台项目 14 项确定性测试通过、5 项原生测试跳过，Desktop Headless 14/14。`dotnet format --verify-no-changes` 和直接/传递 NuGet 漏洞检查均通过。托盘菜单点击、物理热键、多显示器/DPI、真实开机启动、管理员目标和完整外部应用矩阵仍需交互验收。
+2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行的历史基线为全量 79 项：74 项通过、5 项仅限 macOS 原生环境的测试跳过、0 项失败；Windows 平台项目 37/37、Desktop Headless 14/14。
+
+2026-07-27 在 macOS 26.2 arm64、.NET SDK 10.0.302 上执行最终代码：全量 103 项中 96 项通过、7 项 Windows 原生测试按平台跳过、0 项失败。项目分布为 Application 1、Architecture 2、Domain 1、Infrastructure 1、Linux 1、Windows 30 通过/7 跳过、Sync 3、macOS 36、Desktop Headless 21。locked restore、Release build、`dotnet format --verify-no-changes` 和直接/传递 NuGet 漏洞检查均通过。菜单栏、物理快捷键、第二实例和窗口后台常驻已交互验收；登录启动真实开关/重新登录、权限撤销后重授予、睡眠唤醒、多 Space、多显示器、Retina、全屏、Office、远程桌面和可见 Terminal UI 仍待验收。

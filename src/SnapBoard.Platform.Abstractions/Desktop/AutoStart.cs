@@ -5,6 +5,15 @@ public enum AutoStartUpdateStatus
     Updated = 0,
     Failed = 1,
     Unsupported = 2,
+    UserApprovalRequired = 3,
+}
+
+public enum AutoStartAvailability
+{
+    Available = 0,
+    RequiresAppBundle = 1,
+    Unsupported = 2,
+    RequiresUserApproval = 3,
 }
 
 public sealed record AutoStartUpdateResult(
@@ -16,6 +25,8 @@ public sealed record AutoStartUpdateResult(
 /// </summary>
 public interface IAutoStartService
 {
+    AutoStartAvailability Availability { get; }
+
     bool IsEnabled();
 
     AutoStartUpdateResult SetEnabled(bool enabled);

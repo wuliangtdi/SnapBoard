@@ -3,8 +3,8 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：Phase 2.1 macOS 原生剪贴板适配器进行中，Phase 1 后续项保留
-> 实现状态：macOS arm64 原生监听、格式读写、目标恢复和自动粘贴已通过实机验证；菜单栏、Keychain 与发布链路未完成
+> 当前阶段：Phase 2 macOS 桌面生命周期与发布验证收口中，Phase 1 后续项保留
+> 实现状态：macOS arm64 剪贴板、桌面生命周期、自定义快捷键、菜单栏、Keychain 与本地安装包已实现并验证；Developer ID 签名、公证、Intel 和长稳环境矩阵未完成
 > 总体顺序：Windows -> macOS -> Linux
 
 ## 1. 项目目标
@@ -96,7 +96,7 @@ Microsoft.Data.Sqlite 10.0.10
 | 本地数据库加密 | 先完成 SQLCipher/AOT 性能验证，通过后再决定是否默认启用 |
 | GNOME Wayland | 接受配套 Shell 扩展或功能受限模式，并明确标注支持等级 |
 
-源码仓库已确定为 `wuliangtdi/SnapBoard`。应用标识、macOS Bundle Identifier、签名团队和公证凭据仍在发布阶段补充。
+源码仓库已确定为 `wuliangtdi/SnapBoard`，macOS Bundle Identifier 固定为 `com.wuliangtdi.snapboard`。Developer ID Application/Installer 身份、签名团队和公证凭据仍需在正式发布环境配置。
 
 ### 3.2 已确认的实施边界
 
@@ -631,26 +631,26 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 
 - [x] 使用 `NSPasteboard.changeCount` 监听剪贴板变化并选择低 CPU 轮询周期。
 - [x] 读取和写入文本、HTML、RTF、PNG/TIFF 图片、文件 URL 和常用 UTI。
-- [ ] 实现菜单栏、全局快捷键、登录启动和单实例。
+- [~] 实现菜单栏、全局快捷键、登录启动和单实例：菜单栏、单实例、第二实例激活与自定义快捷键已实机通过；登录启动服务和 App Bundle 能力已实现，真实启用及重新登录待用户确认后验收。
 - [x] 实现目标应用恢复和自动粘贴。
-- [~] 实现辅助功能权限引导、状态检测和受限模式：平台状态检测与“已复制，请手动粘贴”降级已完成，设置入口和授权引导 UI 待实现。
-- [ ] 使用 Keychain 保存设备和同步密钥。
+- [~] 实现辅助功能权限引导、状态检测和受限模式：设置页状态、用户触发的授权/系统设置入口和“已复制，请手动粘贴”降级已完成；当前签名身份为已授权，撤销后同一身份重新授权待实测。
+- [x] 提供供设备与同步密钥复用的 Keychain 密钥服务，临时密钥新增、读取和删除已通过原生验证，凭据不写入明文配置。
 
-当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics 互操作。轮询 tick 只读取 `changeCount` 并向有界 Channel 写入轻量事件；正文、SQLite 和网络不进入轮询路径。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。来源应用无法由 NSPasteboard 可靠确定时固定返回 `Unknown`，不做猜测。完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
+当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。轮询 tick 只读取 `changeCount` 并向有界 Channel 写入轻量事件；正文、SQLite 和网络不进入轮询路径。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。来源应用无法由 NSPasteboard 可靠确定时固定返回 `Unknown`，不做猜测。完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 
 #### 2.2 跨平台一致性
 
 - [ ] 验证 Windows 与 macOS 格式映射和同步互操作。
-- [ ] 适配 macOS 键盘、菜单、窗口阴影和焦点行为。
-- [ ] 复用核心 UI，只允许必要的平台差异。
+- [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复和单显示器窗口重开已实测；多 Space、多显示器、Retina 和全屏应用待验收。
+- [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [ ] 验证 Intel 与 Apple Silicon。
 - [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：`osx-arm64` 本机 0 个 AOT/裁剪警告并实际启动，`osx-x64` 待 Intel 或对应 Runner 验证。
 
 #### 2.3 发布
 
-- [ ] 完成应用签名、Hardened Runtime、公证和 DMG/PKG。
-- [ ] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release。
-- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：三次 arm64 AOT 可见窗口及允许/拒绝权限已记录，睡眠唤醒、多 Space 和多显示器待验证。
+- [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、Hardened Runtime、DMG/PKG 脚本均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
+- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、签名和公证步骤已配置，远程 Runner 尚未实际执行。
+- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：三次最终 arm64 AOT 可见窗口/后台数据、当前授权状态和 10,000 次事件已记录；后台 Physical Footprint 仍为 107.53-107.81 MiB，睡眠唤醒、多 Space、多显示器、Retina 和全屏待验证。
 - [x] 更新平台支持矩阵和已知限制。
 
 退出条件：Windows 与 macOS 数据一致同步，macOS 正式包通过签名和公证。
