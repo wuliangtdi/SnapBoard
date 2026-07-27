@@ -10,10 +10,15 @@ public sealed record ClipboardSourceApplicationMetadata(
     string DisplayName,
     ClipboardSourceApplicationIcon? Icon = null);
 
+public sealed record ClipboardSourceApplicationIdentity(
+    string ProcessName,
+    string? ExecutablePath = null,
+    string? ApplicationUserModelId = null,
+    string? PackageFamilyName = null);
+
 public interface IClipboardSourceApplicationMetadataResolver
 {
     ValueTask<ClipboardSourceApplicationMetadata> ResolveAsync(
-        string processName,
-        string? executablePath,
+        ClipboardSourceApplicationIdentity identity,
         CancellationToken cancellationToken);
 }

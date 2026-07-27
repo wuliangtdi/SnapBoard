@@ -15,10 +15,12 @@ public sealed class WindowsClipboardAdapterLifecycleTests
 
         Task<bool> moveNext = enumerator.MoveNextAsync().AsTask();
         await host.Started.Task.WaitAsync(cancellation.Token);
-        host.RaiseClipboardUpdated(17);
+        host.RaiseClipboardUpdated(17, 101, 202);
 
         Assert.True(await moveNext);
         Assert.Equal(17UL, enumerator.Current.SequenceNumber);
+        Assert.Equal(101, enumerator.Current.SourceHint.ClipboardOwnerProcessId);
+        Assert.Equal(202, enumerator.Current.SourceHint.ForegroundProcessId);
 
         await enumerator.DisposeAsync();
 

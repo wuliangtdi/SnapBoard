@@ -124,10 +124,12 @@ public sealed class RuntimeMainViewModelTests
     public async Task RuntimeViewModelResolvesSourceApplicationMetadataOnce()
     {
         const string executablePath = @"C:\Program Files\Tencent\Weixin\Weixin.exe";
+        const string applicationUserModelId = "Tencent.Weixin_test!App";
         ClipboardHistoryItemSummary summary = CreateSummary(
             "source metadata",
             DateTimeOffset.UtcNow,
-            executablePath);
+            executablePath,
+            applicationUserModelId);
         FakeHistoryService service = new()
         {
             SearchHandler = (_, _) => ValueTask.FromResult(new ClipboardHistoryPage(
@@ -150,6 +152,34 @@ public sealed class RuntimeMainViewModelTests
         Assert.Equal(1, resolver.ResolveCount);
         Assert.Equal("test-app", resolver.ProcessName);
         Assert.Equal(executablePath, resolver.ExecutablePath);
+        Assert.Equal(applicationUserModelId, resolver.ApplicationUserModelId);
+    }
+
+    [Fact]
+    public async Task HistoryChangeBurstIsCoalescedIntoOneReload()
+    {
+        FakeHistoryService service = new()
+        {
+            SearchHandler = (_, _) => ValueTask.FromResult(CreatePage("coalesced")),
+        };
+        using MainViewModel viewModel = new(service);
+        viewModel.Start();
+        await viewModel.WaitForIdleAsync();
+
+        for (int index = 0; index < 10_000; index++)
+        {
+            service.RaiseChanged(new ClipboardHistoryChangedEvent(
+                ClipboardHistoryChangeKind.Added,
+                ClipboardItemId.New()));
+        }
+
+        await Task.Delay(
+            TimeSpan.FromMilliseconds(300),
+            TestContext.Current.CancellationToken);
+        await viewModel.WaitForIdleAsync();
+
+        Assert.Equal(2, service.SearchCount);
+        Assert.Equal("coalesced", Assert.Single(viewModel.VisibleItems).Title);
     }
 
     private static async ValueTask<ClipboardHistoryPage> WaitForOldAsync(
@@ -169,7 +199,8 @@ public sealed class RuntimeMainViewModelTests
     private static ClipboardHistoryItemSummary CreateSummary(
         string preview,
         DateTimeOffset capturedAt,
-        string? sourceExecutablePath = null) => new(
+        string? sourceExecutablePath = null,
+        string? sourceApplicationUserModelId = null) => new(
         ClipboardItemId.New(),
         ClipboardContentKind.Text,
         ClipboardHistoryDisplayCategory.Text,
@@ -182,7 +213,8 @@ public sealed class RuntimeMainViewModelTests
         null,
         preview.Length,
         false,
-        sourceExecutablePath);
+        sourceExecutablePath,
+        sourceApplicationUserModelId);
 
     private sealed class FakeSourceApplicationMetadataResolver :
         IClipboardSourceApplicationMetadataResolver
@@ -193,15 +225,17 @@ public sealed class RuntimeMainViewModelTests
 
         public string? ExecutablePath { get; private set; }
 
+        public string? ApplicationUserModelId { get; private set; }
+
         public ValueTask<ClipboardSourceApplicationMetadata> ResolveAsync(
-            string processName,
-            string? executablePath,
+            ClipboardSourceApplicationIdentity identity,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ResolveCount++;
-            ProcessName = processName;
-            ExecutablePath = executablePath;
+            ProcessName = identity.ProcessName;
+            ExecutablePath = identity.ExecutablePath;
+            ApplicationUserModelId = identity.ApplicationUserModelId;
             return ValueTask.FromResult(new ClipboardSourceApplicationMetadata("微信"));
         }
     }

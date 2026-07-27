@@ -279,6 +279,18 @@ internal static partial class WindowsNativeMethods
         char* executableName,
         uint* size);
 
+    [LibraryImport(Kernel32, EntryPoint = "GetApplicationUserModelId")]
+    internal static unsafe partial int GetApplicationUserModelId(
+        nint process,
+        uint* applicationUserModelIdLength,
+        char* applicationUserModelId);
+
+    [LibraryImport(Kernel32, EntryPoint = "GetPackageFamilyName")]
+    internal static unsafe partial int GetPackageFamilyName(
+        nint process,
+        uint* packageFamilyNameLength,
+        char* packageFamilyName);
+
     [LibraryImport(Advapi32, EntryPoint = "OpenProcessToken", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool OpenProcessToken(

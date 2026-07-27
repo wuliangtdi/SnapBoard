@@ -6,7 +6,9 @@ internal static partial class WindowsNativeConstants
 {
     public const uint ShellFileInfoIcon = 0x00000100;
     public const uint ShellFileInfoDisplayName = 0x00000200;
+    public const uint ShellFileInfoItemIdentifierList = 0x00000008;
     public const uint ShellFileInfoLargeIcon = 0x00000000;
+    public const uint ComApartmentMultithreaded = 0x0;
     public const uint DrawIconNormal = 0x00000003;
     public const uint DibRgbColors = 0;
     public const uint BitmapCompressionRgb = 0;

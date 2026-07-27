@@ -5,7 +5,7 @@ namespace SnapBoard.Platform.Windows.Tests;
 
 internal sealed class FakeClipboardMessageHost : IClipboardMessageHost
 {
-    public event Action<uint>? ClipboardUpdated;
+    public event Action<ClipboardUpdateObservation>? ClipboardUpdated;
 
     public event Action<Exception?>? MessageLoopStopped;
 
@@ -34,15 +34,21 @@ internal sealed class FakeClipboardMessageHost : IClipboardMessageHost
 
     public ValueTask DisposeAsync() => StopAsync();
 
-    public void RaiseClipboardUpdated(uint sequenceNumber) =>
-        ClipboardUpdated?.Invoke(sequenceNumber);
+    public void RaiseClipboardUpdated(
+        uint sequenceNumber,
+        int? clipboardOwnerProcessId = null,
+        int? foregroundProcessId = null) =>
+        ClipboardUpdated?.Invoke(new ClipboardUpdateObservation(
+            sequenceNumber,
+            clipboardOwnerProcessId,
+            foregroundProcessId));
 
     public void FailMessageLoop(Exception error) => MessageLoopStopped?.Invoke(error);
 }
 
 internal sealed class CancelableStartupClipboardMessageHost : IClipboardMessageHost
 {
-    public event Action<uint>? ClipboardUpdated
+    public event Action<ClipboardUpdateObservation>? ClipboardUpdated
     {
         add { }
         remove { }

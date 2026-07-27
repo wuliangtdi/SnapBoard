@@ -31,7 +31,10 @@ public sealed partial class SqliteClipboardHistoryStore
             )
         ), ''),
         i.search_order_key,
-        i.source_executable_path
+        i.source_executable_path,
+        i.source_application_user_model_id,
+        i.source_package_family_name,
+        i.source_attribution_kind
         """;
 
     private static async ValueTask<ClipboardHistoryPage> SearchCoreAsync(
@@ -259,7 +262,10 @@ public sealed partial class SqliteClipboardHistoryStore
                         : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(8)),
                     reader.GetInt64(9),
                     reader.GetInt64(10) != 0,
-                    reader.IsDBNull(13) ? null : reader.GetString(13)),
+                    reader.IsDBNull(13) ? null : reader.GetString(13),
+                    reader.IsDBNull(14) ? null : reader.GetString(14),
+                    reader.IsDBNull(15) ? null : reader.GetString(15),
+                    reader.GetInt32(16)),
                 reader.GetInt64(12)));
         }
 

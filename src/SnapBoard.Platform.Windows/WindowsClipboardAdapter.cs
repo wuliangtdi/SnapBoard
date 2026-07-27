@@ -153,17 +153,20 @@ public sealed class WindowsClipboardAdapter :
         await StopMessageHostAsync().ConfigureAwait(false);
     }
 
-    private void OnClipboardUpdated(uint sequenceNumber)
+    private void OnClipboardUpdated(ClipboardUpdateObservation observation)
     {
-        if (!_sequenceDeduplicator.TryAccept(sequenceNumber) ||
-            _feedbackGuard.TryConsume(sequenceNumber))
+        if (!_sequenceDeduplicator.TryAccept(observation.SequenceNumber) ||
+            _feedbackGuard.TryConsume(observation.SequenceNumber))
         {
             return;
         }
 
         _eventQueue.TryWrite(new ClipboardChangedEvent(
-            sequenceNumber,
-            DateTimeOffset.UtcNow));
+            observation.SequenceNumber,
+            DateTimeOffset.UtcNow,
+            new ClipboardSourceProcessHint(
+                observation.ClipboardOwnerProcessId,
+                observation.ForegroundProcessId)));
     }
 
     private void OnMessageLoopStopped(Exception? error) => _eventQueue.Complete(error);

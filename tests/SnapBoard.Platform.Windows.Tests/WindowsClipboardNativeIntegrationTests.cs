@@ -33,6 +33,7 @@ public sealed class WindowsClipboardNativeIntegrationTests
 
         Assert.Equal(ClipboardWriteStatus.Success, write.Status);
         Assert.True(await moveNext.WaitAsync(cancellation.Token));
+        Assert.Equal(Environment.ProcessId, enumerator.Current.SourceHint.ClipboardOwnerProcessId);
 
         ClipboardReadResult read = await listener.ReadAsync(enumerator.Current, cancellation.Token);
         ClipboardContentSnapshot snapshot = Assert.IsType<ClipboardContentSnapshot>(read.Snapshot);
@@ -80,6 +81,9 @@ public sealed class WindowsClipboardNativeIntegrationTests
             Assert.True(snapshot.IsFromCurrentApplication);
             Assert.Equal(Environment.ProcessId, snapshot.Source.ProcessId);
             Assert.Equal(ClipboardSourceAccessStatus.Identified, snapshot.Source.AccessStatus);
+            Assert.Equal(
+                ClipboardSourceAttributionKind.ClipboardOwnerAtRead,
+                snapshot.Source.AttributionKind);
             Assert.Contains(snapshot.Formats, format => format.Name == "HTML Format");
             Assert.Contains(snapshot.Formats, format => format.Name == "Rich Text Format");
             Assert.Contains(snapshot.Formats, format => format.Name == "CF_HDROP");
@@ -151,6 +155,40 @@ public sealed class WindowsClipboardNativeIntegrationTests
         ClipboardWriteResult result = await adapter.WriteAsync(request, CancellationToken.None);
 
         Assert.Equal(ClipboardWriteStatus.InvalidContent, result.Status);
+    }
+
+    [WindowsFact]
+    public async Task RoundTripsRegisteredPngWhenDibIsUnavailable()
+    {
+        await using WindowsClipboardAdapter adapter = new();
+        using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(10));
+        byte[] png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        ClipboardWriteRequest request = new()
+        {
+            Bitmap = new ClipboardBitmapData(
+                ClipboardBitmapEncoding.PortableNetworkGraphics,
+                png,
+                1,
+                1,
+                16),
+        };
+
+        ClipboardWriteResult write = await adapter.WriteAsync(request, cancellation.Token);
+        ClipboardReadResult read = await adapter.ReadAsync(
+            new ClipboardChangedEvent(write.SequenceNumber, DateTimeOffset.UtcNow),
+            cancellation.Token);
+
+        ClipboardContentSnapshot snapshot = Assert.IsType<ClipboardContentSnapshot>(read.Snapshot);
+        Assert.Equal(ClipboardWriteStatus.Success, write.Status);
+        Assert.Equal(ClipboardReadStatus.Success, read.Status);
+        Assert.NotNull(snapshot.Bitmap);
+        Assert.Equal(ClipboardBitmapEncoding.PortableNetworkGraphics, snapshot.Bitmap.Encoding);
+        Assert.Equal(png, snapshot.Bitmap.Data.ToArray());
+        Assert.Equal(1, snapshot.Bitmap.Width);
+        Assert.Equal(1, snapshot.Bitmap.Height);
+        Assert.Equal(16, snapshot.Bitmap.BitsPerPixel);
+        Assert.Contains(snapshot.Formats, format => format.Name == "PNG");
     }
 
     private static async Task WaitForMessageWindowAsync(

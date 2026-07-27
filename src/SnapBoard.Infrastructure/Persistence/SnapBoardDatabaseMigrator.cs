@@ -188,9 +188,16 @@ public sealed class SnapBoardDatabaseMigrator
             WHERE is_deleted = 0;
             """,
         ]),
+        new(5, "source-application-identity-v5",
+        [
+            "ALTER TABLE clipboard_items ADD COLUMN source_application_user_model_id TEXT NULL;",
+            "ALTER TABLE clipboard_items ADD COLUMN source_package_family_name TEXT NULL;",
+            "ALTER TABLE clipboard_items ADD COLUMN source_attribution_kind INTEGER NOT NULL DEFAULT 0;",
+            "CREATE INDEX ix_clipboard_items_source_identity ON clipboard_items(is_deleted, source_application_user_model_id, captured_at_utc DESC);",
+        ]),
     ];
 
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     public async ValueTask<int> MigrateAsync(
         SqliteConnection connection,

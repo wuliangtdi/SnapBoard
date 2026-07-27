@@ -57,6 +57,7 @@
 
 - 历史数据库使用版本化 Schema、参数化 SQL、显式列投影和单写事务；Application、Domain 与 UI 不引用 `Microsoft.Data.Sqlite` 类型。`quick_check` 失败时先把数据库及可用的 WAL/SHM 文件复制到时间戳恢复目录，再重建空库，并只在诊断结果中记录文件名和异常类型，不记录剪贴板正文。
 - 采集责任链在计算哈希和持久化前拒绝本应用来源、常见密码管理器进程、Windows/macOS transient/confidential 格式、应用黑名单和超限载荷；仅文本规则会移除 HTML、RTF、图片和文件表示。测试和日志只使用生成内容，不输出正文、图片字节或敏感格式载荷。
+- `WM_CLIPBOARDUPDATE` 回调只快照剪贴板序列号和数值 PID，不在消息线程读取路径、包清单或图标。来源 EXE、AUMID、Package Family 和归属依据使用参数化字段持久化，不进入正文日志；AppsFolder 身份有长度/字符边界，PIDL、进程句柄、`HICON`、DC 和位图均走显式释放路径。
 - `WindowsCredentialSecretStore` 复用 `IPlatformSecretStore`，使用 Win32 Credential Manager Generic Credential，目标前缀固定为 `com.wuliangtdi.snapboard/`。名称拒绝控制字符并限制 UTF-8 长度，密钥大小受系统 Credential Blob 上限约束。
 - P/Invoke 使用 Native AOT 友好的 `LibraryImport`；`CredRead` 返回的系统明文在复制后原位清零再 `CredFree`，`CredWrite` 的临时托管副本在调用后清零。读取返回给调用方的缓冲仍由调用方在使用后负责清零。
 - 新增、读取、覆盖、删除和不存在状态已通过真实 Credential Manager 临时项测试；拒绝、取消、无登录会话、无效名称和超限输入已覆盖确定性映射。测试最终清理临时项，不把 WebDAV 凭据、恢复码或主密钥写入 JSON、注册表明文、日志或测试快照。

@@ -16,11 +16,12 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
     private const int MaximumCacheEntries = 256;
     private const int MaximumConcurrentResolutions = 4;
     private static readonly Dictionary<string, string> KnownDisplayNames =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        new(StringComparer.OrdinalIgnoreCase)
         {
             ["ApplicationFrameHost"] = "Windows 应用",
             ["chrome"] = "Google Chrome",
             ["Code"] = "Visual Studio Code",
+            ["codex"] = "Codex",
             ["EXCEL"] = "Microsoft Excel",
             ["explorer"] = "文件资源管理器",
             ["firefox"] = "Mozilla Firefox",
@@ -34,6 +35,12 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
             ["WindowsTerminal"] = "Windows 终端",
             ["WXWork"] = "企业微信",
         };
+    private static readonly Dictionary<string, string> KnownPackageDisplayNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Microsoft.ScreenSketch_8wekyb3d8bbwe"] = "截图工具",
+            ["OpenAI.Codex_2p2nqsd0c76g0"] = "Codex",
+        };
 
     private readonly ConcurrentDictionary<
         string,
@@ -42,29 +49,45 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
     private readonly Channel<bool> _resolutionSlots = CreateResolutionSlots();
 
     public async ValueTask<ClipboardSourceApplicationMetadata> ResolveAsync(
-        string processName,
-        string? executablePath,
+        ClipboardSourceApplicationIdentity identity,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(identity);
         cancellationToken.ThrowIfCancellationRequested();
-        string fallbackName = ResolveFallbackName(processName, executablePath);
-        string? normalizedPath = NormalizeExecutablePath(executablePath);
-        if (normalizedPath is null)
+
+        string fallbackName = ResolveFallbackName(identity);
+        string? normalizedPath = NormalizeExecutablePath(identity.ExecutablePath);
+        string? applicationUserModelId = NormalizeApplicationUserModelId(
+            identity.ApplicationUserModelId);
+        string? packageFamilyName = SanitizeIdentity(identity.PackageFamilyName);
+        string? cacheKey = applicationUserModelId is not null
+            ? $"app:{applicationUserModelId}"
+            : normalizedPath is not null
+                ? $"path:{normalizedPath}"
+                : null;
+        if (cacheKey is null)
         {
-            return new ClipboardSourceApplicationMetadata(fallbackName);
+            return new ClipboardSourceApplicationMetadata(
+                ResolveKnownPackageDisplayName(packageFamilyName) ?? fallbackName);
         }
 
-        if (_cache.Count >= MaximumCacheEntries && !_cache.ContainsKey(normalizedPath))
+        ClipboardSourceApplicationIdentity normalizedIdentity = identity with
         {
-            return await ResolveOnBackgroundAsync(processName, normalizedPath, fallbackName)
+            ExecutablePath = normalizedPath,
+            ApplicationUserModelId = applicationUserModelId,
+            PackageFamilyName = packageFamilyName,
+        };
+        if (_cache.Count >= MaximumCacheEntries && !_cache.ContainsKey(cacheKey))
+        {
+            return await ResolveOnBackgroundAsync(normalizedIdentity, fallbackName)
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
 
         Lazy<Task<ClipboardSourceApplicationMetadata>> lazy = _cache.GetOrAdd(
-            normalizedPath,
-            path => new Lazy<Task<ClipboardSourceApplicationMetadata>>(
-                () => ResolveOnBackgroundAsync(processName, path, fallbackName),
+            cacheKey,
+            _ => new Lazy<Task<ClipboardSourceApplicationMetadata>>(
+                () => ResolveOnBackgroundAsync(normalizedIdentity, fallbackName),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
         try
@@ -79,14 +102,13 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
         {
             _cache.TryRemove(new KeyValuePair<
                 string,
-                Lazy<Task<ClipboardSourceApplicationMetadata>>>(normalizedPath, lazy));
+                Lazy<Task<ClipboardSourceApplicationMetadata>>>(cacheKey, lazy));
             return new ClipboardSourceApplicationMetadata(fallbackName);
         }
     }
 
     private async Task<ClipboardSourceApplicationMetadata> ResolveOnBackgroundAsync(
-        string processName,
-        string executablePath,
+        ClipboardSourceApplicationIdentity identity,
         string fallbackName)
     {
         // 可见页可能同时出现多个应用；限制后台 Shell/磁盘并发，避免滚动时冲击线程池和存储。
@@ -94,7 +116,7 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
         try
         {
             return await Task.Run(
-                    () => ResolveCore(processName, executablePath, fallbackName),
+                    () => ResolveCore(identity, fallbackName),
                     CancellationToken.None)
                 .ConfigureAwait(false);
         }
@@ -125,54 +147,131 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
     }
 
     private static ClipboardSourceApplicationMetadata ResolveCore(
-        string processName,
-        string executablePath,
+        ClipboardSourceApplicationIdentity identity,
         string fallbackName)
+    {
+        int comResult = WindowsNativeMethods.InitializeComApartment(
+            0,
+            WindowsNativeConstants.ComApartmentMultithreaded);
+        bool uninitializeCom = comResult >= 0;
+        try
+        {
+            ShellMetadata packaged = identity.ApplicationUserModelId is null
+                ? default
+                : ReadPackagedShellMetadata(identity.ApplicationUserModelId);
+            ShellMetadata executable = identity.ExecutablePath is null
+                ? default
+                : ReadExecutableShellMetadata(identity.ExecutablePath);
+            string? versionDisplayName = identity.ExecutablePath is null
+                ? null
+                : ReadVersionDisplayName(identity.ExecutablePath, identity.ProcessName);
+            string? executableDisplayName = identity.ExecutablePath is null
+                ? null
+                : NormalizeShellDisplayName(
+                    executable.DisplayName,
+                    identity.ExecutablePath);
+            string displayName = ResolveKnownPackageDisplayName(identity.PackageFamilyName) ??
+                packaged.DisplayName ??
+                ResolveKnownDisplayName(identity.ProcessName) ??
+                versionDisplayName ??
+                executableDisplayName ??
+                fallbackName;
+            return new ClipboardSourceApplicationMetadata(
+                displayName,
+                packaged.Icon ?? executable.Icon);
+        }
+        finally
+        {
+            if (uninitializeCom)
+            {
+                WindowsNativeMethods.UninitializeComApartment();
+            }
+        }
+    }
+
+    private static unsafe ShellMetadata ReadPackagedShellMetadata(string applicationUserModelId)
+    {
+        nint itemIdentifierList = 0;
+        try
+        {
+            int result = WindowsNativeMethods.ParseShellDisplayName(
+                $"shell:AppsFolder\\{applicationUserModelId}",
+                0,
+                out itemIdentifierList,
+                0,
+                null);
+            if (result < 0 || itemIdentifierList == 0)
+            {
+                return default;
+            }
+
+            return ReadShellMetadata(
+                itemIdentifierList,
+                WindowsNativeConstants.ShellFileInfoItemIdentifierList);
+        }
+        finally
+        {
+            if (itemIdentifierList != 0)
+            {
+                // SHParseDisplayName 返回 CoTaskMem 所有权，成功和部分失败路径都必须释放。
+                Marshal.FreeCoTaskMem(itemIdentifierList);
+            }
+        }
+    }
+
+    private static unsafe ShellMetadata ReadExecutableShellMetadata(string executablePath)
     {
         if (!File.Exists(executablePath))
         {
-            return new ClipboardSourceApplicationMetadata(fallbackName);
+            return default;
         }
 
-        string? versionDisplayName = ReadVersionDisplayName(executablePath, processName);
-        string? shellDisplayName = null;
-        ClipboardSourceApplicationIcon? icon = null;
         ShellFileInfo fileInfo = default;
-        unsafe
-        {
-            nuint result = WindowsNativeMethods.GetShellFileInfo(
-                executablePath,
-                0,
-                &fileInfo,
-                (uint)sizeof(ShellFileInfo),
-                WindowsNativeConstants.ShellFileInfoIcon |
-                WindowsNativeConstants.ShellFileInfoDisplayName |
-                WindowsNativeConstants.ShellFileInfoLargeIcon);
-            if (result != 0)
-            {
-                char* shellDisplayNameBuffer = fileInfo.DisplayName;
-                shellDisplayName = SanitizeDisplayName(new string(shellDisplayNameBuffer));
+        nuint result = WindowsNativeMethods.GetShellFileInfo(
+            executablePath,
+            0,
+            &fileInfo,
+            (uint)sizeof(ShellFileInfo),
+            WindowsNativeConstants.ShellFileInfoIcon |
+            WindowsNativeConstants.ShellFileInfoDisplayName |
+            WindowsNativeConstants.ShellFileInfoLargeIcon);
+        return result == 0 ? default : CreateShellMetadata(fileInfo);
+    }
 
-                if (fileInfo.IconHandle != 0)
-                {
-                    try
-                    {
-                        icon = RenderIcon(fileInfo.IconHandle);
-                    }
-                    finally
-                    {
-                        // SHGetFileInfo 返回的 HICON 归调用方所有，任何栅格化结果都必须释放。
-                        WindowsNativeMethods.DestroyIcon(fileInfo.IconHandle);
-                    }
-                }
+    private static unsafe ShellMetadata ReadShellMetadata(nint itemIdentifierList, uint extraFlags)
+    {
+        ShellFileInfo fileInfo = default;
+        nuint result = WindowsNativeMethods.GetShellItemInfo(
+            itemIdentifierList,
+            0,
+            &fileInfo,
+            (uint)sizeof(ShellFileInfo),
+            extraFlags |
+            WindowsNativeConstants.ShellFileInfoIcon |
+            WindowsNativeConstants.ShellFileInfoDisplayName |
+            WindowsNativeConstants.ShellFileInfoLargeIcon);
+        return result == 0 ? default : CreateShellMetadata(fileInfo);
+    }
+
+    private static unsafe ShellMetadata CreateShellMetadata(ShellFileInfo fileInfo)
+    {
+        char* displayNameBuffer = fileInfo.DisplayName;
+        string? displayName = SanitizeDisplayName(new string(displayNameBuffer));
+        ClipboardSourceApplicationIcon? icon = null;
+        if (fileInfo.IconHandle != 0)
+        {
+            try
+            {
+                icon = RenderIcon(fileInfo.IconHandle);
+            }
+            finally
+            {
+                // SHGetFileInfo 返回的 HICON 归调用方所有，任何栅格化结果都必须释放。
+                WindowsNativeMethods.DestroyIcon(fileInfo.IconHandle);
             }
         }
 
-        string displayName = ResolveKnownDisplayName(processName) ??
-            versionDisplayName ??
-            NormalizeShellDisplayName(shellDisplayName, executablePath) ??
-            fallbackName;
-        return new ClipboardSourceApplicationMetadata(displayName, icon);
+        return new ShellMetadata(displayName, icon);
     }
 
     private static string? ReadVersionDisplayName(string executablePath, string processName)
@@ -225,9 +324,14 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
             : displayName;
     }
 
-    private static string ResolveFallbackName(string processName, string? executablePath)
+    private static string ResolveFallbackName(ClipboardSourceApplicationIdentity identity)
     {
-        string normalizedProcessName = NormalizeProcessName(processName);
+        string normalizedProcessName = NormalizeProcessName(identity.ProcessName);
+        if (ResolveKnownPackageDisplayName(identity.PackageFamilyName) is { } packageName)
+        {
+            return packageName;
+        }
+
         if (ResolveKnownDisplayName(normalizedProcessName) is { } knownName)
         {
             return knownName;
@@ -238,9 +342,9 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
             return normalizedProcessName;
         }
 
-        string? executableName = executablePath is null
+        string? executableName = identity.ExecutablePath is null
             ? null
-            : Path.GetFileNameWithoutExtension(executablePath);
+            : Path.GetFileNameWithoutExtension(identity.ExecutablePath);
         return string.IsNullOrWhiteSpace(executableName) ? "未知来源" : executableName;
     }
 
@@ -248,6 +352,14 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
     {
         string key = NormalizeProcessName(processName);
         return KnownDisplayNames.TryGetValue(key, out string? displayName)
+            ? displayName
+            : null;
+    }
+
+    private static string? ResolveKnownPackageDisplayName(string? packageFamilyName)
+    {
+        string? key = SanitizeIdentity(packageFamilyName);
+        return key is not null && KnownPackageDisplayNames.TryGetValue(key, out string? displayName)
             ? displayName
             : null;
     }
@@ -282,6 +394,29 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
         {
             return null;
         }
+    }
+
+    private static string? NormalizeApplicationUserModelId(string? value)
+    {
+        string? identity = SanitizeIdentity(value);
+        return identity is null ||
+            !identity.Contains('!', StringComparison.Ordinal) ||
+            identity.IndexOfAny(['\\', '/', ':']) >= 0
+            ? null
+            : identity;
+    }
+
+    private static string? SanitizeIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string identity = value.Trim();
+        return identity.Length > 256 || identity.Any(char.IsControl)
+            ? null
+            : identity;
     }
 
     private static string? SanitizeDisplayName(string? value)
@@ -433,4 +568,8 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
 
         return hasAlpha;
     }
+
+    private readonly record struct ShellMetadata(
+        string? DisplayName,
+        ClipboardSourceApplicationIcon? Icon);
 }

@@ -20,7 +20,7 @@ internal sealed class NativeClipboardMessageHost : IClipboardMessageHost
     private bool _stopRequested;
     private int _state;
 
-    public event Action<uint>? ClipboardUpdated;
+    public event Action<ClipboardUpdateObservation>? ClipboardUpdated;
 
     public event Action<Exception?>? MessageLoopStopped;
 
@@ -284,8 +284,24 @@ internal sealed class NativeClipboardMessageHost : IClipboardMessageHost
         uint sequenceNumber = WindowsNativeMethods.GetClipboardSequenceNumber();
         if (sequenceNumber != 0)
         {
-            ClipboardUpdated?.Invoke(sequenceNumber);
+            // 消息回调只抓 HWND/PID 数值线索；进程、包身份和文件系统查询全部留给后台 reader。
+            ClipboardUpdated?.Invoke(new ClipboardUpdateObservation(
+                sequenceNumber,
+                GetWindowProcessId(WindowsNativeMethods.GetClipboardOwner()),
+                GetWindowProcessId(WindowsNativeMethods.GetForegroundWindow())));
         }
+    }
+
+    private static int? GetWindowProcessId(nint windowHandle)
+    {
+        if (windowHandle == 0 ||
+            WindowsNativeMethods.GetWindowThreadProcessId(windowHandle, out uint processId) == 0 ||
+            processId is 0 or > int.MaxValue)
+        {
+            return null;
+        }
+
+        return (int)processId;
     }
 
     private void RemoveListener(nint windowHandle)
@@ -342,7 +358,7 @@ internal sealed class NativeClipboardMessageHost : IClipboardMessageHost
                 switch (message)
                 {
                     case WindowsNativeConstants.WindowMessageClipboardUpdate:
-                        // 这里是系统消息回调的硬边界：只读取 DWORD 序列号并尝试写入有界队列。
+                        // 这里是系统消息回调的硬边界：只读取序列号、窗口 PID 并尝试写入有界队列。
                         // 禁止在此 OpenClipboard、复制大图、访问 SQLite 或等待任何异步操作。
                         host.HandleClipboardUpdate();
                         return 0;

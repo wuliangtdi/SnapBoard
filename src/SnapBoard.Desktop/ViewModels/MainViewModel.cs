@@ -26,11 +26,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private readonly List<ClipboardHistoryItemViewModel> _designItems;
     private readonly IClipboardHistoryService? _historyService;
     private readonly IClipboardSourceApplicationMetadataResolver? _sourceMetadataResolver;
+    private readonly object _historyReloadGate = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
     private ClipboardHistoryCursor? _nextCursor;
     private CancellationTokenSource? _queryCancellation;
+    private Timer? _historyReloadTimer;
+    private long _historyReloadDueAtMilliseconds;
     private Task _pendingOperation = Task.CompletedTask;
+    private long _historyChangeVersion;
     private long _queryGeneration;
     private long _totalCount;
     private int _disposed;
@@ -516,8 +520,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             ClipboardSourceApplicationMetadata metadata = await _sourceMetadataResolver
                 .ResolveAsync(
-                    item.SourceApplication,
-                    item.SourceExecutablePath,
+                    new ClipboardSourceApplicationIdentity(
+                        item.SourceApplication,
+                        item.SourceExecutablePath,
+                        item.SourceApplicationUserModelId,
+                        item.SourcePackageFamilyName),
                     _lifetime.Token);
             if (metadata.Icon is { } icon)
             {
@@ -599,6 +606,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             _historyService.HistoryChanged -= OnHistoryChanged;
         }
+
+        Timer? historyReloadTimer;
+        lock (_historyReloadGate)
+        {
+            historyReloadTimer = _historyReloadTimer;
+            _historyReloadTimer = null;
+        }
+
+        historyReloadTimer?.Dispose();
 
         _lifetime.Cancel();
         CancellationTokenSource? queryCancellation = Interlocked.Exchange(
@@ -776,8 +792,66 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void OnHistoryChanged(object? sender, ClipboardHistoryChangedEvent e) =>
-        PostToUi(() => ScheduleReload(debounce: false));
+    private void OnHistoryChanged(object? sender, ClipboardHistoryChangedEvent e)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        lock (_historyReloadGate)
+        {
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref _historyChangeVersion);
+            _historyReloadDueAtMilliseconds = Environment.TickCount64 +
+                (long)SearchDebounce.TotalMilliseconds;
+            // 高频采集只重置同一个计时器，不为每个事件创建查询、CTS 或 UI 队列项。
+            _historyReloadTimer ??= new Timer(
+                static state => ((MainViewModel)state!).PostCoalescedHistoryReload(),
+                this,
+                Timeout.InfiniteTimeSpan,
+                Timeout.InfiniteTimeSpan);
+            _historyReloadTimer.Change(SearchDebounce, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    private void PostCoalescedHistoryReload()
+    {
+        long version;
+        lock (_historyReloadGate)
+        {
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            long remainingMilliseconds = _historyReloadDueAtMilliseconds -
+                Environment.TickCount64;
+            if (remainingMilliseconds > 0)
+            {
+                // Change 不能撤回已经排队的回调；旧回调只负责重新对齐最新静默期。
+                _historyReloadTimer?.Change(
+                    TimeSpan.FromMilliseconds(remainingMilliseconds),
+                    Timeout.InfiniteTimeSpan);
+                return;
+            }
+
+            version = Volatile.Read(ref _historyChangeVersion);
+        }
+
+        PostToUi(() =>
+        {
+            // 计时器触发后若又有新记录，后续重置的计时器负责刷新，旧回调不读取数据库。
+            if (version == Volatile.Read(ref _historyChangeVersion))
+            {
+                ScheduleReload(debounce: false);
+            }
+        });
+    }
 
     private void PostToUi(Action action)
     {

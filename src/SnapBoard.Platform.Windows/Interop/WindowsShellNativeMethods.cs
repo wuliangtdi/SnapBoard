@@ -5,6 +5,7 @@ namespace SnapBoard.Platform.Windows.Interop;
 internal static partial class WindowsNativeMethods
 {
     private const string Gdi32 = "gdi32.dll";
+    private const string Ole32 = "ole32.dll";
 
     [LibraryImport(
         Shell32,
@@ -17,6 +18,28 @@ internal static partial class WindowsNativeMethods
         ShellFileInfo* fileInfo,
         uint fileInfoSize,
         uint flags);
+
+    [LibraryImport(Shell32, EntryPoint = "SHParseDisplayName", StringMarshalling = StringMarshalling.Utf16)]
+    internal static unsafe partial int ParseShellDisplayName(
+        string displayName,
+        nint bindContext,
+        out nint itemIdentifierList,
+        uint attributesIn,
+        uint* attributesOut);
+
+    [LibraryImport(Shell32, EntryPoint = "SHGetFileInfoW", SetLastError = true)]
+    internal static unsafe partial nuint GetShellItemInfo(
+        nint itemIdentifierList,
+        uint fileAttributes,
+        ShellFileInfo* fileInfo,
+        uint fileInfoSize,
+        uint flags);
+
+    [LibraryImport(Ole32, EntryPoint = "CoInitializeEx")]
+    internal static partial int InitializeComApartment(nint reserved, uint concurrencyModel);
+
+    [LibraryImport(Ole32, EntryPoint = "CoUninitialize")]
+    internal static partial void UninitializeComApartment();
 
     [LibraryImport(User32, EntryPoint = "GetDC", SetLastError = true)]
     internal static partial nint GetDeviceContext(nint windowHandle);

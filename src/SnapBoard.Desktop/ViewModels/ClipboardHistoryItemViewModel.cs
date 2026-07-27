@@ -33,7 +33,9 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
         string notes = "—",
         bool hasThumbnail = false,
         bool hasColorSwatch = false,
-        string? sourceExecutablePath = null)
+        string? sourceExecutablePath = null,
+        string? sourceApplicationUserModelId = null,
+        string? sourcePackageFamilyName = null)
     {
         Id = ClipboardItemId.New();
         Type = type;
@@ -43,6 +45,8 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
         Subtitle = subtitle;
         SourceApplication = sourceApplication;
         SourceExecutablePath = sourceExecutablePath;
+        SourceApplicationUserModelId = sourceApplicationUserModelId;
+        SourcePackageFamilyName = sourcePackageFamilyName;
         TimestampText = timestampText;
         Content = content;
         Language = language;
@@ -84,6 +88,8 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
             : $"{KindLabel} · {FormatSize(summary.TotalSizeBytes)}";
         SourceApplication = summary.SourceApplication;
         SourceExecutablePath = summary.SourceExecutablePath;
+        SourceApplicationUserModelId = summary.SourceApplicationUserModelId;
+        SourcePackageFamilyName = summary.SourcePackageFamilyName;
         TimestampText = FormatTimestamp(summary.CapturedAt);
         Content = preview;
         LineNumbers = string.Join(
@@ -122,6 +128,10 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
     public partial string SourceApplication { get; set; }
 
     public string? SourceExecutablePath { get; }
+
+    public string? SourceApplicationUserModelId { get; }
+
+    public string? SourcePackageFamilyName { get; }
 
     public string TimestampText { get; }
 

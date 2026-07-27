@@ -52,7 +52,13 @@ public sealed class ClipboardCapturedItem
 
     public string? SourceExecutablePath { get; init; }
 
+    public string? SourceApplicationUserModelId { get; init; }
+
+    public string? SourcePackageFamilyName { get; init; }
+
     public int SourceAccessStatus { get; init; }
+
+    public int SourceAttributionKind { get; init; }
 
     public required ClipboardContentHash ContentHash { get; init; }
 
@@ -121,7 +127,10 @@ public sealed record ClipboardHistoryItemSummary(
     DateTimeOffset? LastUsedAt,
     long TotalSizeBytes,
     bool HasThumbnail,
-    string? SourceExecutablePath = null);
+    string? SourceExecutablePath = null,
+    string? SourceApplicationUserModelId = null,
+    string? SourcePackageFamilyName = null,
+    int SourceAttributionKind = 0);
 
 public sealed record ClipboardHistoryPage(
     IReadOnlyList<ClipboardHistoryItemSummary> Items,

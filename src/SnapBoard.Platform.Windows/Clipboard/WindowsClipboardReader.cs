@@ -25,6 +25,7 @@ internal sealed class WindowsClipboardReader(
     {
         bool openedAtLeastOnce = false;
         int lastError = 0;
+        ClipboardSourceInfo source = ReadSource(change);
 
         for (int attempt = 0; attempt <= settings.OpenRetryDelays.Count; attempt++)
         {
@@ -50,7 +51,7 @@ internal sealed class WindowsClipboardReader(
             OpenedClipboardRead read;
             try
             {
-                read = ReadOpenedClipboard(change);
+                read = ReadOpenedClipboard(change, source);
             }
             finally
             {
@@ -85,7 +86,9 @@ internal sealed class WindowsClipboardReader(
             lastError);
     }
 
-    private OpenedClipboardRead ReadOpenedClipboard(ClipboardChangedEvent change)
+    private OpenedClipboardRead ReadOpenedClipboard(
+        ClipboardChangedEvent change,
+        ClipboardSourceInfo source)
     {
         List<ClipboardFormatDescriptor> formats = EnumerateFormats();
         HashSet<string> unavailableFormats = new(StringComparer.Ordinal);
@@ -147,7 +150,7 @@ internal sealed class WindowsClipboardReader(
         {
             SequenceNumber = currentSequence == 0 ? change.SequenceNumber : currentSequence,
             CapturedAt = DateTimeOffset.UtcNow,
-            Source = ReadSource(),
+            Source = source,
             Formats = formats,
             UnavailableFormats = unavailableFormats.ToArray(),
             Text = text,
@@ -387,7 +390,15 @@ internal sealed class WindowsClipboardReader(
         }
         else
         {
-            return null;
+            uint pngFormat = WindowsNativeMethods.RegisterClipboardFormat("PNG");
+            if (pngFormat == 0 || !WindowsNativeMethods.IsClipboardFormatAvailable(pngFormat))
+            {
+                return null;
+            }
+
+            format = pngFormat;
+            encoding = ClipboardBitmapEncoding.PortableNetworkGraphics;
+            formatName = "PNG";
         }
 
         byte[]? bytes = ReadGlobalBytes(
@@ -403,7 +414,10 @@ internal sealed class WindowsClipboardReader(
             return null;
         }
 
-        (int width, int height, ushort bitsPerPixel) = ReadBitmapMetadata(bytes);
+        (int width, int height, ushort bitsPerPixel) =
+            encoding == ClipboardBitmapEncoding.PortableNetworkGraphics
+                ? ReadPngMetadata(bytes)
+                : ReadBitmapMetadata(bytes);
         return new ClipboardBitmapData(encoding, bytes, width, height, bitsPerPixel);
     }
 
@@ -570,77 +584,159 @@ internal sealed class WindowsClipboardReader(
         }
     }
 
-    private ClipboardSourceInfo ReadSource()
+    private static ClipboardSourceInfo ReadSource(ClipboardChangedEvent change)
     {
+        uint currentSequence = WindowsNativeMethods.GetClipboardSequenceNumber();
+        bool hintMatchesCurrentClipboard = currentSequence == 0 ||
+            (change.SequenceNumber <= uint.MaxValue && currentSequence == (uint)change.SequenceNumber);
+        if (hintMatchesCurrentClipboard)
+        {
+            ClipboardSourceInfo? owner = ReadHintedProcess(
+                change.SourceHint.ClipboardOwnerProcessId,
+                ClipboardSourceAttributionKind.ClipboardOwnerAtChange);
+            if (owner?.AccessStatus == ClipboardSourceAccessStatus.Identified)
+            {
+                return owner;
+            }
+
+            ClipboardSourceInfo? foreground =
+                change.SourceHint.ForegroundProcessId == change.SourceHint.ClipboardOwnerProcessId
+                    ? null
+                    : ReadHintedProcess(
+                        change.SourceHint.ForegroundProcessId,
+                        ClipboardSourceAttributionKind.ForegroundWindowAtChange);
+            if (foreground?.AccessStatus == ClipboardSourceAccessStatus.Identified)
+            {
+                return foreground;
+            }
+
+            if (owner is not null || foreground is not null)
+            {
+                return owner ?? foreground!;
+            }
+        }
+
         nint ownerWindow = WindowsNativeMethods.GetClipboardOwner();
         if (ownerWindow == 0 ||
             WindowsNativeMethods.GetWindowThreadProcessId(ownerWindow, out uint processId) == 0 ||
-            processId == 0)
+            processId is 0 or > int.MaxValue)
         {
-            return new ClipboardSourceInfo(
-                null,
-                null,
-                null,
-                ClipboardSourceAccessStatus.Unknown);
+            return CreateUnknownSource();
         }
 
+        return ReadProcessSource(
+            (int)processId,
+            ClipboardSourceAttributionKind.ClipboardOwnerAtRead);
+    }
+
+    private static ClipboardSourceInfo? ReadHintedProcess(
+        int? processId,
+        ClipboardSourceAttributionKind attributionKind) =>
+        processId is > 0
+            ? ReadProcessSource(processId.Value, attributionKind)
+            : null;
+
+    internal static ClipboardSourceInfo ReadProcessSource(
+        int processId,
+        ClipboardSourceAttributionKind attributionKind)
+    {
         nint process = WindowsNativeMethods.OpenProcess(
             WindowsNativeConstants.ProcessQueryLimitedInformation,
             false,
-            processId);
+            (uint)processId);
         if (process == 0)
         {
             int error = Marshal.GetLastPInvokeError();
             return new ClipboardSourceInfo(
-                (int)processId,
+                processId,
                 null,
                 null,
                 error == ErrorAccessDenied
                     ? ClipboardSourceAccessStatus.AccessDenied
-                    : ClipboardSourceAccessStatus.PathUnavailable);
+                    : ClipboardSourceAccessStatus.PathUnavailable,
+                AttributionKind: attributionKind);
         }
 
         try
         {
-            char[] pathBuffer = new char[32768];
-            uint pathLength = (uint)pathBuffer.Length;
-            bool success;
-            unsafe
-            {
-                fixed (char* pathPointer = pathBuffer)
-                {
-                    success = WindowsNativeMethods.QueryFullProcessImageName(
-                        process,
-                        0,
-                        pathPointer,
-                        &pathLength);
-                }
-            }
-
-            if (!success)
-            {
-                int error = Marshal.GetLastPInvokeError();
-                return new ClipboardSourceInfo(
-                    (int)processId,
-                    null,
-                    null,
-                    error == ErrorAccessDenied
-                        ? ClipboardSourceAccessStatus.AccessDenied
-                        : ClipboardSourceAccessStatus.PathUnavailable);
-            }
-
-            string executablePath = new(pathBuffer, 0, (int)pathLength);
+            string? executablePath = ReadExecutablePath(process, out int pathError);
+            string? applicationUserModelId = ReadAppModelValue(process, applicationId: true);
+            string? packageFamilyName = ReadAppModelValue(process, applicationId: false);
+            bool identified = executablePath is not null ||
+                applicationUserModelId is not null ||
+                packageFamilyName is not null;
             return new ClipboardSourceInfo(
-                (int)processId,
-                Path.GetFileNameWithoutExtension(executablePath),
+                processId,
+                executablePath is null ? null : Path.GetFileNameWithoutExtension(executablePath),
                 executablePath,
-                ClipboardSourceAccessStatus.Identified);
+                identified
+                    ? ClipboardSourceAccessStatus.Identified
+                    : pathError == ErrorAccessDenied
+                        ? ClipboardSourceAccessStatus.AccessDenied
+                        : ClipboardSourceAccessStatus.PathUnavailable,
+                applicationUserModelId,
+                packageFamilyName,
+                attributionKind);
         }
         finally
         {
             WindowsNativeMethods.CloseHandle(process);
         }
     }
+
+    private static unsafe string? ReadExecutablePath(nint process, out int nativeError)
+    {
+        char[] pathBuffer = new char[32768];
+        uint pathLength = (uint)pathBuffer.Length;
+        fixed (char* pathPointer = pathBuffer)
+        {
+            if (!WindowsNativeMethods.QueryFullProcessImageName(
+                    process,
+                    0,
+                    pathPointer,
+                    &pathLength))
+            {
+                nativeError = Marshal.GetLastPInvokeError();
+                return null;
+            }
+        }
+
+        nativeError = 0;
+        return new string(pathBuffer, 0, (int)pathLength);
+    }
+
+    private static unsafe string? ReadAppModelValue(nint process, bool applicationId)
+    {
+        uint length = 0;
+        int result = applicationId
+            ? WindowsNativeMethods.GetApplicationUserModelId(process, &length, null)
+            : WindowsNativeMethods.GetPackageFamilyName(process, &length, null);
+        if (result != WindowsNativeConstants.ErrorInsufficientBuffer || length is <= 1 or > 1024)
+        {
+            return null;
+        }
+
+        char[] buffer = new char[checked((int)length)];
+        fixed (char* bufferPointer = buffer)
+        {
+            result = applicationId
+                ? WindowsNativeMethods.GetApplicationUserModelId(process, &length, bufferPointer)
+                : WindowsNativeMethods.GetPackageFamilyName(process, &length, bufferPointer);
+        }
+
+        if (result != 0 || length <= 1)
+        {
+            return null;
+        }
+
+        return new string(buffer, 0, (int)length - 1);
+    }
+
+    private static ClipboardSourceInfo CreateUnknownSource() => new(
+        null,
+        null,
+        null,
+        ClipboardSourceAccessStatus.Unknown);
 
     private static string GetFormatName(uint format) => format switch
     {
@@ -710,6 +806,42 @@ internal sealed class WindowsClipboardReader(
         }
 
         return (0, 0, 0);
+    }
+
+    private static (int Width, int Height, ushort BitsPerPixel) ReadPngMetadata(
+        ReadOnlySpan<byte> bytes)
+    {
+        ReadOnlySpan<byte> signature = [137, 80, 78, 71, 13, 10, 26, 10];
+        if (bytes.Length < 29 ||
+            !bytes[..signature.Length].SequenceEqual(signature) ||
+            BinaryPrimitives.ReadUInt32BigEndian(bytes[8..]) != 13 ||
+            !bytes.Slice(12, 4).SequenceEqual("IHDR"u8))
+        {
+            return (0, 0, 0);
+        }
+
+        uint rawWidth = BinaryPrimitives.ReadUInt32BigEndian(bytes[16..]);
+        uint rawHeight = BinaryPrimitives.ReadUInt32BigEndian(bytes[20..]);
+        if (rawWidth is 0 or > int.MaxValue || rawHeight is 0 or > int.MaxValue)
+        {
+            return (0, 0, 0);
+        }
+
+        int channels = bytes[25] switch
+        {
+            0 or 3 => 1,
+            2 => 3,
+            4 => 2,
+            6 => 4,
+            _ => 0,
+        };
+        int bitsPerPixel = bytes[24] * channels;
+        if (channels == 0 || bitsPerPixel > ushort.MaxValue)
+        {
+            return (0, 0, 0);
+        }
+
+        return ((int)rawWidth, (int)rawHeight, (ushort)bitsPerPixel);
     }
 
     private sealed record OpenedClipboardRead(

@@ -90,19 +90,19 @@ Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTest
 
 ## 6. Windows 本地历史与检索验证
 
-2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行 `phase1/windows-history-search` 最终代码：全量共 143 项，135 项通过、8 项 macOS 原生测试按平台跳过、0 项失败。项目分布为 Application 7、Architecture 2、Domain 1、Infrastructure 18、Linux 1、macOS 28 通过/8 跳过、Windows 48、Sync 3、Desktop Headless 27。locked restore、Release build、`dotnet format --verify-no-changes`、直接/传递 NuGet 漏洞检查和 `win-x64` Native AOT 均通过。
+2026-07-28 在 Windows 11 x64、.NET SDK 10.0.302 上执行 `phase1/windows-history-search` 当前代码：全量共 150 项，142 项通过、8 项 macOS 原生测试按平台跳过、0 项失败。项目分布为 Application 8、Architecture 2、Domain 1、Infrastructure 19、Linux 1、macOS 28 通过/8 跳过、Windows 52、Sync 3、Desktop Headless 28。locked restore、Release build、`dotnet format --verify-no-changes`、直接/传递 NuGet 漏洞检查和 `win-x64` Native AOT 均通过。
 
 新增自动验证覆盖：
 
-- Schema v1-v4 首次迁移、逐版本升级、重复初始化、事务回滚、WAL/外键/busy timeout 和 SQLite 安全版本下限。
+- Schema v1-v5 首次迁移、逐版本升级、重复初始化、事务回滚、WAL/外键/busy timeout 和 SQLite 安全版本下限；v5 增加 AUMID、Package Family 和来源归属依据。
 - 数据库损坏的时间戳备份、重新建库、诊断结果和恢复后 CRUD。
 - 历史 CRUD、相邻去重、重启后历史/置顶/标签/设置一致性、使用次数、软删除、清空及条数/时间/容量保留策略。
 - FTS5 中文、英文、代码、特殊字符、空查询、1,024 字符限制、取消、稳定分页以及类型/来源/时间/标签/置顶筛选。
 - Blob 临时文件、原子移动、事务失败回滚、图片外置、320 x 180 缩略图、共享引用计数、删除/清空和精确相对路径孤儿清理；初始化返回时旧孤儿仍保留，证明目录扫描不在启动关键路径。
 - 应用黑名单、密码管理器、敏感/临时格式、仅文本规则、载荷大小限制、饱和加法以及保存成功但保留策略待重试的语义。
 - Windows Credential Manager 的真实新增/读取/覆盖/删除/不存在往返，以及拒绝、无效名称和超限输入的确定性状态。
-- 正式历史 UI 的分页增量加载、旧搜索取消、图片按需加载和普通/纯文本写回请求。
-- 来源 EXE 路径重启投影、ViewModel 单次异步元数据解析、微信/企业微信本地化回退、真实 Shell 图标像素，以及绕过缓存连续 64 次提取后的 GDI Object 计数。
+- 正式历史 UI 的分页增量加载、旧搜索取消、图片按需加载、普通/纯文本写回请求，以及 10,000 次连续 `HistoryChanged` 只合并为一次静默期刷新。
+- 剪贴板事件时 owner/foreground PID 传递、序列一致性归属、来源 EXE/AUMID/Package Family 重启投影、ViewModel 身份转发、Codex/截图工具真实 AppsFolder 图标像素、注册 `PNG` 往返，以及绕过缓存连续 64 次提取后的 GDI Object 计数。
 
 100,000 条检索场景使用生成数据，命令为：
 
@@ -111,6 +111,6 @@ dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests
   --configuration Release --no-build --no-restore -- history-search
 ```
 
-来源路径投影接入后重新执行该场景：导入 100,000 条平均 554.7 字符的混合数据耗时 27,701.92 ms，分别测量中文、英文、代码的选择性与宽查询，各 50 次，共 300 次；总体 P95 2.32 ms、最大 7.15 ms。性能测试只输出计数、耗时和大小，不打印正文。它不是 `dotnet test` 的一部分，必须单独执行。
+Schema v5 来源身份投影接入后重新执行该场景：导入 100,000 条平均 554.7 字符的混合数据耗时 31,113.58 ms，分别测量中文、英文、代码的选择性与宽查询，各 50 次，共 300 次；总体 P95 2.37 ms、最大 7.49 ms。性能测试只输出计数、耗时和大小，不打印正文。它不是 `dotnet test` 的一部分，必须单独执行。
 
-Windows 原生探针最新样本为 100 次预热和 10,000 次事件，事件匹配 10,000/10,000，反馈和 Channel 丢弃为 0；Private Bytes 增长 8.46 MiB，严格资源预算失败。功能与资源结论必须继续分开；8 小时长稳未执行。
+Windows 原生探针最新干净样本为 100 次预热和 10,000 次事件，事件匹配 10,000/10,000，反馈和 Channel 丢弃为 0；Private Bytes 增长 7.38 MiB，满足该隔离探针的 `< 8 MiB` 预算。测试期间同时发现旧 AOT 桌面进程因每个历史事件都排队全量刷新而增长到 7.24 GB Private Bytes；当前代码已合并刷新并有 10,000 次 Headless 回归测试，但尚未用隔离数据目录重新执行完整 AOT 桌面端到端压力。功能、平台探针和完整桌面资源结论必须继续分开；8 小时长稳未执行。

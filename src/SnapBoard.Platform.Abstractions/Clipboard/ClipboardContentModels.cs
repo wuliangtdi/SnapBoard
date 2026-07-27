@@ -8,11 +8,22 @@ public enum ClipboardSourceAccessStatus
     AccessDenied = 3,
 }
 
+public enum ClipboardSourceAttributionKind
+{
+    Unknown = 0,
+    ClipboardOwnerAtChange = 1,
+    ForegroundWindowAtChange = 2,
+    ClipboardOwnerAtRead = 3,
+}
+
 public sealed record ClipboardSourceInfo(
     int? ProcessId,
     string? ProcessName,
     string? ExecutablePath,
-    ClipboardSourceAccessStatus AccessStatus);
+    ClipboardSourceAccessStatus AccessStatus,
+    string? ApplicationUserModelId = null,
+    string? PackageFamilyName = null,
+    ClipboardSourceAttributionKind AttributionKind = ClipboardSourceAttributionKind.Unknown);
 
 public sealed record ClipboardFormatDescriptor(
     string Identifier,

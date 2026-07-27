@@ -30,6 +30,7 @@ internal static partial class WindowsNativeConstants
     public const uint GlobalMemoryZeroInitialize = 0x0040;
 
     public const uint ProcessQueryLimitedInformation = 0x1000;
+    public const int ErrorInsufficientBuffer = 122;
     public const uint TokenQuery = 0x0008;
     public const int TokenIntegrityLevel = 25;
 

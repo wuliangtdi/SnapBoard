@@ -139,7 +139,10 @@ public sealed partial class SqliteClipboardHistoryStore
                         source_process_id = @sourceProcessId,
                         source_process_name = @sourceProcessName,
                         source_executable_path = @sourceExecutablePath,
+                        source_application_user_model_id = @sourceApplicationUserModelId,
+                        source_package_family_name = @sourcePackageFamilyName,
                         source_access_status = @sourceAccessStatus,
+                        source_attribution_kind = @sourceAttributionKind,
                         preview_text = @previewText,
                         searchable_text = @searchableText,
                         display_category = @displayCategory,
@@ -333,7 +336,10 @@ public sealed partial class SqliteClipboardHistoryStore
                 source_process_id,
                 source_process_name,
                 source_executable_path,
+                source_application_user_model_id,
+                source_package_family_name,
                 source_access_status,
+                source_attribution_kind,
                 content_hash,
                 preview_text,
                 searchable_text,
@@ -356,7 +362,10 @@ public sealed partial class SqliteClipboardHistoryStore
                 @sourceProcessId,
                 @sourceProcessName,
                 @sourceExecutablePath,
+                @sourceApplicationUserModelId,
+                @sourcePackageFamilyName,
                 @sourceAccessStatus,
+                @sourceAttributionKind,
                 @contentHash,
                 @previewText,
                 @searchableText,
@@ -405,7 +414,14 @@ public sealed partial class SqliteClipboardHistoryStore
         command.Parameters.AddWithValue(
             "@sourceExecutablePath",
             (object?)item.SourceExecutablePath ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@sourceApplicationUserModelId",
+            (object?)item.SourceApplicationUserModelId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@sourcePackageFamilyName",
+            (object?)item.SourcePackageFamilyName ?? DBNull.Value);
         command.Parameters.AddWithValue("@sourceAccessStatus", item.SourceAccessStatus);
+        command.Parameters.AddWithValue("@sourceAttributionKind", item.SourceAttributionKind);
         command.Parameters.AddWithValue("@previewText", item.PreviewText);
         command.Parameters.AddWithValue("@searchableText", item.SearchableText);
     }

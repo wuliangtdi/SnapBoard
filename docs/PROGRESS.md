@@ -1,6 +1,6 @@
 # SnapBoard 执行进度
 
-> 最后更新：2026-07-27
+> 最后更新：2026-07-28
 > 当前阶段：Phase 1 Windows 本地历史与检索已完成实现和自动验证；Windows 实机矩阵继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
@@ -13,9 +13,9 @@
 | Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
 | Phase 1.1 AOT/内存基线 | 进行中 | 最终历史构建三轮可见峰值 PWS 155.74/155.33/138.97 MiB，关闭窗口后为 103.32/110.13/94.82 MiB；Private Bytes 为 136.59/135.54/127.82 MiB，内存门槛未完成 |
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
-| Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI 写回与自动粘贴及 10,000 次功能压力通过；外部应用矩阵和资源增长预算未完成 |
-| Phase 1.4 本地历史与检索 | 已完成 | SQLite v4、单写队列、恢复、CAS Blob、缩略图、FTS5、策略链及 100,000 条检索已通过 |
-| Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图及 Windows 来源应用本地化名称/真实图标；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
+| Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
+| Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、缩略图、FTS5、策略链及 100,000 条检索已通过 |
+| Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 未开始 | 下一阶段为 Windows 端到端加密 WebDAV 同步，之后才进入签名、安装包、自动更新和正式发布 |
 | Phase 2 macOS | 进行中 | arm64 剪贴板、生命周期、菜单栏、自定义快捷键、Keychain 与本地 DMG/PKG 已验证；登录启动交互、Intel、Developer ID、公证和环境矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | Windows 11 x64 共 143 项：135 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Infrastructure 18/18、Windows 48/48、Desktop Headless 27/27 |
+| 全量自动测试 | 通过 | Windows 11 x64 共 150 项：142 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Application 8/8、Infrastructure 19/19、Windows 52/52、Desktop Headless 28/28 |
 | `osx-arm64` Native AOT | 通过 | App Bundle 内 arm64 Mach-O 为 24,430,144 字节；0 个 AOT/裁剪警告，裸产物与 DMG 挂载 Bundle 均已实际启动 |
-| `win-x64` Native AOT | 本机通过 | 来源应用元数据接入后的 Windows 11 x64 原生 EXE 29,512,192 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、明确退出；Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | 当前 Windows 11 x64 原生 EXE 29,531,648 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、明确退出；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
 | macOS 窗口/后台内存 | 未达标 | 最终 AOT 三次可见窗口峰值 Physical Footprint 205.63/206.16/205.44 MiB；关闭全部窗口 3 秒后为 107.81/107.53/107.64 MiB，仍高于 100 MB |
@@ -86,9 +86,9 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
 
 ### 4.5 Windows 剪贴板与 AOT 基线
 
-Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipboardFormatListener`、`GetClipboardSequenceNumber`、有界 Channel 和有限退避。真实 Windows 剪贴板集成测试覆盖 Unicode/ANSI Text、HTML、RTF、DIB、File List、格式清单、来源进程、自定义来源标记和反馈抑制；自动粘贴覆盖 UIPI 结构化降级、目标 HWND/PID 与发送前前台窗口二次校验，并校验 x64 `INPUT` ABI 为 40 字节。
+Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipboardFormatListener`、`GetClipboardSequenceNumber`、有界 Channel 和有限退避。`WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读取相同序列时再解析 EXE、AUMID、Package Family 和归属依据；AppsFolder 为 Microsoft Store/MSIX 应用提供本地化名称和图标。真实 Windows 剪贴板集成测试覆盖 Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、注册 PNG、File List、格式清单、自定义来源标记和反馈抑制；自动粘贴覆盖 UIPI 结构化降级、目标 HWND/PID 与发送前前台窗口二次校验，并校验 x64 `INPUT` ABI 为 40 字节。
 
-真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 完成按需渲染。Windows 11 打包版 Notepad 的交互式复制已由探针捕获，来源识别为 `Notepad`；同一应用已确认加载 `Microsoft.UI.Xaml.dll`，并通过指定 HWND 的纯文本写回、目标恢复和 `SendInput` 自动粘贴。三轮 10,000 次压力测试均观察到 10,000/10,000 个自写事件，反馈事件和 Channel 丢弃均为 0；但 Private Bytes 增长超过 8 MiB 预算。Explorer、浏览器、管理员窗口、Office 和远程桌面未完成，不能标记为通过。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
+真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 完成按需渲染。Windows 11 打包版 Notepad 的交互式复制已由探针捕获，来源识别为 `Notepad`；同一应用已确认加载 `Microsoft.UI.Xaml.dll`，并通过指定 HWND 的纯文本写回、目标恢复和 `SendInput` 自动粘贴。最新隔离平台压力观察到 10,000/10,000 个自写事件，反馈和 Channel 丢弃均为 0，Private Bytes 增长 7.38 MiB。完整桌面曾因每个事件排队一次历史刷新出现严重内存放大，当前已合并为静默期单次刷新并通过 10,000 次 Headless 回归，但修复后的完整 AOT 压力尚未重跑。Codex/截图工具真实包身份和图标已自动验证，实际复制/截图仍待手动复核；Explorer、浏览器、管理员窗口、Office 和远程桌面未完成。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
 ### 4.6 macOS 剪贴板与权限基线
 
@@ -112,7 +112,7 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 
 ## 5. 下一执行顺序
 
-1. 合并并推送 `phase1/windows-history-search`，继续定位 Windows 10,000 次 Private Bytes 增长和未完成的真实应用/硬件矩阵。
+1. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力及未完成的真实应用/硬件矩阵。
 2. 进入 `phase1/windows-sync`，实现端到端加密 WebDAV 同步；不得上传 SQLite/WAL 文件或明文凭据。
 3. 同步阶段完成后再进入 Windows 签名、安装包、自动更新和正式发布。
 4. 在对应硬件和签名环境补齐 Windows ARM64、macOS Intel、Linux、8 小时长稳与各平台未完成的实机场景；不得从当前 Windows x64 结果外推。
@@ -301,7 +301,34 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
   - 来源图标构建已实际启动，但当前桌面会话的 Windows Graphics Capture 报 D3D11 `0x887A0005`，GDI 窗口捕获为黑帧，因此没有把现有历史的视觉截图标记为通过。
 ```
 
-## 12. 更新规则
+## 12. 2026-07-28 执行记录：Windows 打包应用来源与图片路径
+
+```text
+日期：2026-07-28
+阶段/任务：Phase 1.3 来源识别；Phase 1.4 Schema v5；Phase 1.5 高频历史刷新
+状态：[x] 实现与自动验证完成；[~] 外部应用手动复核及完整桌面资源复测未完成
+完成内容：
+  - 在 WM_CLIPBOARDUPDATE 时快照 owner/foreground PID，读取阶段只在序列一致时使用事件快照，并记录明确归属依据。
+  - 来源模型和 SQLite Schema v5 保存 EXE、AUMID、Package Family 与归属依据，Application/UI 不依赖 Win32 或 SQLite 类型。
+  - Microsoft Store/MSIX 应用优先从 shell:AppsFolder/<AUMID> 解析本地化名称和图标；传统桌面应用保留版本资源/Shell 降级。
+  - Windows 图片读取优先 DIBV5、DIB，再读取注册 PNG；写回端支持注册 PNG，PNG 元数据读取不引入新图片依赖。
+  - HistoryChanged 使用单个可复用 150 ms 定时器合并刷新，避免每次采集都重建 50 个列表项并重复加载图标/缩略图。
+验证结果：
+  - .NET SDK 10.0.302；locked restore、Release build、format 校验及直接/传递 NuGet 漏洞检查通过。
+  - 全量 150 项：142 项通过、8 项 macOS 原生测试跳过、0 项失败；Windows 52/52、Infrastructure 19/19、Application 8/8、Desktop Headless 28/28。
+  - 当前运行 Codex 进程的真实 AUMID/Package Family、Codex 与截图工具 AppsFolder 图标像素、注册 PNG 往返及 GDI 释放测试通过。
+  - 10,000 次连续 HistoryChanged 除初始查询外只触发一次刷新；隔离平台 10,000 次事件匹配 10,000/10,000，Private Bytes 增长 7.38 MiB，句柄 302 -> 299。
+  - 100,000 条 Schema v5 数据导入 31,113.58 ms；300 次混合搜索 P95 2.37 ms、最大 7.49 ms。
+  - win-x64 self-contained Native AOT EXE 29,531,648 字节，SHA-256 F712C3D312F0AE60AEFCF669001AC03ED279E11A51AA2EADA7DDA71BD7AD6E36；0 个 AOT/裁剪警告，无 coreclr/clrjit，413.22 ms 创建主窗口并明确退出。
+限制：
+  - 用户报告的 Codex 复制和截图工具截图发生在修复前；新构建尚未手动复核这两个完整工作流。
+  - 旧 AOT 桌面进程在竞争样本中达到 7.24 GB Private Bytes，定位为逐事件全量 UI 刷新；修复已有自动回归，但完整 AOT 桌面尚未用隔离数据目录重跑 10,000 次。
+  - 既有三次启动/关闭性能数据继续有效；本次仅增加一次 AOT 冒烟，不替代三次样本。8 小时长稳未执行。
+  - Explorer、Chrome/Edge/Firefox、物理热键、托盘菜单、真实 HKCU、多显示器/混合 DPI、睡眠唤醒和管理员窗口未形成新结果。
+  - Office 与远程桌面未执行；Windows ARM64、macOS 和 Linux 未由本轮结果推断通过。
+```
+
+## 13. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

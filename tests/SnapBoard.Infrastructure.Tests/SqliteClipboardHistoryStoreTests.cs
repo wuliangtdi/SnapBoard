@@ -119,6 +119,46 @@ public sealed class SqliteClipboardHistoryStoreTests
     }
 
     [Fact]
+    public async Task VersionFourMigrationAddsSourceApplicationIdentityColumns()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync(
+            initialize: false);
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        Assert.Equal(
+            4,
+            await context.Migrator.MigrateAsync(
+                connection,
+                CancellationToken.None,
+                targetVersion: 4));
+
+        Assert.Equal(
+            SnapBoardDatabaseMigrator.CurrentVersion,
+            await context.Migrator.MigrateAsync(connection, CancellationToken.None));
+        Assert.Equal(
+            3L,
+            await ExecuteScalarInt64Async(
+                connection,
+                """
+                SELECT COUNT(*)
+                FROM pragma_table_info('clipboard_items')
+                WHERE name IN (
+                    'source_application_user_model_id',
+                    'source_package_family_name',
+                    'source_attribution_kind');
+                """));
+        Assert.Equal(
+            1L,
+            await ExecuteScalarInt64Async(
+                connection,
+                """
+                SELECT COUNT(*)
+                FROM sqlite_master
+                WHERE type = 'index' AND name = 'ix_clipboard_items_source_identity';
+                """));
+    }
+
+    [Fact]
     public async Task FailedMigrationRollsBackSchemaAndVersion()
     {
         await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync(
@@ -155,7 +195,10 @@ public sealed class SqliteClipboardHistoryStoreTests
             $"SnapBoard.Infrastructure.Tests-{Guid.NewGuid():N}");
         ClipboardCapturedItem item = CreateTextItem(
             "restart persistence 中文",
-            sourceExecutablePath: @"C:\Program Files\Example\example.exe");
+            sourceExecutablePath: @"C:\Program Files\Example\example.exe",
+            sourceApplicationUserModelId: "Example.App_123!App",
+            sourcePackageFamilyName: "Example.App_123",
+            sourceAttributionKind: 1);
         await using (HistoryStoreTestContext first = await HistoryStoreTestContext.CreateAsync(
             root,
             deleteOnDispose: false))
@@ -176,6 +219,11 @@ public sealed class SqliteClipboardHistoryStoreTests
         ClipboardHistoryItemSummary restored = Assert.Single(page.Items);
         Assert.Equal(item.Id, restored.Id);
         Assert.Equal(item.SourceExecutablePath, restored.SourceExecutablePath);
+        Assert.Equal(
+            item.SourceApplicationUserModelId,
+            restored.SourceApplicationUserModelId);
+        Assert.Equal(item.SourcePackageFamilyName, restored.SourcePackageFamilyName);
+        Assert.Equal(item.SourceAttributionKind, restored.SourceAttributionKind);
         Assert.True(restored.IsPinned);
         Assert.Equal(["work", "中文"], restored.Tags);
         Assert.Equal(
@@ -550,7 +598,10 @@ public sealed class SqliteClipboardHistoryStoreTests
         string text,
         DateTimeOffset? capturedAt = null,
         string sourceProcessName = "test-source",
-        string? sourceExecutablePath = null) => CreateItem(
+        string? sourceExecutablePath = null,
+        string? sourceApplicationUserModelId = null,
+        string? sourcePackageFamilyName = null,
+        int sourceAttributionKind = 0) => CreateItem(
         text,
         [
             new ClipboardCapturedRepresentation(
@@ -561,7 +612,10 @@ public sealed class SqliteClipboardHistoryStoreTests
         ],
         capturedAt,
         sourceProcessName,
-        sourceExecutablePath);
+        sourceExecutablePath,
+        sourceApplicationUserModelId,
+        sourcePackageFamilyName,
+        sourceAttributionKind);
 
     private static ClipboardCapturedItem CreateLargeHtmlItem(string suffix, byte[] sharedPayload) =>
         CreateItem(
@@ -584,7 +638,10 @@ public sealed class SqliteClipboardHistoryStoreTests
         IReadOnlyList<ClipboardCapturedRepresentation> representations,
         DateTimeOffset? capturedAt = null,
         string sourceProcessName = "test-source",
-        string? sourceExecutablePath = null)
+        string? sourceExecutablePath = null,
+        string? sourceApplicationUserModelId = null,
+        string? sourcePackageFamilyName = null,
+        int sourceAttributionKind = 0)
     {
         ClipboardItemId id = ClipboardItemId.New();
         return new ClipboardCapturedItem
@@ -594,7 +651,10 @@ public sealed class SqliteClipboardHistoryStoreTests
             CapturedAt = capturedAt ?? DateTimeOffset.UtcNow,
             SourceProcessName = sourceProcessName,
             SourceExecutablePath = sourceExecutablePath,
+            SourceApplicationUserModelId = sourceApplicationUserModelId,
+            SourcePackageFamilyName = sourcePackageFamilyName,
             SourceAccessStatus = 0,
+            SourceAttributionKind = sourceAttributionKind,
             ContentHash = Hash(seed),
             PrimaryKind = representations.Any(representation =>
                 representation.Kind == ClipboardContentKind.Html)

@@ -84,6 +84,33 @@ public sealed class ClipboardCapturePolicyTests
     }
 
     [Fact]
+    public async Task NormalizationPreservesPackagedSourceIdentityAndAttribution()
+    {
+        ClipboardCaptureOptions options = new();
+        ClipboardContentSnapshot snapshot = CreateSnapshot(
+            applicationUserModelId: "OpenAI.Codex_2p2nqsd0c76g0!App",
+            packageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
+            sourceAttributionKind: ClipboardSourceAttributionKind.ClipboardOwnerAtChange);
+        ClipboardCapturePolicyDecision decision = await CreateChain(options).EvaluateAsync(
+            snapshot,
+            CancellationToken.None);
+
+        ClipboardCapturedItem? normalized = ClipboardContentNormalizer.Normalize(
+            snapshot,
+            decision,
+            options);
+
+        Assert.NotNull(normalized);
+        Assert.Equal(
+            "OpenAI.Codex_2p2nqsd0c76g0!App",
+            normalized.SourceApplicationUserModelId);
+        Assert.Equal("OpenAI.Codex_2p2nqsd0c76g0", normalized.SourcePackageFamilyName);
+        Assert.Equal(
+            (int)ClipboardSourceAttributionKind.ClipboardOwnerAtChange,
+            normalized.SourceAttributionKind);
+    }
+
+    [Fact]
     public async Task PayloadLimitAndUnsupportedContentAreIgnored()
     {
         ClipboardCaptureOptions small = new() { MaximumPayloadBytes = 4 };
@@ -178,21 +205,28 @@ public sealed class ClipboardCapturePolicyTests
         byte[]? html = null,
         ClipboardBitmapData? bitmap = null,
         IReadOnlyList<ClipboardFormatDescriptor>? formats = null,
-        bool isFromCurrentApplication = false) => new()
-        {
-            SequenceNumber = 1,
-            CapturedAt = DateTimeOffset.UtcNow,
-            Source = new ClipboardSourceInfo(
+        bool isFromCurrentApplication = false,
+        string? applicationUserModelId = null,
+        string? packageFamilyName = null,
+        ClipboardSourceAttributionKind sourceAttributionKind =
+            ClipboardSourceAttributionKind.Unknown) => new()
+            {
+                SequenceNumber = 1,
+                CapturedAt = DateTimeOffset.UtcNow,
+                Source = new ClipboardSourceInfo(
             42,
             processName,
             processName is null ? null : $"C:\\Apps\\{processName}",
-            ClipboardSourceAccessStatus.Identified),
-            Text = text,
-            Html = html ?? Array.Empty<byte>(),
-            Bitmap = bitmap,
-            Formats = formats ?? Array.Empty<ClipboardFormatDescriptor>(),
-            IsFromCurrentApplication = isFromCurrentApplication,
-        };
+            ClipboardSourceAccessStatus.Identified,
+            applicationUserModelId,
+            packageFamilyName,
+            sourceAttributionKind),
+                Text = text,
+                Html = html ?? Array.Empty<byte>(),
+                Bitmap = bitmap,
+                Formats = formats ?? Array.Empty<ClipboardFormatDescriptor>(),
+                IsFromCurrentApplication = isFromCurrentApplication,
+            };
 
     private sealed class RetentionFailureStore : IClipboardHistoryStore
     {

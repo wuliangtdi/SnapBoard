@@ -218,12 +218,14 @@ internal sealed class WindowsClipboardWriter(
                     WindowsNativeConstants.ClipboardFormatDeviceIndependentBitmap,
                 ClipboardBitmapEncoding.DeviceIndependentBitmapV5 =>
                     WindowsNativeConstants.ClipboardFormatDeviceIndependentBitmapV5,
+                ClipboardBitmapEncoding.PortableNetworkGraphics =>
+                    WindowsNativeMethods.RegisterClipboardFormat("PNG"),
                 _ => 0,
             };
             if (format == 0)
             {
-                // PNG/TIFF 是 macOS 的编码数据，不能伪装成 Windows DIB 写入。
-                // 后续若要跨平台转码，应由独立的图片编解码服务显式完成。
+                // PNG 使用明确的 Windows 注册格式；TIFF 不得伪装成 DIB 写入。
+                // 后续若要支持 TIFF，应由独立的图片编解码服务显式完成格式转换。
                 return new PayloadBuildResult([], 0, true);
             }
 
