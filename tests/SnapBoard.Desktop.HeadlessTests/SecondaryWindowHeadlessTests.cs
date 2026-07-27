@@ -51,6 +51,7 @@ public sealed class SecondaryWindowHeadlessTests
             Dispatcher.UIThread.RunJobs();
 
             Assert.Equal(new Avalonia.Size(640, 520), window.ClientSize);
+            Assert.NotNull(window.Icon);
             Assert.NotNull(window.FindControl<Button>("HotKeyCaptureButton"));
             using var frame = window.CaptureRenderedFrame();
             Assert.NotNull(frame);

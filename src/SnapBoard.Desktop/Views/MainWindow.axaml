@@ -15,6 +15,7 @@
         MinWidth="980"
         MinHeight="700"
         Background="{DynamicResource AppBackgroundBrush}"
+        Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="CenterScreen"
         Title="SnapBoard - 闪剪">
 
@@ -99,10 +100,11 @@
                         <materialIcons:MaterialIcon Width="21" Height="21" Kind="PauseCircleOutline" />
                     </Button>
 
-                    <Button Classes="icon"
+                    <Button x:Name="SettingsButton"
+                            Classes="icon"
                             Command="{Binding OpenSettingsCommand}"
                             ToolTip.Tip="设置">
-                        <materialIcons:MaterialIcon Width="21" Height="21" Kind="SettingsApplications" />
+                        <materialIcons:MaterialIcon Width="21" Height="21" Kind="CogOutline" />
                     </Button>
 
                     <Button x:Name="CompactModeButton"

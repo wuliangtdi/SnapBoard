@@ -287,7 +287,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
             menu.Items.Add(exit);
 
             using Stream iconStream = AssetLoader.Open(
-                new Uri("avares://SnapBoard.Desktop/Assets/snapboard-logo.png"));
+                new Uri("avares://SnapBoard.Desktop/Assets/snapboard-app-icon.png"));
             _trayIcon = new TrayIcon
             {
                 Icon = new WindowIcon(iconStream),

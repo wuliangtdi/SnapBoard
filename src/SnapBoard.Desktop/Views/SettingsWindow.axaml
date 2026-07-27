@@ -8,6 +8,7 @@
         Height="520"
         CanResize="False"
         Background="{DynamicResource AppBackgroundBrush}"
+        Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="CenterOwner"
         Title="SnapBoard 设置">
     <Grid RowDefinitions="64,*,60">
@@ -36,7 +37,7 @@
                                             Height="21"
                                             VerticalAlignment="Center"
                                             Foreground="{DynamicResource SecondaryTextBrush}"
-                                            Kind="SettingsApplications" />
+                                            Kind="CogOutline" />
             </Grid>
         </Border>
 

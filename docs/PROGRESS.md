@@ -46,7 +46,7 @@
 - [ ] 在 Windows Runner 完成 `win-x64` Native AOT 发布。
 - [x] 在 Windows 11 实机启动 `win-x64` AOT 壳并记录冷启动、Private Working Set、Private Bytes 和句柄。
 - [ ] 完成 Ursa 与纯 Avalonia 的 A/B 基准，决定是否引入运行时依赖。
-- [ ] 将当前 PNG 品牌图标转换为 Windows `.ico`、macOS `.icns`，补充应用标识和后续签名配置。
+- [~] 已将品牌图标转换为透明 Windows 多尺寸 `.ico`，并接入 EXE、标题栏、任务栏和托盘；macOS `.icns`、应用标识和签名配置待完成。
 - [ ] 优化可见窗口内存，完成纯 Avalonia、Material Icons、Ursa 和最终壳的可重复 A/B 测量。
 
 ## 3. 已验证基线
@@ -205,13 +205,14 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
 完成内容：
   - 新增每用户单实例、CurrentUserOnly 命名管道激活和后台/快速/设置/退出命令。
   - 新增托盘生命周期、按需窗口创建与释放、暂停记录、原生全局热键、冲突回滚、恢复默认、HKCU 开机启动和 Per-Monitor V2 定位。
+  - Windows EXE、标题栏、任务栏和托盘统一使用透明多尺寸品牌图标，主窗口设置入口改为与现有工具栏一致的轮廓齿轮。
   - 自动粘贴增加恢复目标端口和 SendInput 前 HWND/PID 二次校验；保持 macOS 四个平台端口构建通过。
   - Windows 探针新增真实 delayed-rendering owner、指定 HWND 纯文本粘贴和 10,000 次压力模式。
 验证结果：
   - .NET SDK 10.0.302；locked restore、Release build、dotnet format --verify-no-changes 均通过。
-  - 全量 69 项中 64 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 29/29，Desktop Headless 12/12。
+  - 全量 79 项中 74 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 37/37，Desktop Headless 14/14。
   - NuGet 直接与传递依赖漏洞为 0。
-  - win-x64 Native AOT 为 27,700,736 字节，0 个 AOT/裁剪警告，无 CoreCLR/JIT 文件，并由性能脚本实际启动与退出。
+  - win-x64 Native AOT 为 27,897,856 字节，0 个 AOT/裁剪警告，并实际创建带品牌图标的 `SnapBoard - 闪剪` 主窗口。
   - 第二实例激活、后台启动、快速窗口、设置窗口和明确退出在 Windows 11 同一进程实测通过。
   - delayed rendering 读取通过；Notepad/WinUI 纯文本写回、目标恢复和自动粘贴通过。
   - 三轮 10,000 次均观察到 10,000/10,000 个自写事件，反馈循环和 Channel 丢弃均为 0。

@@ -10,6 +10,7 @@
         MinHeight="380"
         CanResize="True"
         ShowInTaskbar="True"
+        Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="Manual"
         Title="SnapBoard 快速粘贴">
     <Grid RowDefinitions="64,*,52">
