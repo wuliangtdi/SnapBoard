@@ -96,6 +96,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 : "全局快捷键注册失败";
         }
 
+        _mainViewModel.Start();
         _captureCoordinator.Start();
 
         if (startupMode == DesktopStartupMode.MainWindow)
@@ -321,17 +322,24 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private async Task CopySelectedAsync(bool plainText)
     {
-        ClipboardHistoryItemViewModel? item = _mainViewModel.SelectedItem;
-        if (item is null)
+        ClipboardSelectedWriteRequest? selection = await _mainViewModel
+            .CreateSelectedWriteRequestAsync(plainText, CancellationToken.None);
+        if (selection is null)
         {
+            _mainViewModel.StatusMessage = "所选记录已不可用";
             return;
         }
 
         ClipboardWriteResult result = plainText
-            ? await _writer.WritePlainTextAsync(item.Content, CancellationToken.None)
-            : await _writer.WriteAsync(
-                new ClipboardWriteRequest { Text = item.Content },
-                CancellationToken.None);
+            ? await _writer.WritePlainTextAsync(
+                selection.Request.Text ?? string.Empty,
+                CancellationToken.None)
+            : await _writer.WriteAsync(selection.Request, CancellationToken.None);
+        if (result.Status is ClipboardWriteStatus.Success or ClipboardWriteStatus.Partial)
+        {
+            await _mainViewModel.RecordUseAsync(selection.ItemId, CancellationToken.None);
+        }
+
         _mainViewModel.StatusMessage = result.Status is ClipboardWriteStatus.Success or ClipboardWriteStatus.Partial
             ? "已复制到剪贴板"
             : "写入剪贴板失败";
@@ -339,23 +347,27 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private async Task PasteSelectedAsync(bool plainText)
     {
-        ClipboardHistoryItemViewModel? item = _mainViewModel.SelectedItem;
-        if (item is null)
+        ClipboardSelectedWriteRequest? selection = await _mainViewModel
+            .CreateSelectedWriteRequestAsync(plainText, CancellationToken.None);
+        if (selection is null)
         {
+            _mainViewModel.StatusMessage = "所选记录已不可用";
             return;
         }
 
         IAutomaticPasteTarget? target = _foregroundTarget;
         ClipboardWriteResult writeResult = plainText
-            ? await _writer.WritePlainTextAsync(item.Content, CancellationToken.None)
-            : await _writer.WriteAsync(
-                new ClipboardWriteRequest { Text = item.Content },
-                CancellationToken.None);
+            ? await _writer.WritePlainTextAsync(
+                selection.Request.Text ?? string.Empty,
+                CancellationToken.None)
+            : await _writer.WriteAsync(selection.Request, CancellationToken.None);
         if (writeResult.Status is not (ClipboardWriteStatus.Success or ClipboardWriteStatus.Partial))
         {
             _mainViewModel.StatusMessage = "写入剪贴板失败";
             return;
         }
+
+        await _mainViewModel.RecordUseAsync(selection.ItemId, CancellationToken.None);
 
         CloseQuickWindow();
         if (target is null)

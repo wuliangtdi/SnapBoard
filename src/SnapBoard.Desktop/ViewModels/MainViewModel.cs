@@ -1,21 +1,53 @@
 using System.Collections.ObjectModel;
+using System.Security.Cryptography;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
+using SnapBoard.Application.Clipboard;
+using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Desktop.ViewModels;
 
-public partial class MainViewModel : ViewModelBase
+public sealed record ClipboardSelectedWriteRequest(
+    ClipboardItemId ItemId,
+    ClipboardWriteRequest Request);
+
+public partial class MainViewModel : ViewModelBase, IDisposable
 {
-    private readonly List<ClipboardHistoryItemViewModel> _allItems;
+    private const int PageSize = 50;
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(150);
+    private readonly List<ClipboardHistoryItemViewModel> _designItems;
+    private readonly IClipboardHistoryService? _historyService;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly SynchronizationContext? _uiContext;
+    private ClipboardHistoryCursor? _nextCursor;
+    private CancellationTokenSource? _queryCancellation;
+    private Task _pendingOperation = Task.CompletedTask;
+    private long _queryGeneration;
+    private long _totalCount;
+    private int _disposed;
+    private int _started;
 
     public MainViewModel()
     {
-        // Phase 1.2 尚未接入真实剪贴板用例，这组脱敏数据用于先验证列表密度、
-        // 搜索、筛选、选择和预览等核心 UI 状态，后续由 Application 层查询结果替换。
-        _allItems = CreateSampleItems();
-        RefreshVisibleItems();
+        // 参数less 构造仅供 XAML Design.DataContext 与无数据库视觉测试使用；
+        // 正式组合根始终选择下面的 Application 用例构造函数。
+        _uiContext = SynchronizationContext.Current;
+        _designItems = CreateSampleItems();
+        RefreshDesignItems();
+    }
+
+    public MainViewModel(IClipboardHistoryService historyService)
+    {
+        ArgumentNullException.ThrowIfNull(historyService);
+        _uiContext = SynchronizationContext.Current;
+        _historyService = historyService;
+        _designItems = [];
+        _historyService.HistoryChanged += OnHistoryChanged;
     }
 
     [ObservableProperty]
@@ -43,6 +75,12 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsRecordingPaused { get; set; }
 
     [ObservableProperty]
+    public partial bool IsLoading { get; set; }
+
+    [ObservableProperty]
+    public partial bool CanLoadMore { get; set; }
+
+    [ObservableProperty]
     public partial GridLength HistoryColumnWidth { get; set; } = new(49, GridUnitType.Star);
 
     [ObservableProperty]
@@ -56,7 +94,9 @@ public partial class MainViewModel : ViewModelBase
 
     public string SearchWatermark { get; } = "搜索剪贴板记录";
 
-    public string RecordCountText { get; } = "共 128 条记录";
+    public string RecordCountText => _totalCount >= 0
+        ? $"共 {_totalCount:N0} 条记录"
+        : $"已加载 {VisibleItems.Count:N0} 条记录";
 
     public string DeviceName { get; } = "本机";
 
@@ -66,7 +106,7 @@ public partial class MainViewModel : ViewModelBase
 
     public bool HasVisibleItems => VisibleItems.Count > 0;
 
-    public bool HasNoVisibleItems => VisibleItems.Count == 0;
+    public bool HasNoVisibleItems => !IsLoading && VisibleItems.Count == 0;
 
     public bool IsAllFilterSelected => SelectedFilter is null;
 
@@ -95,7 +135,14 @@ public partial class MainViewModel : ViewModelBase
     partial void OnSearchTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasSearchText));
-        RefreshVisibleItems();
+        if (_historyService is null)
+        {
+            RefreshDesignItems();
+        }
+        else if (Volatile.Read(ref _started) != 0)
+        {
+            ScheduleReload(debounce: true);
+        }
     }
 
     partial void OnSelectedFilterChanged(ClipboardItemType? value)
@@ -105,7 +152,14 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImageFilterSelected));
         OnPropertyChanged(nameof(IsCodeFilterSelected));
         OnPropertyChanged(nameof(IsLinkFilterSelected));
-        RefreshVisibleItems();
+        if (_historyService is null)
+        {
+            RefreshDesignItems();
+        }
+        else if (Volatile.Read(ref _started) != 0)
+        {
+            ScheduleReload(debounce: false);
+        }
     }
 
     partial void OnSelectedItemChanged(ClipboardHistoryItemViewModel? value)
@@ -113,16 +167,29 @@ public partial class MainViewModel : ViewModelBase
         if (value is not null)
         {
             StatusMessage = $"已选择{value.KindLabel}记录";
+            int index = VisibleItems.IndexOf(value);
+            if (_historyService is not null && CanLoadMore && !IsLoading &&
+                index >= Math.Max(0, VisibleItems.Count - 5))
+            {
+                _ = LoadMoreAsync();
+            }
         }
     }
 
     partial void OnIsNewestFirstChanged(bool value)
     {
         OnPropertyChanged(nameof(SortLabel));
+        if (_historyService is not null && Volatile.Read(ref _started) != 0)
+        {
+            ScheduleReload(debounce: false);
+        }
     }
 
     partial void OnIsRecordingPausedChanged(bool value) =>
         OnPropertyChanged(nameof(RecordingStateText));
+
+    partial void OnIsLoadingChanged(bool value) =>
+        OnPropertyChanged(nameof(HasNoVisibleItems));
 
     [RelayCommand]
     private void SelectFilter(string? filterName)
@@ -144,7 +211,10 @@ public partial class MainViewModel : ViewModelBase
     private void ToggleSort()
     {
         IsNewestFirst = !IsNewestFirst;
-        RefreshVisibleItems();
+        if (_historyService is null)
+        {
+            RefreshDesignItems();
+        }
     }
 
     [RelayCommand]
@@ -168,15 +238,27 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void TogglePin()
+    private async Task TogglePinAsync()
     {
-        if (SelectedItem is null)
+        ClipboardHistoryItemViewModel? selected = SelectedItem;
+        if (selected is null)
         {
             return;
         }
 
-        SelectedItem.IsPinned = !SelectedItem.IsPinned;
-        StatusMessage = SelectedItem.IsPinned ? "已置顶" : "已取消置顶";
+        bool nextValue = !selected.IsPinned;
+        if (_historyService is not null &&
+            !await _historyService.SetPinnedAsync(
+                selected.Id,
+                nextValue,
+                _lifetime.Token))
+        {
+            StatusMessage = "置顶状态更新失败";
+            return;
+        }
+
+        selected.IsPinned = nextValue;
+        StatusMessage = nextValue ? "已置顶" : "已取消置顶";
     }
 
     [RelayCommand]
@@ -228,16 +310,34 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Delete()
+    private async Task DeleteAsync()
     {
-        if (SelectedItem is null)
+        ClipboardHistoryItemViewModel? selected = SelectedItem;
+        if (selected is null)
         {
             return;
         }
 
-        int selectedIndex = VisibleItems.IndexOf(SelectedItem);
-        _allItems.Remove(SelectedItem);
-        RefreshVisibleItems();
+        int selectedIndex = VisibleItems.IndexOf(selected);
+        if (_historyService is not null)
+        {
+            if (!await _historyService.DeleteAsync(selected.Id, _lifetime.Token))
+            {
+                StatusMessage = "记录移除失败";
+                return;
+            }
+
+            VisibleItems.Remove(selected);
+            selected.ReleaseThumbnail();
+            _totalCount = Math.Max(0, _totalCount - 1);
+            OnPropertyChanged(nameof(RecordCountText));
+            UpdateCollectionState();
+        }
+        else
+        {
+            _designItems.Remove(selected);
+            RefreshDesignItems();
+        }
 
         if (VisibleItems.Count > 0)
         {
@@ -256,11 +356,427 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    private void RefreshVisibleItems()
+    public void Start()
     {
-        // 搜索和类型过滤在内存中合并执行，保持 View 只消费一个稳定集合。
-        // 接入真实仓储后，这个入口仍保留，但查询、分页和取消令牌下沉到 Application 层。
-        IEnumerable<ClipboardHistoryItemViewModel> query = _allItems;
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (_historyService is null || Interlocked.Exchange(ref _started, 1) != 0)
+        {
+            return;
+        }
+
+        SetPendingOperation(InitializeHistoryAsync());
+    }
+
+    public async ValueTask<ClipboardSelectedWriteRequest?> CreateSelectedWriteRequestAsync(
+        bool plainText,
+        CancellationToken cancellationToken)
+    {
+        ClipboardHistoryItemViewModel? selected = SelectedItem;
+        if (selected is null)
+        {
+            return null;
+        }
+
+        if (_historyService is null)
+        {
+            return new ClipboardSelectedWriteRequest(
+                selected.Id,
+                new ClipboardWriteRequest { Text = selected.Content });
+        }
+
+        ClipboardHistoryContent? content = await _historyService
+            .GetContentAsync(selected.Id, cancellationToken);
+        if (content is null)
+        {
+            return null;
+        }
+
+        ClipboardWriteRequest request;
+        if (plainText)
+        {
+            string text = content.Text ?? selected.Content;
+            request = new ClipboardWriteRequest { Text = text };
+        }
+        else
+        {
+            request = new ClipboardWriteRequest
+            {
+                Text = content.Text,
+                Html = content.Html,
+                RichText = content.RichText,
+                Bitmap = content.Bitmap is null ? null : MapBitmap(content.Bitmap),
+                FilePaths = content.FilePaths,
+            };
+        }
+
+        return request.HasContent
+            ? new ClipboardSelectedWriteRequest(selected.Id, request)
+            : null;
+    }
+
+    public async ValueTask RecordUseAsync(
+        ClipboardItemId itemId,
+        CancellationToken cancellationToken)
+    {
+        if (_historyService is not null)
+        {
+            await _historyService.RecordUseAsync(
+                itemId,
+                DateTimeOffset.UtcNow,
+                cancellationToken);
+        }
+    }
+
+    public async Task LoadThumbnailAsync(ClipboardHistoryItemViewModel item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (_historyService is null || !item.HasThumbnail || item.Thumbnail is not null ||
+            !item.TryBeginThumbnailLoad())
+        {
+            return;
+        }
+
+        Bitmap? decoded = null;
+        try
+        {
+            ReadOnlyMemory<byte> thumbnail = await _historyService
+                .GetThumbnailAsync(item.Id, _lifetime.Token);
+            if (thumbnail.IsEmpty)
+            {
+                return;
+            }
+
+            byte[] bytes = thumbnail.ToArray();
+            decoded = await Task.Run(
+                () =>
+                {
+                    try
+                    {
+                        using MemoryStream stream = new(bytes, writable: false);
+                        return new Bitmap(stream);
+                    }
+                    finally
+                    {
+                        CryptographicOperations.ZeroMemory(bytes);
+                    }
+                },
+                _lifetime.Token);
+
+            if (VisibleItems.Contains(item) && Volatile.Read(ref _disposed) == 0)
+            {
+                item.Thumbnail = decoded;
+                decoded = null;
+            }
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // 缩略图失败只保留稳定占位图，不把文件路径或解码器异常暴露到 UI。
+        }
+        finally
+        {
+            decoded?.Dispose();
+            if (item.Thumbnail is null)
+            {
+                item.ResetThumbnailLoad();
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task LoadMoreAsync()
+    {
+        if (_historyService is null || IsLoading || _nextCursor is null ||
+            _queryCancellation is null)
+        {
+            return;
+        }
+
+        Task operation = QueryPageAsync(
+            reset: false,
+            _nextCursor,
+            Volatile.Read(ref _queryGeneration),
+            debounce: false,
+            _queryCancellation.Token);
+        SetPendingOperation(operation);
+        await operation;
+    }
+
+    internal async Task WaitForIdleAsync()
+    {
+        while (true)
+        {
+            Task current = Volatile.Read(ref _pendingOperation);
+            try
+            {
+                await current;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            if (ReferenceEquals(current, Volatile.Read(ref _pendingOperation)))
+            {
+                return;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        if (_historyService is not null)
+        {
+            _historyService.HistoryChanged -= OnHistoryChanged;
+        }
+
+        _lifetime.Cancel();
+        CancellationTokenSource? queryCancellation = Interlocked.Exchange(
+            ref _queryCancellation,
+            null);
+        queryCancellation?.Cancel();
+        queryCancellation?.Dispose();
+        foreach (ClipboardHistoryItemViewModel item in VisibleItems)
+        {
+            item.ReleaseThumbnail();
+        }
+
+        _lifetime.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private async Task InitializeHistoryAsync()
+    {
+        try
+        {
+            ClipboardHistoryInitializationResult result = await _historyService!
+                .InitializeAsync(_lifetime.Token);
+            if (result.RecoveredCorruptDatabase)
+            {
+                StatusMessage = "历史数据库已诊断恢复，原文件已备份";
+            }
+
+            ScheduleReload(debounce: false);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // UI 只显示稳定诊断，不透传可能包含路径或 Provider 细节的异常文本。
+            StatusMessage = "历史记录初始化失败";
+        }
+    }
+
+    private void ScheduleReload(bool debounce)
+    {
+        if (_historyService is null || Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        CancellationTokenSource replacement = CancellationTokenSource.CreateLinkedTokenSource(
+            _lifetime.Token);
+        CancellationTokenSource? previous = Interlocked.Exchange(
+            ref _queryCancellation,
+            replacement);
+        previous?.Cancel();
+        previous?.Dispose();
+
+        long generation = Interlocked.Increment(ref _queryGeneration);
+        _nextCursor = null;
+        CanLoadMore = false;
+        Task operation = QueryPageAsync(
+            reset: true,
+            cursor: null,
+            generation,
+            debounce,
+            replacement.Token);
+        SetPendingOperation(operation);
+    }
+
+    private async Task QueryPageAsync(
+        bool reset,
+        ClipboardHistoryCursor? cursor,
+        long generation,
+        bool debounce,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (debounce)
+            {
+                await Task.Delay(SearchDebounce, cancellationToken);
+            }
+
+            if (generation != Volatile.Read(ref _queryGeneration))
+            {
+                return;
+            }
+
+            IsLoading = true;
+            ClipboardHistoryPage page = await _historyService!.SearchAsync(
+                CreateQuery(cursor),
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (generation != Volatile.Read(ref _queryGeneration))
+            {
+                return;
+            }
+
+            ApplyPage(page, reset);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            if (generation == Volatile.Read(ref _queryGeneration))
+            {
+                StatusMessage = "历史记录查询失败";
+            }
+        }
+        finally
+        {
+            if (generation == Volatile.Read(ref _queryGeneration))
+            {
+                IsLoading = false;
+            }
+        }
+    }
+
+    private ClipboardHistoryQuery CreateQuery(ClipboardHistoryCursor? cursor) => new()
+    {
+        SearchText = SearchText,
+        DisplayCategory = SelectedFilter switch
+        {
+            ClipboardItemType.Text => ClipboardHistoryDisplayCategory.Text,
+            ClipboardItemType.Image => ClipboardHistoryDisplayCategory.Image,
+            ClipboardItemType.Code => ClipboardHistoryDisplayCategory.Code,
+            ClipboardItemType.Link => ClipboardHistoryDisplayCategory.Link,
+            _ => null,
+        },
+        Cursor = cursor,
+        PageSize = PageSize,
+        NewestFirst = IsNewestFirst,
+    };
+
+    private void ApplyPage(ClipboardHistoryPage page, bool reset)
+    {
+        ClipboardItemId? selectedId = SelectedItem?.Id;
+        if (reset)
+        {
+            foreach (ClipboardHistoryItemViewModel item in VisibleItems)
+            {
+                item.ReleaseThumbnail();
+            }
+
+            VisibleItems.Clear();
+        }
+
+        HashSet<ClipboardItemId> existing = VisibleItems
+            .Select(item => item.Id)
+            .ToHashSet();
+        foreach (ClipboardHistoryItemSummary item in page.Items)
+        {
+            if (existing.Add(item.Id))
+            {
+                VisibleItems.Add(new ClipboardHistoryItemViewModel(item));
+            }
+        }
+
+        _nextCursor = page.NextCursor;
+        CanLoadMore = _nextCursor is not null;
+        _totalCount = page.TotalCount;
+        SelectedItem = selectedId is { } identifier
+            ? VisibleItems.FirstOrDefault(item => item.Id == identifier) ?? VisibleItems.FirstOrDefault()
+            : VisibleItems.FirstOrDefault();
+        StatusMessage = VisibleItems.Count == 0 ? "暂无剪贴板记录" : "就绪";
+        OnPropertyChanged(nameof(RecordCountText));
+        UpdateCollectionState();
+    }
+
+    private void UpdateCollectionState()
+    {
+        OnPropertyChanged(nameof(HasVisibleItems));
+        OnPropertyChanged(nameof(HasNoVisibleItems));
+        if (_totalCount < 0)
+        {
+            OnPropertyChanged(nameof(RecordCountText));
+        }
+    }
+
+    private void OnHistoryChanged(object? sender, ClipboardHistoryChangedEvent e) =>
+        PostToUi(() => ScheduleReload(debounce: false));
+
+    private void PostToUi(Action action)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(SynchronizationContext.Current, _uiContext) ||
+            (_uiContext is null && Dispatcher.UIThread.CheckAccess()))
+        {
+            action();
+            return;
+        }
+
+        if (_uiContext is not null)
+        {
+            _uiContext.Post(
+                static state =>
+                {
+                    var (owner, callback) = ((MainViewModel, Action))state!;
+                    if (Volatile.Read(ref owner._disposed) == 0)
+                    {
+                        callback();
+                    }
+                },
+                (this, action));
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (Volatile.Read(ref _disposed) == 0)
+            {
+                action();
+            }
+        });
+    }
+
+    private void SetPendingOperation(Task operation) =>
+        Volatile.Write(ref _pendingOperation, operation);
+
+    private static ClipboardBitmapData MapBitmap(ClipboardHistoryBitmap bitmap) => new(
+        bitmap.Encoding switch
+        {
+            ClipboardStoredBitmapEncoding.DeviceIndependentBitmap =>
+                ClipboardBitmapEncoding.DeviceIndependentBitmap,
+            ClipboardStoredBitmapEncoding.DeviceIndependentBitmapV5 =>
+                ClipboardBitmapEncoding.DeviceIndependentBitmapV5,
+            ClipboardStoredBitmapEncoding.PortableNetworkGraphics =>
+                ClipboardBitmapEncoding.PortableNetworkGraphics,
+            ClipboardStoredBitmapEncoding.TaggedImageFileFormat =>
+                ClipboardBitmapEncoding.TaggedImageFileFormat,
+            _ => throw new ArgumentOutOfRangeException(nameof(bitmap)),
+        },
+        bitmap.Data,
+        bitmap.Width,
+        bitmap.Height,
+        bitmap.BitsPerPixel);
+
+    private void RefreshDesignItems()
+    {
+        IEnumerable<ClipboardHistoryItemViewModel> query = _designItems;
 
         if (SelectedFilter is { } selectedFilter)
         {
@@ -295,6 +811,8 @@ public partial class MainViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(HasVisibleItems));
         OnPropertyChanged(nameof(HasNoVisibleItems));
+        _totalCount = VisibleItems.Count;
+        OnPropertyChanged(nameof(RecordCountText));
     }
 
     private static List<ClipboardHistoryItemViewModel> CreateSampleItems()

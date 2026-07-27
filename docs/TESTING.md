@@ -72,7 +72,7 @@ dotnet run --project tools/SnapBoard.MacOSClipboardProbe -c Release --no-build -
 
 Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTests` 已独立切换到 xUnit 3.2.2，仓库其余测试继续使用 xUnit 2.9.3；项目文件显式移除继承的 v2 引用，避免同一测试程序集混用两个主版本。
 
-当前 Desktop Headless 共 21 项测试，覆盖：
+当前 Desktop Headless 共 26 项测试，覆盖：
 
 - 默认命令中心数据与选择状态。
 - 搜索、类型筛选、删除和紧凑模式 ViewModel 行为。
@@ -82,7 +82,34 @@ Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTest
 - 快速窗口真实 XAML 渲染、设置窗口 640 x 520 真实帧与关闭后重新创建、自定义快捷键录入与应用、后台第二实例不激活主窗口，以及暂停记录时持续排空 100 个事件但不读取正文、恢复后继续读取。
 - macOS 三类窗口按需创建/关闭/重建、状态菜单命令、关闭窗口后台常驻、第二实例激活、暂停/恢复、资源释放、退出顺序和已保存快捷键启动冲突后回退默认。
 - 设置页 macOS Command/Option/Control/Shift 术语、直接组合键录入、辅助功能状态/受限模式、登录启动能力、恢复默认和无 Windows 专属文字。
+- 正式 ViewModel 每页增量加载、搜索取消后的代际隔离、真实内容写回请求，以及采集协调器持久化失败后继续消费后续事件。
 
 2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行的历史基线为全量 79 项：74 项通过、5 项仅限 macOS 原生环境的测试跳过、0 项失败；Windows 平台项目 37/37、Desktop Headless 14/14。
 
 2026-07-27 在 macOS 26.2 arm64、.NET SDK 10.0.302 上执行最终代码：全量 103 项中 96 项通过、7 项 Windows 原生测试按平台跳过、0 项失败。项目分布为 Application 1、Architecture 2、Domain 1、Infrastructure 1、Linux 1、Windows 30 通过/7 跳过、Sync 3、macOS 36、Desktop Headless 21。locked restore、Release build、`dotnet format --verify-no-changes` 和直接/传递 NuGet 漏洞检查均通过。菜单栏、物理快捷键、第二实例和窗口后台常驻已交互验收；登录启动真实开关/重新登录、权限撤销后重授予、睡眠唤醒、多 Space、多显示器、Retina、全屏、Office、远程桌面和可见 Terminal UI 仍待验收。
+
+## 6. Windows 本地历史与检索验证
+
+2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行 `phase1/windows-history-search` 最终代码：全量共 139 项，131 项通过、8 项 macOS 原生测试按平台跳过、0 项失败。项目分布为 Application 7、Architecture 2、Domain 1、Infrastructure 18、Linux 1、macOS 28 通过/8 跳过、Windows 45、Sync 3、Desktop Headless 26。locked restore、Release build、`dotnet format --verify-no-changes`、直接/传递 NuGet 漏洞检查和 `win-x64` Native AOT 均通过。
+
+新增自动验证覆盖：
+
+- Schema v1-v4 首次迁移、逐版本升级、重复初始化、事务回滚、WAL/外键/busy timeout 和 SQLite 安全版本下限。
+- 数据库损坏的时间戳备份、重新建库、诊断结果和恢复后 CRUD。
+- 历史 CRUD、相邻去重、重启后历史/置顶/标签/设置一致性、使用次数、软删除、清空及条数/时间/容量保留策略。
+- FTS5 中文、英文、代码、特殊字符、空查询、1,024 字符限制、取消、稳定分页以及类型/来源/时间/标签/置顶筛选。
+- Blob 临时文件、原子移动、事务失败回滚、图片外置、320 x 180 缩略图、共享引用计数、删除/清空和精确相对路径孤儿清理；初始化返回时旧孤儿仍保留，证明目录扫描不在启动关键路径。
+- 应用黑名单、密码管理器、敏感/临时格式、仅文本规则、载荷大小限制、饱和加法以及保存成功但保留策略待重试的语义。
+- Windows Credential Manager 的真实新增/读取/覆盖/删除/不存在往返，以及拒绝、无效名称和超限输入的确定性状态。
+- 正式历史 UI 的分页增量加载、旧搜索取消、图片按需加载和普通/纯文本写回请求。
+
+100,000 条检索场景使用生成数据，命令为：
+
+```powershell
+dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests.csproj `
+  --configuration Release --no-build --no-restore -- history-search
+```
+
+该场景导入 100,000 条平均 554.7 字符的混合数据，分别测量中文、英文、代码的选择性与宽查询，各 50 次，共 300 次；总体 P95 2.06 ms、最大 3.63 ms。性能测试只输出计数、耗时和大小，不打印正文。它不是 `dotnet test` 的一部分，必须单独执行。
+
+Windows 原生探针最新样本为 100 次预热和 10,000 次事件，事件匹配 10,000/10,000，反馈和 Channel 丢弃为 0；Private Bytes 增长 8.46 MiB，严格资源预算失败。功能与资源结论必须继续分开；8 小时长稳未执行。

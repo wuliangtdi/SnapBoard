@@ -2,13 +2,13 @@
 
 > 日期：2026-07-27
 > 环境：Windows 11 Pro 10.0.28000 x64，.NET SDK 10.0.302
-> 分支：`phase1/windows-completion`
+> 分支：`phase1/windows-history-search`
 
 ## 1. 自动测试
 
-`SnapBoard.Platform.Windows.Tests` 共 29 项并全部通过，区分纯逻辑测试和真实 Windows 原生集成测试。覆盖监听器生命周期、取消、序列号去重、有限退避、队列溢出、Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、File List、格式清单、来源进程、自定义来源标记、反馈抑制、`INPUT` ABI、UIPI 结构化降级、SendInput 前 HWND/PID 与前台窗口二次校验、热键冲突回滚、两个真实 message-only window 的注册冲突、开机启动配置和 CurrentUserOnly 单实例命名管道。
+`SnapBoard.Platform.Windows.Tests` 共 45 项并全部通过，区分纯逻辑测试和真实 Windows 原生集成测试。覆盖监听器生命周期、取消、序列号去重、有限退避、队列溢出、Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、File List、格式清单、来源进程、自定义来源标记、反馈抑制、`INPUT` ABI、UIPI 结构化降级、SendInput 前 HWND/PID 与前台窗口二次校验、热键冲突回滚、两个真实 message-only window 的注册冲突、开机启动配置、CurrentUserOnly 单实例命名管道，以及 Credential Manager 的真实临时密钥往返和错误状态映射。
 
-`SnapBoard.Desktop.HeadlessTests` 共 12 项并全部通过，其中新增快速窗口真实 XAML 渲染、设置窗口关闭后重新创建、后台第二实例不激活主窗口，以及暂停记录时持续排空 100 个轻量事件但不读取正文、恢复后继续读取。完整解决方案共 69 项：64 项通过、5 项仅限 macOS 原生环境的测试跳过、0 项失败。
+`SnapBoard.Desktop.HeadlessTests` 共 26 项并全部通过，新增正式历史的每页增量加载、旧搜索取消、真实内容写回请求、采集持久化失败隔离和异常消息脱敏。完整解决方案共 139 项：131 项通过、8 项仅限 macOS 原生环境的测试跳过、0 项失败；Infrastructure 18/18、Windows 45/45、Desktop Headless 26/26。
 
 自动测试不会向用户当前前台应用注入真实粘贴快捷键，也不会修改用户真实的开机启动设置，因此不能替代交互式桌面验收。
 
@@ -20,13 +20,14 @@
 DelayedRendering=Passed; ReadStatus=Success; Reason=None; TextMatched=True
 ```
 
-三轮 10,000 次压力测试的功能正确性均通过：无死锁，10,000 个正常自写事件均被观察到，反馈循环和监听器/写入器 Channel 丢弃均为 0。资源增长预算单独判定为失败。
+四轮 10,000 次压力测试的功能正确性均通过：无死锁，10,000 个正常自写事件均被观察到，反馈循环和监听器/写入器 Channel 丢弃均为 0。资源增长预算单独判定为失败。
 
 | 轮次 | Warmup | 自写事件 | 无关事件 | Busy 重试 | 反馈事件 | Channel 丢弃 | 平均 CPU | Private Bytes 增长 | 句柄变化 | `< 8 MiB` |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | 1 | 0 | 10,000/10,000 | 0 | 159 | 0 | 0 | 0.07% | 15.56 MiB | +14 | 未通过 |
 | 2 | 128 | 10,000/10,000 | 0 | 176 | 0 | 0 | 0.07% | 8.43 MiB | +2 | 未通过 |
 | 3 | 1,000 | 10,000/10,000 | 1 | 171 | 0 | 0 | 0.05% | 15.12 MiB | -11 | 未通过 |
+| 4 | 100 | 10,000/10,000 | 0 | 320 | 0 | 0 | 0.07% | 8.46 MiB | -3 | 未通过 |
 
 因此，Phase 1.3 的“无死锁、正常事件不丢失、不产生无限自复制”功能退出条件已验证，但 8 MiB 资源增长门槛和 8 小时长稳仍未完成。
 
@@ -38,7 +39,7 @@ DelayedRendering=Passed; ReadStatus=Success; Reason=None; TextMatched=True
 | 后台启动与明确退出 | 通过 | `--background` 启动时不显示主窗口；`--exit` 通过命名管道请求主实例干净退出 |
 | 主/快速/设置窗口生命周期 | 通过 | 三类窗口均实际显示；Headless 验证设置窗口关闭后可重新创建，窗口关闭后解除 DataContext 和事件订阅 |
 | 全局快捷键冲突 | 自动原生通过 | 两个真实 message-only window 注册同一 F24 组合键，第二个返回冲突且释放后可恢复；未执行物理按键唤起 |
-| 托盘菜单 | 未完成 | 托盘对象和菜单已初始化，后台进程可常驻；桌面截图设备异常导致本轮未可靠点击托盘菜单，不能标记交互通过 |
+| 托盘菜单 | 部分完成 | 关闭窗口后托盘进程连续采样 1,152.83 秒并可通过 `--exit` 退出；本轮仍未可靠点击各菜单项，不能标记菜单交互通过 |
 | 多显示器/DPI | 未完成 | Per-Monitor V2、监视器工作区和缩放定位已实现；本轮没有多显示器/DPI 实机矩阵 |
 | 开机启动 | 自动确定性通过 | HKCU Run 命令生成、启用、禁用由 fake registry 验证；未修改当前用户真实开机启动项 |
 
@@ -51,17 +52,49 @@ DelayedRendering=Passed; ReadStatus=Success; Reason=None; TextMatched=True
 | 文本复制监听 | Windows 打包版 Notepad 11.2605.34.0 | 通过 | 生成文本复制后捕获 `Sequence=6388`、`Source=Notepad`、`SourceAccess=Identified`、`CF_UNICODETEXT`，`DroppedEvents=0` |
 | 普通窗口纯文本写回与自动粘贴 | Windows 打包版 Notepad | 通过 | 指定有效 HWND 后 `TargetValid=True`、`PasteStatus=Pasted`；UI Automation 读取到完整生成文本 `SnapBoard explicit target auto paste 2026-07-27` |
 | UWP/WinUI | Windows 打包版 Notepad | 通过（文本路径） | 目标进程实际加载 `Microsoft.UI.Xaml.dll`、`Microsoft.UI.Xaml.Controls.dll` 和 `Microsoft.UI.Xaml.Internal.dll`；已验证文本写回、恢复和自动粘贴，不代表其他 UWP/WinUI 应用或图片格式 |
-| Explorer 单/多文件和目录复制 | 文件资源管理器 | 未完成 | 自动集成已验证 `CF_HDROP`；实机准备生成文件后 Explorer 复用现有标签页并检测到用户输入，按安全要求停止，临时文件已清理，未产生可计结果 |
-| Chrome/Edge/Firefox 正文、HTML、地址栏和图片 | 浏览器 | 未完成 | 本轮桌面截图设备异常且输入控制不可可靠执行；没有把插件或虚拟剪贴板结果计为系统剪贴板通过 |
+| Explorer 单/多文件和目录复制 | 文件资源管理器 | 未完成 | 自动集成已验证 `CF_HDROP`；本轮只在忽略目录准备了生成的单文件、多文件和目录，因 Explorer 焦点漂移停止，未复制用户文件，也没有可计实机结果 |
+| Chrome/Edge/Firefox 正文、HTML、地址栏和图片 | 浏览器 | 未完成 | 隔离的本地生成页已在新 Chrome 窗口加载，但自动化恢复后无法可靠确认正文或地址栏选区，未执行可计的系统剪贴板探针；Edge、Firefox 和图片路径未执行 |
 | 管理员窗口/UIPI | 高完整性目标 | 未执行 | 未得到本轮单独的提升许可，也未操作 UAC；仅有确定性测试验证 `HigherIntegrityTarget` 降级为“已复制，请手动粘贴” |
 | Office | Word/Excel/PowerPoint | 未执行 | 未操作现有用户文档，不推断 Office 兼容性 |
 | 远程桌面 | RDP 会话 | 未执行 | 未操作现有远程会话，不推断远程剪贴板兼容性 |
 
-## 5. 待验收
+## 5. 本地历史、Blob、检索和密钥验证
+
+| 项目 | 结果 | 实际证据/限制 |
+| --- | --- | --- |
+| Schema 与迁移 | 通过 | v1-v4 首次建库、逐版本升级和重复初始化通过；WAL、外键、busy timeout 由真实 SQLite 连接断言 |
+| 单写与事务 | 通过 | 有界单写 Channel 串行事务；并发写、取消和故障回滚通过，读取使用短生命周期连接 |
+| 损坏恢复 | 通过 | `quick_check` 失败后备份 DB/WAL/SHM 可用文件并重建，诊断结果不含正文；恢复后 CRUD 通过 |
+| 重启一致性 | 通过 | 关闭并重新创建 Store 后，历史、标签、置顶和版本化设置保持一致 |
+| 内容寻址 Blob | 通过 | 原图和超过 64 KiB 载荷外置为 SHA-256 相对路径；临时落盘、原子移动、缩略图、共享引用、失败回滚及删除/清空/过期通过 |
+| 孤儿清理 | 通过（自动测试） | 启动后延迟 2 分钟后台运行，24 小时宽限、每批 32 个；初始化返回时旧孤儿仍存在，删除前在写队列按完整相对路径复查，不按文件名猜测共享关系 |
+| FTS5 | 通过 | 中文、英文、代码、特殊字符、空查询、超长限制、取消、稳定分页及类型/来源/时间/标签/置顶筛选通过 |
+| 策略链 | 通过 | 相邻去重、置顶、标签、删除、清空、条数/时间/容量，以及本应用、密码管理器、临时/敏感格式、黑名单、仅文本和载荷大小规则通过 |
+| Credential Manager | 通过 | 真实临时项新增、读取、覆盖、删除和不存在通过；拒绝/取消/无会话、无效名称和超限输入映射通过，临时项最终删除 |
+
+正式主窗口和快速窗口已接入 Application 查询用例，使用 50 条稳定分页、`VirtualizingStackPanel`、150 ms 防抖、可取消查询和结果代际检查；原图、正文和缩略图均按需读取，图片解码在后台执行。正式组合根不创建示例历史；参数less ViewModel 中的样例只服务 XAML 设计和无数据库视觉测试。
+
+100,000 条生成数据平均 554.7 字符，导入 27,960.26 ms；中文/英文/代码共 300 次搜索总体 P95 2.06 ms、最大 3.63 ms，达到 P95 `< 80 ms` 且不超过 200 ms 的门槛。数据库为 512,282,624 字节；该结果只适用于当前 Windows x64 主机。
+
+## 6. Native AOT 与进程资源
+
+最终 `win-x64` self-contained Native AOT 的 `SnapBoard.Desktop.exe` 为 29,425,152 字节，SHA-256 为 `D2C307AAEA12BDEFC5DA4FEDC986CDD292C37DC3C83F92049F91D5ED3B677FF0`。发布输出 0 个 AOT/裁剪警告，目录无 `coreclr.dll`/`clrjit.dll`；原生 EXE 实际启动、关闭窗口并通过第二实例 `--exit` 退出，无残留进程。
+
+| 轮次 | 启动 | 可见峰值 PWS | 可见 Private | 可见 CPU/句柄 | 关闭后 PWS | 关闭后 Private | 后台 CPU/句柄 | PWS 回落 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 473.19 ms | 155.74 MiB | 189.16 MiB | 0.022% / 1276 | 103.32 MiB | 136.59 MiB | 0.000% / 1288 | 52.41 MiB |
+| 2 | 390.58 ms | 155.33 MiB | 187.99 MiB | 0.019% / 1276 | 110.13 MiB | 135.54 MiB | 0.000% / 1288 | 45.20 MiB |
+| 3 | 403.63 ms | 138.97 MiB | 188.12 MiB | 0.022% / 1278 | 94.82 MiB | 127.82 MiB | 0.000% / 1290 | 44.15 MiB |
+
+另一次关闭窗口托盘采样实际持续 1,152.83 秒（19 分 12.83 秒）：最终 PWS 88.29 MiB、Private Bytes 120.99 MiB、句柄 1295，后台平均 CPU 0.000%。它完成了至少 10 分钟的观察，但不是 8 小时长稳；Private Bytes 仍超过 100 MiB，且最新 10,000 次压力增长 8.46 MiB，因此资源门槛保持未完成。
+
+## 7. 待验收
 
 - 物理全局快捷键、托盘菜单点击、真实 HKCU 开机启动、多显示器、混合 DPI、睡眠唤醒和 8 小时后台常驻。
 - Explorer 的单文件、多文件和目录 `CF_HDROP`。
 - Chrome/Edge/Firefox 的正文、地址栏、HTML、图片复制与写回。
 - 经用户明确允许后启动高完整性目标，验证 UIPI 返回“已复制，请手动粘贴”。
 - Office 和远程桌面只在可隔离的生成数据或测试会话中执行。
-- 定位 10,000 次压力测试 Private Bytes 增长并满足 `< 8 MiB` 预算。
+- 定位最新 10,000 次压力测试 8.46 MiB Private Bytes 增长并满足 `< 8 MiB` 预算；执行 8 小时长稳。
+- 数字快捷选择、标签编辑、搜索高亮和完整富格式预览；当前普通/纯文本粘贴、分页、筛选、置顶和删除已保留。
+- Windows ARM64、macOS 和 Linux 必须在各自目标环境单独验证，不能由本轮 Windows x64 结果推断。

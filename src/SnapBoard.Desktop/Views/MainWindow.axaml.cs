@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using SnapBoard.Desktop.ViewModels;
 
 namespace SnapBoard.Desktop.Views;
@@ -11,6 +12,25 @@ public partial class MainWindow : Window
         InitializeComponent();
         Opened += OnOpened;
         KeyDown += OnWindowKeyDown;
+    }
+
+    private void OnThumbnailLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        ClipboardHistoryItemViewModel? item = sender is Control
+        {
+            DataContext: ClipboardHistoryItemViewModel itemDataContext,
+        }
+            ? itemDataContext
+            : viewModel.SelectedItem;
+        if (item is not null)
+        {
+            _ = viewModel.LoadThumbnailAsync(item);
+        }
     }
 
     private void OnOpened(object? sender, EventArgs e)

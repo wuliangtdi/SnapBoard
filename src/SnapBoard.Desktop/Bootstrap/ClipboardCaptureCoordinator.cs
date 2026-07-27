@@ -1,3 +1,4 @@
+using SnapBoard.Application.Clipboard;
 using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Desktop.Bootstrap;
@@ -13,10 +14,11 @@ internal sealed record ClipboardCaptureState(
 /// 桌面进程只启动一次剪贴板 WatchAsync。暂停记录时仍持续排空平台有界队列，
 /// 但跳过正文读取，防止取消/重启一次性 watcher 导致事件停摆或句柄泄漏。
 /// </summary>
-internal sealed class ClipboardCaptureCoordinator(
-    IClipboardMonitor monitor,
-    IClipboardContentReader reader) : IDisposable
+internal sealed class ClipboardCaptureCoordinator : IDisposable
 {
+    private readonly IClipboardCaptureService? _captureService;
+    private readonly IClipboardMonitor _monitor;
+    private readonly IClipboardContentReader _reader;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _captureTask;
     private long _observedEventCount;
@@ -24,6 +26,25 @@ internal sealed class ClipboardCaptureCoordinator(
     private int _isPaused;
     private int _started;
     private int _disposed;
+
+    public ClipboardCaptureCoordinator(
+        IClipboardMonitor monitor,
+        IClipboardContentReader reader)
+        : this(monitor, reader, null)
+    {
+    }
+
+    public ClipboardCaptureCoordinator(
+        IClipboardMonitor monitor,
+        IClipboardContentReader reader,
+        IClipboardCaptureService? captureService)
+    {
+        ArgumentNullException.ThrowIfNull(monitor);
+        ArgumentNullException.ThrowIfNull(reader);
+        _monitor = monitor;
+        _reader = reader;
+        _captureService = captureService;
+    }
 
     public event Action<ClipboardCaptureState>? StateChanged;
 
@@ -76,7 +97,7 @@ internal sealed class ClipboardCaptureCoordinator(
         try
         {
             await foreach (ClipboardChangedEvent change in
-                monitor.WatchAsync(cancellationToken).ConfigureAwait(false))
+                _monitor.WatchAsync(cancellationToken).ConfigureAwait(false))
             {
                 Interlocked.Increment(ref _observedEventCount);
                 if (IsPaused)
@@ -86,17 +107,35 @@ internal sealed class ClipboardCaptureCoordinator(
                 }
 
                 ClipboardReadResult result =
-                    await reader.ReadAsync(change, cancellationToken).ConfigureAwait(false);
+                    await _reader.ReadAsync(change, cancellationToken).ConfigureAwait(false);
                 Interlocked.Increment(ref _readCount);
+                if (_captureService is not null)
+                {
+                    try
+                    {
+                        await _captureService.ProcessAsync(result, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // 单条策略/持久化异常不能终止唯一平台 watcher；正文和异常细节不进入状态消息。
+                    }
+                }
+
                 PublishState(result.Status);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            PublishState(null, exception.Message);
+            // 平台异常可能间接携带剪贴板正文、格式名或路径，UI 只能接收固定诊断码。
+            PublishState(null, "clipboard-capture-failed");
         }
     }
 

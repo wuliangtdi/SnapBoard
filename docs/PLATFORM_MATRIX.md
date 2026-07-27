@@ -4,7 +4,7 @@
 
 | 平台 | 目标版本/桌面 | 剪贴板监听 | 全局快捷键 | 自动粘贴 | 凭据存储 | 当前状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Windows | Windows 11 x64 | 受限：原生适配器与 delayed rendering 已验证，外部应用矩阵未完成 | 受限：自定义按键录入、原生注册、冲突回滚和配置已自动验证，物理按键待验收 | 受限：Notepad/WinUI 已实机通过，管理员目标待验收 | DPAPI/Credential Locker | 一期 Phase 1.2/1.3 收口中 |
+| Windows | Windows 11 x64 | 受限：原生适配器、delayed rendering、持久历史和检索已验证，外部应用矩阵未完成 | 受限：自定义按键录入、原生注册、冲突回滚和配置已自动验证，物理按键待验收 | 受限：Notepad/WinUI 已实机通过，管理员目标待验收 | Credential Manager 原生服务已验证 | Phase 1.4 自动验证完成，实机矩阵收口中 |
 | macOS | macOS 26.2 arm64 已测；x64 待测 | 受限：原生适配器与 10,000 次功能压力已验证，资源增长预算未满足且 8 小时长稳未执行 | 受限：自定义录入、原生注册、冲突回滚、持久化和物理组合键已验证 | 受限：TextEdit 允许/拒绝状态已测，需辅助功能权限 | Keychain 原生服务已验证 | 二期核心完成，发布验收进行中 |
 | Ubuntu | GNOME X11 | 计划完整 | 计划完整 | 计划完整 | Secret Service | 三期 |
 | Ubuntu/Fedora | GNOME Wayland | 配套扩展或受限 | 桌面接口决定 | 通常受限 | Secret Service | 三期高风险 |
@@ -15,12 +15,16 @@
 
 - [x] `AddClipboardFormatListener` 消息生命周期、取消和退出清理。
 - [x] 剪贴板占用和延迟渲染重试：有限退避、取消和真实 delayed-rendering owner 已验证。
+- [x] SQLite v4 迁移、WAL/外键/busy timeout、单写队列、损坏备份恢复、重启一致性和参数化显式投影。
+- [x] 外部内容寻址 Blob、缩略图、引用计数、失败回滚以及延迟后台精确孤儿清理。
+- [x] FTS5 中文/英文/代码检索、稳定分页、筛选、取消和 100,000 条生成数据性能验证。
+- [x] Windows Credential Manager 密钥服务的新增、读取、覆盖、删除、不存在和拒绝状态。
 - [~] 前台窗口恢复、任意支持键录入和真实全局快捷键冲突已验证；物理按键、多显示器与 DPI 实机待验收。
 - [~] 普通权限应用与管理员应用之间的 UIPI 降级逻辑已实现，管理员目标实机待验收。
 - [~] 单实例、第二实例激活、后台启动、按需窗口和退出清理已实测；托盘菜单点击与真实开机启动待验收。
-- [~] `win-x64` Native AOT 本机 0 警告并实际启动；三次可见/窗口关闭后的 PWS、Private Bytes、CPU 和句柄已记录，GitHub Runner、10 分钟与 8 小时增长待验证。
+- [~] `win-x64` Native AOT 本机 0 警告并实际启动；三次可见/窗口关闭指标和 19 分钟托盘样本已记录，资源预算、GitHub Runner 与 8 小时增长待验证。
 
-外部应用交互状态：Windows 11 打包版 Notepad 已通过文本复制；该进程明确加载 Microsoft.UI.Xaml，并通过纯文本写回、前台恢复和自动粘贴。浏览器、Explorer 文件复制、管理员窗口、Office 和远程桌面尚未通过。详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
+外部应用交互状态：Windows 11 打包版 Notepad 已通过文本复制；该进程明确加载 Microsoft.UI.Xaml，并通过纯文本写回、前台恢复和自动粘贴。Explorer 和浏览器仅准备了隔离生成数据，但本轮自动化焦点状态不可靠，没有形成可计系统剪贴板结果；管理员窗口、Office 和远程桌面未执行。详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
 ## macOS 验收
 

@@ -10,13 +10,21 @@ public sealed class SnapBoardDatabaseConnectionFactory
 {
     private readonly string _connectionString;
 
+    static SnapBoardDatabaseConnectionFactory()
+    {
+        // 直接调用 bundle 初始化入口，避免 Microsoft.Data.Sqlite 在裁剪/AOT 后依赖
+        // 反射发现 SQLitePCL.Batteries_V2。CLR 保证静态构造只执行一次且并发安全。
+        SQLitePCL.Batteries_V2.Init();
+    }
+
     public SnapBoardDatabaseConnectionFactory(string databasePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
+        DatabasePath = Path.GetFullPath(databasePath);
         SqliteConnectionStringBuilder builder = new()
         {
-            DataSource = Path.GetFullPath(databasePath),
+            DataSource = DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = true,
             DefaultTimeout = 5,
@@ -25,5 +33,27 @@ public sealed class SnapBoardDatabaseConnectionFactory
         _connectionString = builder.ToString();
     }
 
+    public string DatabasePath { get; }
+
     public SqliteConnection CreateConnection() => new(_connectionString);
+
+    public async ValueTask<SqliteConnection> OpenConnectionAsync(
+        CancellationToken cancellationToken)
+    {
+        SqliteConnection connection = CreateConnection();
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;";
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
 }

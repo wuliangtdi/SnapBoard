@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace SnapBoard.Platform.Windows.Interop;
 
-internal static class WindowsNativeConstants
+internal static partial class WindowsNativeConstants
 {
     public const uint ClipboardFormatText = 1;
     public const uint ClipboardFormatBitmap = 2;

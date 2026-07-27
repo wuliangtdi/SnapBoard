@@ -1,6 +1,9 @@
 using System.Runtime.Versioning;
 using Microsoft.Extensions.DependencyInjection;
+using SnapBoard.Application.Clipboard;
 using SnapBoard.Desktop.ViewModels;
+using SnapBoard.Domain.Clipboard;
+using SnapBoard.Infrastructure.Persistence;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Security;
@@ -9,6 +12,7 @@ using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
 using SnapBoard.Platform.Windows.Desktop;
+using SnapBoard.Platform.Windows.Security;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
@@ -21,6 +25,7 @@ internal static class DesktopCompositionRoot
     public static ServiceProvider Build()
     {
         ServiceCollection services = new();
+        AddClipboardHistoryServices(services);
         services.AddSingleton<MainViewModel>();
 
         if (OperatingSystem.IsWindows())
@@ -39,6 +44,30 @@ internal static class DesktopCompositionRoot
         });
     }
 
+    private static void AddClipboardHistoryServices(IServiceCollection services)
+    {
+        services.AddSingleton(SnapBoardStoragePaths.CreateDefault());
+        services.AddSingleton(provider => new SnapBoardDatabaseConnectionFactory(
+            provider.GetRequiredService<SnapBoardStoragePaths>().DatabasePath));
+        services.AddSingleton<SnapBoardDatabaseMigrator>();
+        services.AddSingleton<SqliteClipboardHistoryStore>();
+        services.AddSingleton<IClipboardHistoryStore>(provider =>
+            provider.GetRequiredService<SqliteClipboardHistoryStore>());
+        services.AddSingleton<ClipboardHistoryChangeNotifier>();
+        services.AddSingleton<IClipboardHistoryService, ClipboardHistoryService>();
+
+        services.AddSingleton(new ClipboardCaptureOptions());
+        services.AddSingleton(ClipboardRetentionPolicy.Default);
+        // 责任链顺序是安全边界：先阻断自身反馈和敏感来源，再执行应用规则与容量判断。
+        services.AddSingleton<IClipboardCapturePolicy, CurrentApplicationClipboardPolicy>();
+        services.AddSingleton<IClipboardCapturePolicy, SensitiveClipboardPolicy>();
+        services.AddSingleton<IClipboardCapturePolicy, ApplicationRuleClipboardPolicy>();
+        services.AddSingleton<IClipboardCapturePolicy, PayloadSizeClipboardPolicy>();
+        services.AddSingleton<IClipboardCapturePolicy, SupportedContentClipboardPolicy>();
+        services.AddSingleton<IClipboardCapturePolicyChain, ClipboardCapturePolicyChain>();
+        services.AddSingleton<IClipboardCaptureService, ClipboardCaptureService>();
+    }
+
     [SupportedOSPlatform("windows")]
     private static void AddWindowsClipboardServices(IServiceCollection services)
     {
@@ -54,6 +83,7 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IGlobalHotKeyService, WindowsGlobalHotKeyService>();
         services.AddSingleton<IAutoStartService, WindowsAutoStartService>();
         services.AddSingleton<IPlatformWindowPlacementService, WindowsWindowPlacementService>();
+        services.AddSingleton<IPlatformSecretStore, WindowsCredentialSecretStore>();
         services.AddSingleton<ClipboardCaptureCoordinator>();
     }
 

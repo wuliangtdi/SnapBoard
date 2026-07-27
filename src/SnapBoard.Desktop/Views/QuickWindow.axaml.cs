@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using SnapBoard.Desktop.ViewModels;
 
 namespace SnapBoard.Desktop.Views;
@@ -16,6 +17,15 @@ public partial class QuickWindow : Window
         InitializeComponent();
         Opened += OnOpened;
         KeyDown += OnWindowKeyDown;
+    }
+
+    private void OnThumbnailLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: ClipboardHistoryItemViewModel item } &&
+            DataContext is MainViewModel viewModel)
+        {
+            _ = viewModel.LoadThumbnailAsync(item);
+        }
     }
 
     public event EventHandler? DismissRequested;

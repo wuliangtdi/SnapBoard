@@ -41,15 +41,34 @@
                  DoubleTapped="OnHistoryDoubleTapped"
                  ItemsSource="{Binding VisibleItems}"
                  SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ClipboardHistoryItemViewModel">
                     <Grid Margin="18,10" ColumnDefinitions="Auto,*,Auto">
-                        <materialIcons:MaterialIcon Width="20"
-                                                    Height="20"
-                                                    Margin="0,0,12,0"
-                                                    VerticalAlignment="Center"
-                                                    Foreground="{DynamicResource AccentBrush}"
-                                                    Kind="{Binding TypeIcon}" />
+                        <Grid Width="36" Height="36" Margin="0,0,12,0">
+                            <Image Loaded="OnThumbnailLoaded"
+                                   IsVisible="{Binding HasThumbnail}"
+                                   Source="{Binding Thumbnail}"
+                                   Stretch="UniformToFill" />
+                            <materialIcons:MaterialIcon Width="20"
+                                                        Height="20"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{DynamicResource AccentBrush}"
+                                                        IsVisible="{Binding HasThumbnailPlaceholder}"
+                                                        Kind="ImageMultipleOutline" />
+                            <materialIcons:MaterialIcon Width="20"
+                                                        Height="20"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{DynamicResource AccentBrush}"
+                                                        IsVisible="{Binding !HasThumbnail}"
+                                                        Kind="{Binding TypeIcon}" />
+                        </Grid>
                         <StackPanel Grid.Column="1" Spacing="3">
                             <TextBlock FontWeight="SemiBold"
                                        MaxLines="1"

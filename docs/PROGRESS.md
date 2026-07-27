@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-27
-> 当前阶段：Phase 2 macOS 桌面生命周期与发布验证收口中；Phase 1 后续项保留
+> 当前阶段：Phase 1 Windows 本地历史与检索已完成实现和自动验证；Windows 实机矩阵继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -11,10 +11,12 @@
 | --- | --- | --- |
 | Phase 0 规划与决策 | 已完成 | 名称、MIT、三期平台、WebDAV 和同步范围已确认 |
 | Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
-| Phase 1.1 AOT/内存基线 | 进行中 | Windows AOT 可见窗口峰值 PWS 84.47-109.50 MiB；窗口关闭后最终 PWS 66.22/66.86/130.38 MiB，Private Bytes 130.67-180.64 MiB，释放行为不稳定且尚未达标 |
+| Phase 1.1 AOT/内存基线 | 进行中 | 最终历史构建三轮可见峰值 PWS 155.74/155.33/138.97 MiB，关闭窗口后为 103.32/110.13/94.82 MiB；Private Bytes 为 136.59/135.54/127.82 MiB，内存门槛未完成 |
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI 写回与自动粘贴及 10,000 次功能压力通过；外部应用矩阵和资源增长预算未完成 |
-| Phase 1.4-1.8 | 未开始 | 数据、搜索、快速粘贴、WebDAV 和发布待后续执行 |
+| Phase 1.4 本地历史与检索 | 已完成 | SQLite v4、单写队列、恢复、CAS Blob、缩略图、FTS5、策略链及 100,000 条检索已通过 |
+| Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消和按需缩略图；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
+| Phase 1.6-1.8 | 未开始 | 下一阶段为 Windows 端到端加密 WebDAV 同步，之后才进入签名、安装包、自动更新和正式发布 |
 | Phase 2 macOS | 进行中 | arm64 剪贴板、生命周期、菜单栏、自定义快捷键、Keychain 与本地 DMG/PKG 已验证；登录启动交互、Intel、Developer ID、公证和环境矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
@@ -55,11 +57,11 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | macOS arm64 共 103 项：96 项通过、7 项 Windows 原生测试按平台跳过、0 项失败；macOS 36/36，Desktop Headless 21/21 |
+| 全量自动测试 | 通过 | Windows 11 x64 共 139 项：131 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Infrastructure 18/18、Windows 45/45、Desktop Headless 26/26 |
 | `osx-arm64` Native AOT | 通过 | App Bundle 内 arm64 Mach-O 为 24,430,144 字节；0 个 AOT/裁剪警告，裸产物与 DMG 挂载 Bundle 均已实际启动 |
-| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 27,746,304 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动；Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 29,425,152 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、关闭窗口和明确退出；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
-| Windows 窗口/后台内存 | 未达标 | AOT 三次可见窗口峰值 PWS 84.47/85.12/109.50 MiB；关闭窗口后最终 PWS 66.22/66.86/130.38 MiB，最终 Private Bytes 130.67/140.51/180.64 MiB，不能声称常驻低于 100 MB |
+| Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
 | macOS 窗口/后台内存 | 未达标 | 最终 AOT 三次可见窗口峰值 Physical Footprint 205.63/206.16/205.44 MiB；关闭全部窗口 3 秒后为 107.81/107.53/107.64 MiB，仍高于 100 MB |
 
 ## 4. 重要发现
@@ -110,11 +112,10 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 
 ## 5. 下一执行顺序
 
-1. 在用户确认会修改系统设置后，实测 macOS 登录启动启用/禁用与重新登录，以及辅助功能撤销、拒绝和同一稳定签名身份重新授权。
-2. 在具备相应硬件/场景时验证睡眠唤醒、多 Space、多显示器、Retina、全屏应用、Office、远程桌面和可见 Terminal UI。
-3. 配置 Developer ID Application/Installer 与公证凭据，在 GitHub macOS arm64/x64 Runner 分别执行 locked restore、AOT、签名、公证和 Release；不得由 arm64 推断 x64。
-4. 分析 macOS 10,000 次压力测试约 15.05 MiB RSS、+2 线程、+2 文件描述符以及后台超过 100 MB 的原因，完成 10 分钟和 8 小时长稳。
-5. 继续 Windows 未完成验收并进入 Phase 1.4 SQLite Schema、迁移、单写队列、Blob、FTS5 和策略链。
+1. 合并并推送 `phase1/windows-history-search`，继续定位 Windows 10,000 次 Private Bytes 增长和未完成的真实应用/硬件矩阵。
+2. 进入 `phase1/windows-sync`，实现端到端加密 WebDAV 同步；不得上传 SQLite/WAL 文件或明文凭据。
+3. 同步阶段完成后再进入 Windows 签名、安装包、自动更新和正式发布。
+4. 在对应硬件和签名环境补齐 Windows ARM64、macOS Intel、Linux、8 小时长稳与各平台未完成的实机场景；不得从当前 Windows x64 结果外推。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -268,7 +269,37 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
   - 本机没有 Developer ID 身份/公证凭据，未执行正式签名、公证或 Gatekeeper 接受验证；osx-x64 未发布、未启动。
 ```
 
-## 11. 更新规则
+## 11. 2026-07-27 执行记录：Windows 本地历史与检索
+
+```text
+日期：2026-07-27
+阶段/任务：Phase 1.4 本地历史、检索和策略；Phase 1.5 真实数据接入；Windows 密钥服务
+状态：[x] 实现与自动验证完成；[~] 资源预算及外部应用/硬件矩阵未完成
+完成内容：
+  - 建立 SQLite Schema v1-v4 和可重复迁移；启用 WAL、外键、busy timeout、quick_check、损坏备份和诊断恢复。
+  - 所有写事务进入有界单写 Channel；读查询使用短生命周期连接和显式投影，Application/UI 不暴露 SQLite 类型。
+  - 保存内容类型、来源、时间、SHA-256、置顶、标签、使用次数、删除状态、格式和文件引用；重启一致性由集成测试覆盖。
+  - 原图和超过 64 KiB 的载荷使用外部内容寻址 Blob；数据库只存相对路径/元数据/引用计数，缩略图为 320 x 180 PNG。
+  - 临时文件落盘后原子移动，再提交数据库引用；回滚、共享引用、删除、清空、过期和精确孤儿清理由测试覆盖。
+  - 孤儿目录扫描不阻塞启动：初始化后延迟 2 分钟后台运行，24 小时宽限，每批 32 个，删除前按完整相对路径复查数据库。
+  - FTS5 覆盖中文、英文、代码、特殊字符、空/超长查询、取消、稳定分页以及类型/来源/时间/标签/置顶筛选。
+  - 实现相邻去重、置顶、标签、软删除、清空、条数/时间/磁盘容量策略和应用/敏感格式/载荷大小责任链。
+  - 正式 UI 接入 Application 查询用例，每页 50 条、VirtualizingStackPanel、搜索取消/代际保护及图片按需解码。
+  - Windows Credential Manager 实现 IPlatformSecretStore，使用 LibraryImport，覆盖新增、读取、覆盖、删除、不存在、拒绝和无效输入。
+验证结果：
+  - .NET SDK 10.0.302；locked restore、Release build、format 校验及直接/传递 NuGet 漏洞检查通过。
+  - 全量 139 项：131 项通过、8 项 macOS 原生测试跳过、0 项失败。
+  - win-x64 self-contained Native AOT EXE 29,425,152 字节，0 个 AOT/裁剪警告，无 coreclr/clrjit，实际启动并明确退出。
+  - 100,000 条、平均 554.7 字符生成数据导入 27,960.26 ms；300 次混合搜索 P95 2.06 ms、最大 3.63 ms。
+  - 三轮最终 AOT：启动 473.19/390.58/403.63 ms；关闭后 PWS 103.32/110.13/94.82 MiB；Private Bytes 136.59/135.54/127.82 MiB。
+限制：
+  - 最新 10,000 次事件功能通过，但 Private Bytes 增长 8.46 MiB，仍高于严格的 8 MiB 预算；8 小时测试未执行。
+  - 19 分钟托盘样本完成，不能替代 8 小时；最终 Private Bytes 120.99 MiB，整体内存门槛未完成。
+  - Explorer、Chrome/Edge/Firefox、物理热键、托盘菜单、真实 HKCU、多显示器/混合 DPI、睡眠唤醒和管理员窗口本轮未形成可计结果。
+  - Office 与远程桌面未执行；Windows ARM64、macOS 和 Linux 未由本轮结果推断通过。
+```
+
+## 12. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

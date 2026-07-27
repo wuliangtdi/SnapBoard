@@ -80,9 +80,11 @@ public partial class App : AvaloniaApplication, IDisposable
                 return;
             }
 
+            MainViewModel mainViewModel = _services.GetRequiredService<MainViewModel>();
+            mainViewModel.Start();
             desktop.MainWindow = new MainWindow
             {
-                DataContext = _services.GetRequiredService<MainViewModel>(),
+                DataContext = mainViewModel,
             };
             desktop.Exit += OnDesktopExit;
         }

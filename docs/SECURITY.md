@@ -15,7 +15,8 @@
 
 - 数据目录仅当前用户可读写。
 - SQLite 使用参数化 SQL、外键、WAL 和明确迁移。
-- 大对象写入临时文件后原子重命名，数据库只在文件成功后提交引用。
+- 大对象写入临时文件并强制落盘后原子重命名，数据库只在文件成功后提交哈希、大小、MIME、引用计数和相对路径；原始图片不长期放入数据库或列表内存。
+- 孤儿扫描延迟到启动两分钟后在后台执行，候选文件至少保留 24 小时；每批删除前在单写队列内按完整相对路径重新查询数据库，无法证明无引用时保留文件。
 - SQLCipher 是否默认启用由 AOT、内存和恢复测试决定；未启用时必须在设置中明确本地保护边界。
 - 清理操作使用 Tombstone/事务，防止同步设备把已删除内容复活。
 
@@ -52,12 +53,22 @@
 
 本轮当前 App Bundle 的辅助功能状态为已授权，Keychain 临时密钥新增/读取/删除已通过。为避免未经确认修改系统安全和登录项，没有执行同一身份撤销后重新授权或登录启动开关；本机也没有 Developer ID 身份和公证凭据，因此只验证了 ad-hoc Hardened Runtime、未签名 PKG 和公证跳过路径。
 
-## 8. 依赖安全
+## 8. Windows 历史、策略与 Credential Manager
+
+- 历史数据库使用版本化 Schema、参数化 SQL、显式列投影和单写事务；Application、Domain 与 UI 不引用 `Microsoft.Data.Sqlite` 类型。`quick_check` 失败时先把数据库及可用的 WAL/SHM 文件复制到时间戳恢复目录，再重建空库，并只在诊断结果中记录文件名和异常类型，不记录剪贴板正文。
+- 采集责任链在计算哈希和持久化前拒绝本应用来源、常见密码管理器进程、Windows/macOS transient/confidential 格式、应用黑名单和超限载荷；仅文本规则会移除 HTML、RTF、图片和文件表示。测试和日志只使用生成内容，不输出正文、图片字节或敏感格式载荷。
+- `WindowsCredentialSecretStore` 复用 `IPlatformSecretStore`，使用 Win32 Credential Manager Generic Credential，目标前缀固定为 `com.wuliangtdi.snapboard/`。名称拒绝控制字符并限制 UTF-8 长度，密钥大小受系统 Credential Blob 上限约束。
+- P/Invoke 使用 Native AOT 友好的 `LibraryImport`；`CredRead` 返回的系统明文在复制后原位清零再 `CredFree`，`CredWrite` 的临时托管副本在调用后清零。读取返回给调用方的缓冲仍由调用方在使用后负责清零。
+- 新增、读取、覆盖、删除和不存在状态已通过真实 Credential Manager 临时项测试；拒绝、取消、无登录会话、无效名称和超限输入已覆盖确定性映射。测试最终清理临时项，不把 WebDAV 凭据、恢复码或主密钥写入 JSON、注册表明文、日志或测试快照。
+
+当前本地历史数据库和外部 Blob 尚未启用静态加密；保护边界仍是当前 Windows 用户账户和文件系统 ACL。下一阶段的 WebDAV 同步必须使用独立内容主密钥与端到端认证加密，不能把当前本地明文文件直接上传。
+
+## 9. 依赖安全
 
 NuGet restore 开启漏洞审计并将警告视为错误。Microsoft.Data.Sqlite 10.0.10 的原始传递依赖会选择已公告的 SQLitePCLRaw 2.1.11，仓库显式固定 `SQLitePCLRaw.bundle_e_sqlite3 2.1.12`，测试要求 SQLite >= 3.50.2。
 
 Dependabot 每周检查 NuGet 和 GitHub Actions。升级原生依赖后必须重新执行三个平台的 AOT、数据库版本和基本 CRUD 测试。
 
-## 9. 报告漏洞
+## 10. 报告漏洞
 
 GitHub 仓库创建后启用 Private Vulnerability Reporting。正式发布前在 README 和 `SECURITY.md` 补充受支持版本和私密联系渠道，禁止要求报告者在公开 Issue 中粘贴敏感剪贴板样本。

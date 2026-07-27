@@ -231,6 +231,11 @@
                                  SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ClipboardHistoryItemViewModel">
                                     <Grid RowDefinitions="*,1">
@@ -271,12 +276,18 @@
                                                         BorderBrush="{DynamicResource DividerBrush}"
                                                         BorderThickness="1"
                                                         IsVisible="{Binding HasThumbnail}">
-                                                    <materialIcons:MaterialIcon Width="20"
-                                                                                Height="20"
-                                                                                HorizontalAlignment="Center"
-                                                                                VerticalAlignment="Center"
-                                                                                Foreground="{DynamicResource AccentBrush}"
-                                                                                Kind="ImageMultipleOutline" />
+                                                    <Grid>
+                                                        <Image Loaded="OnThumbnailLoaded"
+                                                               Source="{Binding Thumbnail}"
+                                                               Stretch="UniformToFill" />
+                                                        <materialIcons:MaterialIcon Width="20"
+                                                                                    Height="20"
+                                                                                    HorizontalAlignment="Center"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Foreground="{DynamicResource AccentBrush}"
+                                                                                    IsVisible="{Binding HasThumbnailPlaceholder}"
+                                                                                    Kind="ImageMultipleOutline" />
+                                                    </Grid>
                                                 </Border>
                                                 <Border Grid.Column="3"
                                                         Width="34"
@@ -317,6 +328,18 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+
+                        <Button Width="36"
+                                Height="36"
+                                Margin="0,0,18,14"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom"
+                                Classes="icon"
+                                Command="{Binding LoadMoreCommand}"
+                                IsVisible="{Binding CanLoadMore}"
+                                ToolTip.Tip="加载更多记录">
+                            <materialIcons:MaterialIcon Width="20" Height="20" Kind="ChevronDown" />
+                        </Button>
 
                         <StackPanel HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
@@ -431,8 +454,16 @@
                         Background="{DynamicResource SubtleSurfaceBrush}"
                         BorderBrush="{DynamicResource DividerBrush}"
                         BorderThickness="1">
-                    <controls:SyntaxHighlightedCodeView x:Name="CodePreview"
-                                                        Code="{Binding SelectedItem.Content}" />
+                    <Grid>
+                        <controls:SyntaxHighlightedCodeView x:Name="CodePreview"
+                                                            Code="{Binding SelectedItem.Content}"
+                                                            IsVisible="{Binding !SelectedItem.HasThumbnail}" />
+                        <Image Loaded="OnThumbnailLoaded"
+                               Margin="12"
+                               IsVisible="{Binding SelectedItem.HasThumbnail}"
+                               Source="{Binding SelectedItem.Thumbnail}"
+                               Stretch="Uniform" />
+                    </Grid>
                 </Border>
 
                 <Border Grid.Row="2"
