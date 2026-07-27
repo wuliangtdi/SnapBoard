@@ -1,6 +1,7 @@
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Desktop.HeadlessTests;
 
@@ -119,6 +120,38 @@ public sealed class RuntimeMainViewModelTests
         Assert.Equal(2, service.ContentReadCount);
     }
 
+    [Fact]
+    public async Task RuntimeViewModelResolvesSourceApplicationMetadataOnce()
+    {
+        const string executablePath = @"C:\Program Files\Tencent\Weixin\Weixin.exe";
+        ClipboardHistoryItemSummary summary = CreateSummary(
+            "source metadata",
+            DateTimeOffset.UtcNow,
+            executablePath);
+        FakeHistoryService service = new()
+        {
+            SearchHandler = (_, _) => ValueTask.FromResult(new ClipboardHistoryPage(
+                [summary],
+                null,
+                1)),
+        };
+        FakeSourceApplicationMetadataResolver resolver = new();
+        using MainViewModel viewModel = new(service, resolver);
+        viewModel.Start();
+        await viewModel.WaitForIdleAsync();
+        ClipboardHistoryItemViewModel item = Assert.Single(viewModel.VisibleItems);
+
+        await viewModel.LoadSourceApplicationMetadataAsync(item);
+        await viewModel.LoadSourceApplicationMetadataAsync(item);
+
+        Assert.Equal("微信", item.SourceApplication);
+        Assert.Equal(executablePath, item.SourceExecutablePath);
+        Assert.True(item.HasSourceIconFallback);
+        Assert.Equal(1, resolver.ResolveCount);
+        Assert.Equal("test-app", resolver.ProcessName);
+        Assert.Equal(executablePath, resolver.ExecutablePath);
+    }
+
     private static async ValueTask<ClipboardHistoryPage> WaitForOldAsync(
         TaskCompletionSource started,
         TaskCompletionSource<ClipboardHistoryPage> result)
@@ -135,7 +168,8 @@ public sealed class RuntimeMainViewModelTests
 
     private static ClipboardHistoryItemSummary CreateSummary(
         string preview,
-        DateTimeOffset capturedAt) => new(
+        DateTimeOffset capturedAt,
+        string? sourceExecutablePath = null) => new(
         ClipboardItemId.New(),
         ClipboardContentKind.Text,
         ClipboardHistoryDisplayCategory.Text,
@@ -147,7 +181,30 @@ public sealed class RuntimeMainViewModelTests
         0,
         null,
         preview.Length,
-        false);
+        false,
+        sourceExecutablePath);
+
+    private sealed class FakeSourceApplicationMetadataResolver :
+        IClipboardSourceApplicationMetadataResolver
+    {
+        public int ResolveCount { get; private set; }
+
+        public string? ProcessName { get; private set; }
+
+        public string? ExecutablePath { get; private set; }
+
+        public ValueTask<ClipboardSourceApplicationMetadata> ResolveAsync(
+            string processName,
+            string? executablePath,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveCount++;
+            ProcessName = processName;
+            ExecutablePath = executablePath;
+            return ValueTask.FromResult(new ClipboardSourceApplicationMetadata("微信"));
+        }
+    }
 
     private sealed class FakeHistoryService : IClipboardHistoryService
     {

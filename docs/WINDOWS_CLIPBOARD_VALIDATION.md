@@ -6,9 +6,9 @@
 
 ## 1. 自动测试
 
-`SnapBoard.Platform.Windows.Tests` 共 45 项并全部通过，区分纯逻辑测试和真实 Windows 原生集成测试。覆盖监听器生命周期、取消、序列号去重、有限退避、队列溢出、Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、File List、格式清单、来源进程、自定义来源标记、反馈抑制、`INPUT` ABI、UIPI 结构化降级、SendInput 前 HWND/PID 与前台窗口二次校验、热键冲突回滚、两个真实 message-only window 的注册冲突、开机启动配置、CurrentUserOnly 单实例命名管道，以及 Credential Manager 的真实临时密钥往返和错误状态映射。
+`SnapBoard.Platform.Windows.Tests` 共 48 项并全部通过，区分纯逻辑测试和真实 Windows 原生集成测试。覆盖监听器生命周期、取消、序列号去重、有限退避、队列溢出、Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、File List、格式清单、来源进程、自定义来源标记、反馈抑制、`INPUT` ABI、UIPI 结构化降级、SendInput 前 HWND/PID 与前台窗口二次校验、热键冲突回滚、两个真实 message-only window 的注册冲突、开机启动配置、CurrentUserOnly 单实例命名管道、来源应用的本地化名称/真实 Shell 图标/GDI 资源释放，以及 Credential Manager 的真实临时密钥往返和错误状态映射。
 
-`SnapBoard.Desktop.HeadlessTests` 共 26 项并全部通过，新增正式历史的每页增量加载、旧搜索取消、真实内容写回请求、采集持久化失败隔离和异常消息脱敏。完整解决方案共 139 项：131 项通过、8 项仅限 macOS 原生环境的测试跳过、0 项失败；Infrastructure 18/18、Windows 45/45、Desktop Headless 26/26。
+`SnapBoard.Desktop.HeadlessTests` 共 27 项并全部通过，新增正式历史的每页增量加载、旧搜索取消、真实内容写回请求、来源元数据单次异步解析、采集持久化失败隔离和异常消息脱敏。完整解决方案共 143 项：135 项通过、8 项仅限 macOS 原生环境的测试跳过、0 项失败；Infrastructure 18/18、Windows 48/48、Desktop Headless 27/27。
 
 自动测试不会向用户当前前台应用注入真实粘贴快捷键，也不会修改用户真实的开机启动设置，因此不能替代交互式桌面验收。
 
@@ -70,15 +70,16 @@ DelayedRendering=Passed; ReadStatus=Success; Reason=None; TextMatched=True
 | 孤儿清理 | 通过（自动测试） | 启动后延迟 2 分钟后台运行，24 小时宽限、每批 32 个；初始化返回时旧孤儿仍存在，删除前在写队列按完整相对路径复查，不按文件名猜测共享关系 |
 | FTS5 | 通过 | 中文、英文、代码、特殊字符、空查询、超长限制、取消、稳定分页及类型/来源/时间/标签/置顶筛选通过 |
 | 策略链 | 通过 | 相邻去重、置顶、标签、删除、清空、条数/时间/容量，以及本应用、密码管理器、临时/敏感格式、黑名单、仅文本和载荷大小规则通过 |
+| 来源应用元数据 | 通过（自动测试） | 查询投影已保存的 EXE 路径；后台解析版本资源和本地化别名，`SHGetFileInfoW` 图标转换为 32 x 32 BGRA；当前进程真实图标通过，连续 64 次无超预算 GDI Object 增长，失败时保留进程名/通用图标 |
 | Credential Manager | 通过 | 真实临时项新增、读取、覆盖、删除和不存在通过；拒绝/取消/无会话、无效名称和超限输入映射通过，临时项最终删除 |
 
-正式主窗口和快速窗口已接入 Application 查询用例，使用 50 条稳定分页、`VirtualizingStackPanel`、150 ms 防抖、可取消查询和结果代际检查；原图、正文和缩略图均按需读取，图片解码在后台执行。正式组合根不创建示例历史；参数less ViewModel 中的样例只服务 XAML 设计和无数据库视觉测试。
+正式主窗口和快速窗口已接入 Application 查询用例，使用 50 条稳定分页、`VirtualizingStackPanel`、150 ms 防抖、可取消查询和结果代际检查；原图、正文和缩略图均按需读取，图片解码在后台执行。来源名称/图标也只在虚拟化项目进入视口时异步解析，UI 线程不读取 EXE 或调用 Shell。正式组合根不创建示例历史；参数less ViewModel 中的样例只服务 XAML 设计和无数据库视觉测试。
 
-100,000 条生成数据平均 554.7 字符，导入 27,960.26 ms；中文/英文/代码共 300 次搜索总体 P95 2.06 ms、最大 3.63 ms，达到 P95 `< 80 ms` 且不超过 200 ms 的门槛。数据库为 512,282,624 字节；该结果只适用于当前 Windows x64 主机。
+100,000 条生成数据平均 554.7 字符，来源路径投影接入后重新导入耗时 27,701.92 ms；中文/英文/代码共 300 次搜索总体 P95 2.32 ms、最大 7.15 ms，达到 P95 `< 80 ms` 且不超过 200 ms 的门槛。数据库为 512,323,584 字节；该结果只适用于当前 Windows x64 主机。
 
 ## 6. Native AOT 与进程资源
 
-最终 `win-x64` self-contained Native AOT 的 `SnapBoard.Desktop.exe` 为 29,425,152 字节，SHA-256 为 `D2C307AAEA12BDEFC5DA4FEDC986CDD292C37DC3C83F92049F91D5ED3B677FF0`。发布输出 0 个 AOT/裁剪警告，目录无 `coreclr.dll`/`clrjit.dll`；原生 EXE 实际启动、关闭窗口并通过第二实例 `--exit` 退出，无残留进程。
+来源应用元数据接入后的最终 `win-x64` self-contained Native AOT `SnapBoard.Desktop.exe` 为 29,512,192 字节，SHA-256 为 `19DE8DE500DF7D76ACDA68AF60D0A0799AD9C93E1E44407C257CA05C30AB653D`。发布输出 0 个 AOT/裁剪警告，目录无 `coreclr.dll`/`clrjit.dll`；原生 EXE 在 476.56 ms 内创建主窗口，并通过第二实例 `--exit` 退出，无残留进程。
 
 | 轮次 | 启动 | 可见峰值 PWS | 可见 Private | 可见 CPU/句柄 | 关闭后 PWS | 关闭后 Private | 后台 CPU/句柄 | PWS 回落 |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -98,3 +99,4 @@ DelayedRendering=Passed; ReadStatus=Success; Reason=None; TextMatched=True
 - 定位最新 10,000 次压力测试 8.46 MiB Private Bytes 增长并满足 `< 8 MiB` 预算；执行 8 小时长稳。
 - 数字快捷选择、标签编辑、搜索高亮和完整富格式预览；当前普通/纯文本粘贴、分页、筛选、置顶和删除已保留。
 - Windows ARM64、macOS 和 Linux 必须在各自目标环境单独验证，不能由本轮 Windows x64 结果推断。
+- 当前桌面会话的 Windows Graphics Capture 两次返回 D3D11 `0x887A0005`，GDI 窗口捕获为黑帧；因此来源名称/图标有自动与原生像素证据，但现有用户历史的最终可视截图仍待稳定桌面会话复核。

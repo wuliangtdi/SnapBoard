@@ -574,6 +574,8 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 
 当前已完成独立 STA 消息线程、message-only window、序列去重、有界队列、有限退避、格式读写、来源标记和 UIPI 保守降级。真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 验证；Windows 11 打包版 Notepad（Microsoft.UI.Xaml）已通过文本监听、纯文本写回、目标恢复和自动粘贴。三轮 10,000 次压力测试均无死锁、正常自写事件丢失、反馈循环或 Channel 丢弃，但 Private Bytes 增长 15.56/8.43/15.12 MiB，未满足 8 MiB 预算。管理员窗口、浏览器、Explorer、Office 和远程桌面仍待验收，详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
+Windows 来源展示已复用持久化的 EXE 路径，在平台层后台解析版本资源和中文别名，并通过 `SHGetFileInfoW`/GDI 提取真实 32 x 32 应用图标；主窗口与快速窗口仅对进入虚拟化视口的项目加载。旧记录无需迁移即可补全，路径无效或访问失败时继续显示原始进程名和通用图标。来源识别条目仍保持部分完成，因为无 owner、受保护进程及完整外部应用矩阵尚未实机收口。
+
 退出条件：连续复制 10,000 次不死锁、不漏掉正常事件、不产生无限自复制。
 
 #### 1.4 本地历史、检索和策略

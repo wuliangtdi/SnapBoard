@@ -11,6 +11,7 @@ using SnapBoard.Platform.MacOS;
 using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
+using SnapBoard.Platform.Windows.Clipboard;
 using SnapBoard.Platform.Windows.Desktop;
 using SnapBoard.Platform.Windows.Security;
 
@@ -84,6 +85,9 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IAutoStartService, WindowsAutoStartService>();
         services.AddSingleton<IPlatformWindowPlacementService, WindowsWindowPlacementService>();
         services.AddSingleton<IPlatformSecretStore, WindowsCredentialSecretStore>();
+        services.AddSingleton<
+            IClipboardSourceApplicationMetadataResolver,
+            WindowsClipboardSourceApplicationMetadataResolver>();
         services.AddSingleton<ClipboardCaptureCoordinator>();
     }
 

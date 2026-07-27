@@ -16,6 +16,7 @@ public enum ClipboardItemType
 
 public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
 {
+    private int _sourceMetadataLoadStarted;
     private int _thumbnailLoadStarted;
     public ClipboardHistoryItemViewModel(
         ClipboardItemType type,
@@ -31,7 +32,8 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
         string location,
         string notes = "—",
         bool hasThumbnail = false,
-        bool hasColorSwatch = false)
+        bool hasColorSwatch = false,
+        string? sourceExecutablePath = null)
     {
         Id = ClipboardItemId.New();
         Type = type;
@@ -40,6 +42,7 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
         Title = title;
         Subtitle = subtitle;
         SourceApplication = sourceApplication;
+        SourceExecutablePath = sourceExecutablePath;
         TimestampText = timestampText;
         Content = content;
         Language = language;
@@ -80,6 +83,7 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
             ? lines[1]
             : $"{KindLabel} · {FormatSize(summary.TotalSizeBytes)}";
         SourceApplication = summary.SourceApplication;
+        SourceExecutablePath = summary.SourceExecutablePath;
         TimestampText = FormatTimestamp(summary.CapturedAt);
         Content = preview;
         LineNumbers = string.Join(
@@ -114,7 +118,10 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
 
     public string Subtitle { get; }
 
-    public string SourceApplication { get; }
+    [ObservableProperty]
+    public partial string SourceApplication { get; set; }
+
+    public string? SourceExecutablePath { get; }
 
     public string TimestampText { get; }
 
@@ -144,8 +151,21 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
     [ObservableProperty]
     public partial Bitmap? Thumbnail { get; set; }
 
+    [ObservableProperty]
+    public partial Bitmap? SourceIconBitmap { get; set; }
+
+    public bool HasSourceIconBitmap => SourceIconBitmap is not null;
+
+    public bool HasSourceIconFallback => SourceIconBitmap is null;
+
     partial void OnThumbnailChanged(Bitmap? value) =>
         OnPropertyChanged(nameof(HasThumbnailPlaceholder));
+
+    partial void OnSourceIconBitmapChanged(Bitmap? value)
+    {
+        OnPropertyChanged(nameof(HasSourceIconBitmap));
+        OnPropertyChanged(nameof(HasSourceIconFallback));
+    }
 
     internal bool TryBeginThumbnailLoad() =>
         Interlocked.Exchange(ref _thumbnailLoadStarted, 1) == 0;
@@ -153,11 +173,40 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
     internal void ResetThumbnailLoad() =>
         Interlocked.Exchange(ref _thumbnailLoadStarted, 0);
 
+    internal bool TryBeginSourceMetadataLoad() =>
+        Interlocked.Exchange(ref _sourceMetadataLoadStarted, 1) == 0;
+
+    internal void ResetSourceMetadataLoad() =>
+        Interlocked.Exchange(ref _sourceMetadataLoadStarted, 0);
+
+    internal void ApplySourceApplicationMetadata(string displayName, Bitmap? icon)
+    {
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            SourceApplication = displayName;
+        }
+
+        if (icon is not null)
+        {
+            Bitmap? previous = SourceIconBitmap;
+            SourceIconBitmap = icon;
+            previous?.Dispose();
+        }
+    }
+
     internal void ReleaseThumbnail()
     {
         Bitmap? thumbnail = Thumbnail;
         Thumbnail = null;
         thumbnail?.Dispose();
+    }
+
+    internal void ReleaseResources()
+    {
+        ReleaseThumbnail();
+        Bitmap? sourceIcon = SourceIconBitmap;
+        SourceIconBitmap = null;
+        sourceIcon?.Dispose();
     }
 
     private static MaterialIconKind GetSourceIcon(string sourceApplication)

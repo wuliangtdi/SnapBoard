@@ -238,7 +238,9 @@
                             </ListBox.ItemsPanel>
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ClipboardHistoryItemViewModel">
-                                    <Grid RowDefinitions="*,1">
+                                    <Grid RowDefinitions="*,1"
+                                          DataContextChanged="OnHistoryItemDataContextChanged"
+                                          Loaded="OnHistoryItemLoaded">
                                         <Grid Margin="16,0,15,0" ColumnDefinitions="*,127,84">
                                             <Grid ColumnDefinitions="40,*,Auto,Auto" VerticalAlignment="Center">
                                                 <Border Width="36"
@@ -277,8 +279,7 @@
                                                         BorderThickness="1"
                                                         IsVisible="{Binding HasThumbnail}">
                                                     <Grid>
-                                                        <Image Loaded="OnThumbnailLoaded"
-                                                               Source="{Binding Thumbnail}"
+                                                        <Image Source="{Binding Thumbnail}"
                                                                Stretch="UniformToFill" />
                                                         <materialIcons:MaterialIcon Width="20"
                                                                                     Height="20"
@@ -302,10 +303,16 @@
                                                         Orientation="Horizontal"
                                                         VerticalAlignment="Center"
                                                         Spacing="7">
-                                                <materialIcons:MaterialIcon Width="18"
-                                                                            Height="18"
-                                                                            Foreground="{DynamicResource AccentBrush}"
-                                                                            Kind="{Binding SourceIcon}" />
+                                                <Grid Width="18" Height="18">
+                                                    <Image IsVisible="{Binding HasSourceIconBitmap}"
+                                                           Source="{Binding SourceIconBitmap}"
+                                                           Stretch="Uniform" />
+                                                    <materialIcons:MaterialIcon Width="18"
+                                                                                Height="18"
+                                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                                IsVisible="{Binding HasSourceIconFallback}"
+                                                                                Kind="{Binding SourceIcon}" />
+                                                </Grid>
                                                 <TextBlock VerticalAlignment="Center"
                                                            FontSize="12"
                                                            Foreground="{DynamicResource PrimaryTextBrush}"
@@ -392,10 +399,16 @@
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Text="{Binding SelectedItem.CharacterCountText}" />
                             <Border Width="1" Height="14" Background="{DynamicResource DividerBrush}" />
-                            <materialIcons:MaterialIcon Width="17"
-                                                        Height="17"
-                                                        Foreground="{DynamicResource AccentBrush}"
-                                                        Kind="{Binding SelectedItem.SourceIcon}" />
+                            <Grid Width="17" Height="17">
+                                <Image IsVisible="{Binding SelectedItem.HasSourceIconBitmap}"
+                                       Source="{Binding SelectedItem.SourceIconBitmap}"
+                                       Stretch="Uniform" />
+                                <materialIcons:MaterialIcon Width="17"
+                                                            Height="17"
+                                                            Foreground="{DynamicResource AccentBrush}"
+                                                            IsVisible="{Binding SelectedItem.HasSourceIconFallback}"
+                                                            Kind="{Binding SelectedItem.SourceIcon}" />
+                            </Grid>
                             <TextBlock VerticalAlignment="Center"
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
@@ -458,8 +471,7 @@
                         <controls:SyntaxHighlightedCodeView x:Name="CodePreview"
                                                             Code="{Binding SelectedItem.Content}"
                                                             IsVisible="{Binding !SelectedItem.HasThumbnail}" />
-                        <Image Loaded="OnThumbnailLoaded"
-                               Margin="12"
+                        <Image Margin="12"
                                IsVisible="{Binding SelectedItem.HasThumbnail}"
                                Source="{Binding SelectedItem.Thumbnail}"
                                Stretch="Uniform" />

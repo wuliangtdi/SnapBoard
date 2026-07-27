@@ -15,7 +15,7 @@
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI 写回与自动粘贴及 10,000 次功能压力通过；外部应用矩阵和资源增长预算未完成 |
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v4、单写队列、恢复、CAS Blob、缩略图、FTS5、策略链及 100,000 条检索已通过 |
-| Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消和按需缩略图；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
+| Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图及 Windows 来源应用本地化名称/真实图标；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 未开始 | 下一阶段为 Windows 端到端加密 WebDAV 同步，之后才进入签名、安装包、自动更新和正式发布 |
 | Phase 2 macOS | 进行中 | arm64 剪贴板、生命周期、菜单栏、自定义快捷键、Keychain 与本地 DMG/PKG 已验证；登录启动交互、Intel、Developer ID、公证和环境矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | Windows 11 x64 共 139 项：131 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Infrastructure 18/18、Windows 45/45、Desktop Headless 26/26 |
+| 全量自动测试 | 通过 | Windows 11 x64 共 143 项：135 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Infrastructure 18/18、Windows 48/48、Desktop Headless 27/27 |
 | `osx-arm64` Native AOT | 通过 | App Bundle 内 arm64 Mach-O 为 24,430,144 字节；0 个 AOT/裁剪警告，裸产物与 DMG 挂载 Bundle 均已实际启动 |
-| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 29,425,152 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、关闭窗口和明确退出；Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | 来源应用元数据接入后的 Windows 11 x64 原生 EXE 29,512,192 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、明确退出；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
 | macOS 窗口/后台内存 | 未达标 | 最终 AOT 三次可见窗口峰值 Physical Footprint 205.63/206.16/205.44 MiB；关闭全部窗口 3 秒后为 107.81/107.53/107.64 MiB，仍高于 100 MB |
@@ -285,18 +285,20 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
   - FTS5 覆盖中文、英文、代码、特殊字符、空/超长查询、取消、稳定分页以及类型/来源/时间/标签/置顶筛选。
   - 实现相邻去重、置顶、标签、软删除、清空、条数/时间/磁盘容量策略和应用/敏感格式/载荷大小责任链。
   - 正式 UI 接入 Application 查询用例，每页 50 条、VirtualizingStackPanel、搜索取消/代际保护及图片按需解码。
+  - 历史摘要带出已持久化的来源 EXE 路径；Windows 在后台解析版本资源/本地化别名，以 Shell/GDI 提取并缓存真实应用图标，UI 只接收平台无关 BGRA 像素。
   - Windows Credential Manager 实现 IPlatformSecretStore，使用 LibraryImport，覆盖新增、读取、覆盖、删除、不存在、拒绝和无效输入。
 验证结果：
   - .NET SDK 10.0.302；locked restore、Release build、format 校验及直接/传递 NuGet 漏洞检查通过。
-  - 全量 139 项：131 项通过、8 项 macOS 原生测试跳过、0 项失败。
-  - win-x64 self-contained Native AOT EXE 29,425,152 字节，0 个 AOT/裁剪警告，无 coreclr/clrjit，实际启动并明确退出。
-  - 100,000 条、平均 554.7 字符生成数据导入 27,960.26 ms；300 次混合搜索 P95 2.06 ms、最大 3.63 ms。
+  - 全量 143 项：135 项通过、8 项 macOS 原生测试跳过、0 项失败；64 次真实 Shell 图标重复提取未观察到超预算 GDI Object 增长。
+  - win-x64 self-contained Native AOT EXE 29,512,192 字节，0 个 AOT/裁剪警告，无 coreclr/clrjit，476.56 ms 创建主窗口并明确退出。
+  - 100,000 条、平均 554.7 字符生成数据导入 27,701.92 ms；300 次混合搜索 P95 2.32 ms、最大 7.15 ms。
   - 三轮最终 AOT：启动 473.19/390.58/403.63 ms；关闭后 PWS 103.32/110.13/94.82 MiB；Private Bytes 136.59/135.54/127.82 MiB。
 限制：
   - 最新 10,000 次事件功能通过，但 Private Bytes 增长 8.46 MiB，仍高于严格的 8 MiB 预算；8 小时测试未执行。
   - 19 分钟托盘样本完成，不能替代 8 小时；最终 Private Bytes 120.99 MiB，整体内存门槛未完成。
   - Explorer、Chrome/Edge/Firefox、物理热键、托盘菜单、真实 HKCU、多显示器/混合 DPI、睡眠唤醒和管理员窗口本轮未形成可计结果。
   - Office 与远程桌面未执行；Windows ARM64、macOS 和 Linux 未由本轮结果推断通过。
+  - 来源图标构建已实际启动，但当前桌面会话的 Windows Graphics Capture 报 D3D11 `0x887A0005`，GDI 窗口捕获为黑帧，因此没有把现有历史的视觉截图标记为通过。
 ```
 
 ## 12. 更新规则

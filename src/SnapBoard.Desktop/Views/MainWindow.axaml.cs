@@ -14,7 +14,13 @@ public partial class MainWindow : Window
         KeyDown += OnWindowKeyDown;
     }
 
-    private void OnThumbnailLoaded(object? sender, RoutedEventArgs e)
+    private void OnHistoryItemLoaded(object? sender, RoutedEventArgs e)
+        => LoadHistoryItem(sender);
+
+    private void OnHistoryItemDataContextChanged(object? sender, EventArgs e)
+        => LoadHistoryItem(sender);
+
+    private void LoadHistoryItem(object? sender)
     {
         if (DataContext is not MainViewModel viewModel)
         {
@@ -30,6 +36,7 @@ public partial class MainWindow : Window
         if (item is not null)
         {
             _ = viewModel.LoadThumbnailAsync(item);
+            _ = viewModel.LoadSourceApplicationMetadataAsync(item);
         }
     }
 

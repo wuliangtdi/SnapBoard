@@ -90,7 +90,7 @@ Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTest
 
 ## 6. Windows 本地历史与检索验证
 
-2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行 `phase1/windows-history-search` 最终代码：全量共 139 项，131 项通过、8 项 macOS 原生测试按平台跳过、0 项失败。项目分布为 Application 7、Architecture 2、Domain 1、Infrastructure 18、Linux 1、macOS 28 通过/8 跳过、Windows 45、Sync 3、Desktop Headless 26。locked restore、Release build、`dotnet format --verify-no-changes`、直接/传递 NuGet 漏洞检查和 `win-x64` Native AOT 均通过。
+2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行 `phase1/windows-history-search` 最终代码：全量共 143 项，135 项通过、8 项 macOS 原生测试按平台跳过、0 项失败。项目分布为 Application 7、Architecture 2、Domain 1、Infrastructure 18、Linux 1、macOS 28 通过/8 跳过、Windows 48、Sync 3、Desktop Headless 27。locked restore、Release build、`dotnet format --verify-no-changes`、直接/传递 NuGet 漏洞检查和 `win-x64` Native AOT 均通过。
 
 新增自动验证覆盖：
 
@@ -102,6 +102,7 @@ Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTest
 - 应用黑名单、密码管理器、敏感/临时格式、仅文本规则、载荷大小限制、饱和加法以及保存成功但保留策略待重试的语义。
 - Windows Credential Manager 的真实新增/读取/覆盖/删除/不存在往返，以及拒绝、无效名称和超限输入的确定性状态。
 - 正式历史 UI 的分页增量加载、旧搜索取消、图片按需加载和普通/纯文本写回请求。
+- 来源 EXE 路径重启投影、ViewModel 单次异步元数据解析、微信/企业微信本地化回退、真实 Shell 图标像素，以及绕过缓存连续 64 次提取后的 GDI Object 计数。
 
 100,000 条检索场景使用生成数据，命令为：
 
@@ -110,6 +111,6 @@ dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests
   --configuration Release --no-build --no-restore -- history-search
 ```
 
-该场景导入 100,000 条平均 554.7 字符的混合数据，分别测量中文、英文、代码的选择性与宽查询，各 50 次，共 300 次；总体 P95 2.06 ms、最大 3.63 ms。性能测试只输出计数、耗时和大小，不打印正文。它不是 `dotnet test` 的一部分，必须单独执行。
+来源路径投影接入后重新执行该场景：导入 100,000 条平均 554.7 字符的混合数据耗时 27,701.92 ms，分别测量中文、英文、代码的选择性与宽查询，各 50 次，共 300 次；总体 P95 2.32 ms、最大 7.15 ms。性能测试只输出计数、耗时和大小，不打印正文。它不是 `dotnet test` 的一部分，必须单独执行。
 
 Windows 原生探针最新样本为 100 次预热和 10,000 次事件，事件匹配 10,000/10,000，反馈和 Channel 丢弃为 0；Private Bytes 增长 8.46 MiB，严格资源预算失败。功能与资源结论必须继续分开；8 小时长稳未执行。

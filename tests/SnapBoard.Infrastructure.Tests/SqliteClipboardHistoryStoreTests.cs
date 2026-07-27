@@ -153,7 +153,9 @@ public sealed class SqliteClipboardHistoryStoreTests
         string root = Path.Combine(
             Path.GetTempPath(),
             $"SnapBoard.Infrastructure.Tests-{Guid.NewGuid():N}");
-        ClipboardCapturedItem item = CreateTextItem("restart persistence 中文");
+        ClipboardCapturedItem item = CreateTextItem(
+            "restart persistence 中文",
+            sourceExecutablePath: @"C:\Program Files\Example\example.exe");
         await using (HistoryStoreTestContext first = await HistoryStoreTestContext.CreateAsync(
             root,
             deleteOnDispose: false))
@@ -173,6 +175,7 @@ public sealed class SqliteClipboardHistoryStoreTests
             CancellationToken.None);
         ClipboardHistoryItemSummary restored = Assert.Single(page.Items);
         Assert.Equal(item.Id, restored.Id);
+        Assert.Equal(item.SourceExecutablePath, restored.SourceExecutablePath);
         Assert.True(restored.IsPinned);
         Assert.Equal(["work", "中文"], restored.Tags);
         Assert.Equal(
@@ -546,7 +549,8 @@ public sealed class SqliteClipboardHistoryStoreTests
     private static ClipboardCapturedItem CreateTextItem(
         string text,
         DateTimeOffset? capturedAt = null,
-        string sourceProcessName = "test-source") => CreateItem(
+        string sourceProcessName = "test-source",
+        string? sourceExecutablePath = null) => CreateItem(
         text,
         [
             new ClipboardCapturedRepresentation(
@@ -556,7 +560,8 @@ public sealed class SqliteClipboardHistoryStoreTests
                 default),
         ],
         capturedAt,
-        sourceProcessName);
+        sourceProcessName,
+        sourceExecutablePath);
 
     private static ClipboardCapturedItem CreateLargeHtmlItem(string suffix, byte[] sharedPayload) =>
         CreateItem(
@@ -578,7 +583,8 @@ public sealed class SqliteClipboardHistoryStoreTests
         string seed,
         IReadOnlyList<ClipboardCapturedRepresentation> representations,
         DateTimeOffset? capturedAt = null,
-        string sourceProcessName = "test-source")
+        string sourceProcessName = "test-source",
+        string? sourceExecutablePath = null)
     {
         ClipboardItemId id = ClipboardItemId.New();
         return new ClipboardCapturedItem
@@ -587,6 +593,7 @@ public sealed class SqliteClipboardHistoryStoreTests
             SequenceNumber = BitConverter.ToUInt64(id.Value.ToByteArray(), 0),
             CapturedAt = capturedAt ?? DateTimeOffset.UtcNow,
             SourceProcessName = sourceProcessName,
+            SourceExecutablePath = sourceExecutablePath,
             SourceAccessStatus = 0,
             ContentHash = Hash(seed),
             PrimaryKind = representations.Any(representation =>

@@ -120,7 +120,8 @@ public sealed record ClipboardHistoryItemSummary(
     long UseCount,
     DateTimeOffset? LastUsedAt,
     long TotalSizeBytes,
-    bool HasThumbnail);
+    bool HasThumbnail,
+    string? SourceExecutablePath = null);
 
 public sealed record ClipboardHistoryPage(
     IReadOnlyList<ClipboardHistoryItemSummary> Items,

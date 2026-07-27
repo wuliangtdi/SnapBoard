@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -22,6 +25,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(150);
     private readonly List<ClipboardHistoryItemViewModel> _designItems;
     private readonly IClipboardHistoryService? _historyService;
+    private readonly IClipboardSourceApplicationMetadataResolver? _sourceMetadataResolver;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
     private ClipboardHistoryCursor? _nextCursor;
@@ -46,6 +50,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ArgumentNullException.ThrowIfNull(historyService);
         _uiContext = SynchronizationContext.Current;
         _historyService = historyService;
+        _designItems = [];
+        _historyService.HistoryChanged += OnHistoryChanged;
+    }
+
+    public MainViewModel(
+        IClipboardHistoryService historyService,
+        IClipboardSourceApplicationMetadataResolver sourceMetadataResolver)
+    {
+        ArgumentNullException.ThrowIfNull(historyService);
+        ArgumentNullException.ThrowIfNull(sourceMetadataResolver);
+        _uiContext = SynchronizationContext.Current;
+        _historyService = historyService;
+        _sourceMetadataResolver = sourceMetadataResolver;
         _designItems = [];
         _historyService.HistoryChanged += OnHistoryChanged;
     }
@@ -328,7 +345,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             }
 
             VisibleItems.Remove(selected);
-            selected.ReleaseThumbnail();
+            selected.ReleaseResources();
             _totalCount = Math.Max(0, _totalCount - 1);
             OnPropertyChanged(nameof(RecordCountText));
             UpdateCollectionState();
@@ -485,6 +502,53 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public async Task LoadSourceApplicationMetadataAsync(ClipboardHistoryItemViewModel item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (_sourceMetadataResolver is null || !item.TryBeginSourceMetadataLoad())
+        {
+            return;
+        }
+
+        Bitmap? iconBitmap = null;
+        bool resolved = false;
+        try
+        {
+            ClipboardSourceApplicationMetadata metadata = await _sourceMetadataResolver
+                .ResolveAsync(
+                    item.SourceApplication,
+                    item.SourceExecutablePath,
+                    _lifetime.Token);
+            if (metadata.Icon is { } icon)
+            {
+                iconBitmap = CreateSourceIconBitmap(icon);
+            }
+
+            if (VisibleItems.Contains(item) && Volatile.Read(ref _disposed) == 0)
+            {
+                item.ApplySourceApplicationMetadata(metadata.DisplayName, iconBitmap);
+                iconBitmap = null;
+            }
+
+            resolved = true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // 来源路径和版本资源属于隐私信息；失败时保留进程名与通用图标，不透传细节。
+        }
+        finally
+        {
+            iconBitmap?.Dispose();
+            if (!resolved)
+            {
+                item.ResetSourceMetadataLoad();
+            }
+        }
+    }
+
     [RelayCommand]
     private async Task LoadMoreAsync()
     {
@@ -544,7 +608,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         queryCancellation?.Dispose();
         foreach (ClipboardHistoryItemViewModel item in VisibleItems)
         {
-            item.ReleaseThumbnail();
+            item.ReleaseResources();
         }
 
         _lifetime.Dispose();
@@ -674,7 +738,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             foreach (ClipboardHistoryItemViewModel item in VisibleItems)
             {
-                item.ReleaseThumbnail();
+                item.ReleaseResources();
             }
 
             VisibleItems.Clear();
@@ -773,6 +837,53 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bitmap.Width,
         bitmap.Height,
         bitmap.BitsPerPixel);
+
+    private static WriteableBitmap? CreateSourceIconBitmap(ClipboardSourceApplicationIcon icon)
+    {
+        int rowBytes;
+        int requiredBytes;
+        try
+        {
+            rowBytes = checked(icon.Width * 4);
+            requiredBytes = checked(icon.Stride * icon.Height);
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
+
+        if (icon.Width is < 1 or > 256 || icon.Height is < 1 or > 256 ||
+            icon.Stride < rowBytes || icon.BgraPixels.Length < requiredBytes)
+        {
+            return null;
+        }
+
+        WriteableBitmap bitmap = new(
+            new PixelSize(icon.Width, icon.Height),
+            new Vector(96, 96),
+            PixelFormat.Bgra8888,
+            AlphaFormat.Premul);
+        try
+        {
+            byte[] pixels = icon.BgraPixels.ToArray();
+            using var framebuffer = bitmap.Lock();
+            for (int row = 0; row < icon.Height; row++)
+            {
+                Marshal.Copy(
+                    pixels,
+                    row * icon.Stride,
+                    nint.Add(framebuffer.Address, row * framebuffer.RowBytes),
+                    rowBytes);
+            }
+
+            return bitmap;
+        }
+        catch
+        {
+            bitmap.Dispose();
+            throw;
+        }
+    }
 
     private void RefreshDesignItems()
     {

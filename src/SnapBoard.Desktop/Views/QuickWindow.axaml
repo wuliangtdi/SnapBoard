@@ -48,10 +48,12 @@
             </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ClipboardHistoryItemViewModel">
-                    <Grid Margin="18,10" ColumnDefinitions="Auto,*,Auto">
+                    <Grid Margin="18,10"
+                          ColumnDefinitions="Auto,*,Auto"
+                          DataContextChanged="OnHistoryItemDataContextChanged"
+                          Loaded="OnHistoryItemLoaded">
                         <Grid Width="36" Height="36" Margin="0,0,12,0">
-                            <Image Loaded="OnThumbnailLoaded"
-                                   IsVisible="{Binding HasThumbnail}"
+                            <Image IsVisible="{Binding HasThumbnail}"
                                    Source="{Binding Thumbnail}"
                                    Stretch="UniformToFill" />
                             <materialIcons:MaterialIcon Width="20"
@@ -80,12 +82,28 @@
                                        Text="{Binding Subtitle}"
                                        TextTrimming="CharacterEllipsis" />
                         </StackPanel>
-                        <TextBlock Grid.Column="2"
-                                   Margin="16,0,0,0"
-                                   VerticalAlignment="Center"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                   Text="{Binding SourceApplication}" />
+                        <StackPanel Grid.Column="2"
+                                    Margin="16,0,0,0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="6">
+                            <Grid Width="16" Height="16">
+                                <Image IsVisible="{Binding HasSourceIconBitmap}"
+                                       Source="{Binding SourceIconBitmap}"
+                                       Stretch="Uniform" />
+                                <materialIcons:MaterialIcon Width="16"
+                                                            Height="16"
+                                                            Foreground="{DynamicResource AccentBrush}"
+                                                            IsVisible="{Binding HasSourceIconFallback}"
+                                                            Kind="{Binding SourceIcon}" />
+                            </Grid>
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       MaxWidth="120"
+                                       Text="{Binding SourceApplication}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>

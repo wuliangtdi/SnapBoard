@@ -30,7 +30,8 @@ public sealed partial class SqliteClipboardHistoryStore
                 ORDER BY t.normalized_name
             )
         ), ''),
-        i.search_order_key
+        i.search_order_key,
+        i.source_executable_path
         """;
 
     private static async ValueTask<ClipboardHistoryPage> SearchCoreAsync(
@@ -257,7 +258,8 @@ public sealed partial class SqliteClipboardHistoryStore
                         ? null
                         : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(8)),
                     reader.GetInt64(9),
-                    reader.GetInt64(10) != 0),
+                    reader.GetInt64(10) != 0,
+                    reader.IsDBNull(13) ? null : reader.GetString(13)),
                 reader.GetInt64(12)));
         }
 
