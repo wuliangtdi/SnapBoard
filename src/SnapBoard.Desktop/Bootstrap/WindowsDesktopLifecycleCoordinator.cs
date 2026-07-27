@@ -534,7 +534,15 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private void OnExitRequested(object? sender, EventArgs e) => ExitApplication();
 
-    private void OnHotKeyPressed(object? sender, EventArgs e) => PostToUi(ShowQuickWindow);
+    private void OnHotKeyPressed(object? sender, EventArgs e) => PostToUi(() =>
+    {
+        // 设置窗口激活时，用户可能正在录入当前已注册的组合键。此时只吞掉原生
+        // WM_HOTKEY，不能再弹出快速窗口打断焦点和键盘捕获。
+        if (_settingsWindow is not { IsActive: true })
+        {
+            ShowQuickWindow();
+        }
+    });
 
     private void OnSingleInstanceCommand(SingleInstanceCommand command) =>
         PostToUi(() => ExecuteSingleInstanceCommand(command));

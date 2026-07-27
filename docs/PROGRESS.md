@@ -12,7 +12,7 @@
 | Phase 0 规划与决策 | 已完成 | 名称、MIT、三期平台、WebDAV 和同步范围已确认 |
 | Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
 | Phase 1.1 AOT/内存基线 | 进行中 | Windows AOT 可见窗口峰值 PWS 84.47-109.50 MiB；窗口关闭后最终 PWS 66.22/66.86/130.38 MiB，Private Bytes 130.67-180.64 MiB，释放行为不稳定且尚未达标 |
-| Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、原生热键、暂停和退出已实现；托盘点击、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
+| Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI 写回与自动粘贴及 10,000 次功能压力通过；外部应用矩阵和资源增长预算未完成 |
 | Phase 1.4-1.8 | 未开始 | 数据、搜索、快速粘贴、WebDAV 和发布待后续执行 |
 | Phase 2 macOS | 进行中 | arm64 原生监听、格式读写、目标恢复、自动粘贴及权限降级已合入 `main`；桌面生命周期与发布链路待完成 |
@@ -55,9 +55,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | Windows 11 共 69 项：64 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 项目 29/29，Desktop Headless 12/12 |
+| 全量自动测试 | 通过 | Windows 11 共 79 项：74 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 项目 37/37，Desktop Headless 14/14 |
 | `osx-arm64` Native AOT | 通过 | arm64 Mach-O 可执行文件 23,906,928 字节，剥离后发布目录约 91.68 MiB；0 个 AOT/裁剪警告并实际启动三次 |
-| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 27,700,736 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动；Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 27,746,304 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | AOT 三次可见窗口峰值 PWS 84.47/85.12/109.50 MiB；关闭窗口后最终 PWS 66.22/66.86/130.38 MiB，最终 Private Bytes 130.67/140.51/180.64 MiB，不能声称常驻低于 100 MB |
 
@@ -92,6 +92,12 @@ Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipb
 macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消的 100 ms 活跃/500 ms 空闲退避轮询、有界 Channel 和实例 nonce 来源标记。原生读取支持纯文本、HTML、RTF、PNG、TIFF、文件 URL 与 UTI 清单；Finder 的 `file:///.file/id=...` 引用优先通过同时提供的 `NSFilenamesPboardType` 还原真实路径。写回、纯文本写回和自写事件抑制均由原生集成测试覆盖。
 
 辅助功能允许状态下，TextEdit 自动粘贴以及“捕获 TextEdit -> 切换 Finder -> 恢复 TextEdit -> Command+V”均实机通过。独立 ad-hoc 应用身份的拒绝状态返回 `AccessibilityPermissionDenied`，剪贴板仍写入成功并显示“已复制，请手动粘贴”，TextEdit 未收到注入。来源应用识别固定按 best effort 处理，本轮样本均诚实降级为 `Unknown`。完整记录见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
+
+### 4.7 Windows 自定义快捷键与设置页
+
+设置页不再使用四项预设下拉框，改为点击后直接按组合键录入。Avalonia UI 只提交平台无关的修饰键和按键名称，Windows 平台层显式映射为原生虚拟键并补充 `MOD_NOREPEAT`；字母、数字、数字键盘、F1-F24、导航、浏览器、媒体和常用 OEM 标点已由确定性测试覆盖。无修饰键和不支持的主键会保留录入状态并给出提示，原生注册冲突会回滚并恢复界面显示。
+
+设置窗口已复用主窗口的品牌图、白色表面、浅灰背景、蓝色主命令、图标和 6 px 圆角体系。Release XAML 构建、640 x 520 Headless/Skia 真实帧、创建/重建、自定义快捷键录入与应用均通过；JIT 和 Native AOT 设置窗口已实际启动。Windows 桌面截图组件因本机 D3D11 设备暂停错误 `0x887A0005` 未取得桌面合成截图，但 Headless PNG 已完成视觉复核；物理按键仍保留为交互验收项。
 
 ## 5. 下一执行顺序
 

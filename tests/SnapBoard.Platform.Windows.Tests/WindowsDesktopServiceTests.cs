@@ -47,6 +47,69 @@ public sealed class WindowsHotKeyRegistrarTests
     }
 }
 
+public sealed class WindowsHotKeyKeyMapTests
+{
+    [Fact]
+    public void CreatesCustomLetterGestureWithCanonicalDisplayName()
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Alt,
+            "K");
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
+        GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
+        Assert.Equal(0x4Bu, gesture.VirtualKey);
+        Assert.Equal(
+            GlobalHotKeyModifiers.Control |
+            GlobalHotKeyModifiers.Alt |
+            GlobalHotKeyModifiers.NoRepeat,
+            gesture.Modifiers);
+        Assert.Equal("Ctrl+Alt+K", gesture.DisplayName);
+    }
+
+    [Theory]
+    [InlineData("D7", 0x37u, "Ctrl+7")]
+    [InlineData("NumPad3", 0x63u, "Ctrl+Num 3")]
+    [InlineData("F24", 0x87u, "Ctrl+F24")]
+    [InlineData("OemQuestion", 0xBFu, "Ctrl+/")]
+    [InlineData("BrowserBack", 0xA6u, "Ctrl+Browser Back")]
+    public void CreatesSupportedWindowsVirtualKeys(
+        string keyName,
+        uint expectedVirtualKey,
+        string expectedDisplayName)
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.Control,
+            keyName);
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
+        Assert.Equal(expectedVirtualKey, result.Gesture?.VirtualKey);
+        Assert.Equal(expectedDisplayName, result.Gesture?.DisplayName);
+    }
+
+    [Fact]
+    public void RejectsGestureWithoutModifier()
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.None,
+            "K");
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.MissingModifier, result.Status);
+        Assert.Null(result.Gesture);
+    }
+
+    [Fact]
+    public void RejectsModifierAsMainKey()
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.Control,
+            "LeftShift");
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.UnsupportedKey, result.Status);
+        Assert.Null(result.Gesture);
+    }
+}
+
 [SupportedOSPlatform("windows")]
 public sealed class WindowsAutoStartServiceTests
 {

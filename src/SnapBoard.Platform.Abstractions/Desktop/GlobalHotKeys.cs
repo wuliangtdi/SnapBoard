@@ -30,6 +30,17 @@ public enum GlobalHotKeyRegistrationStatus
     Unsupported = 3,
 }
 
+public enum GlobalHotKeyGestureCreationStatus
+{
+    Created = 0,
+    MissingModifier = 1,
+    UnsupportedKey = 2,
+}
+
+public sealed record GlobalHotKeyGestureCreationResult(
+    GlobalHotKeyGestureCreationStatus Status,
+    GlobalHotKeyGesture? Gesture = null);
+
 public sealed record GlobalHotKeyRegistrationResult(
     GlobalHotKeyRegistrationStatus Status,
     int NativeErrorCode = 0);
@@ -44,6 +55,10 @@ public interface IGlobalHotKeyService : IAsyncDisposable
     GlobalHotKeyGesture? CurrentGesture { get; }
 
     GlobalHotKeyGesture ConfiguredGesture { get; }
+
+    GlobalHotKeyGestureCreationResult CreateGesture(
+        GlobalHotKeyModifiers modifiers,
+        string keyName);
 
     ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
         GlobalHotKeyGesture gesture,

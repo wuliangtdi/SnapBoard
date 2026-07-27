@@ -4,77 +4,195 @@
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="SnapBoard.Desktop.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
-        Width="520"
-        Height="390"
+        Width="640"
+        Height="520"
         CanResize="False"
+        Background="{DynamicResource AppBackgroundBrush}"
         WindowStartupLocation="CenterOwner"
         Title="SnapBoard 设置">
-    <Grid RowDefinitions="64,*,56">
+    <Grid RowDefinitions="64,*,60">
         <Border Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource DividerBrush}"
                 BorderThickness="0,0,0,1">
-            <StackPanel Margin="22,0"
-                        Orientation="Horizontal"
-                        VerticalAlignment="Center"
-                        Spacing="10">
-                <materialIcons:MaterialIcon Width="22" Height="22" Kind="CogOutline" />
-                <TextBlock FontSize="18" FontWeight="SemiBold" Text="设置" />
-            </StackPanel>
+            <Grid Margin="22,0" ColumnDefinitions="Auto,*,Auto">
+                <Image Width="50"
+                       Height="50"
+                       VerticalAlignment="Center"
+                       Stretch="Uniform"
+                       Source="/Assets/snapboard-logo.png" />
+                <StackPanel Grid.Column="1"
+                            Margin="10,0,0,0"
+                            VerticalAlignment="Center"
+                            Spacing="1">
+                    <TextBlock FontSize="17"
+                               FontWeight="SemiBold"
+                               Text="SnapBoard 设置" />
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="闪剪" />
+                </StackPanel>
+                <materialIcons:MaterialIcon Grid.Column="2"
+                                            Width="21"
+                                            Height="21"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource SecondaryTextBrush}"
+                                            Kind="SettingsApplications" />
+            </Grid>
         </Border>
 
-        <Grid Grid.Row="1"
-              Margin="24,20"
-              RowDefinitions="Auto,Auto,1,Auto,Auto"
-              RowSpacing="12">
-            <TextBlock FontWeight="SemiBold" Text="全局快捷键" />
-            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
-                <ComboBox x:Name="HotKeySelector"
-                          ItemsSource="{Binding HotKeyOptions}"
-                          SelectedItem="{Binding SelectedHotKey, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:HotKeyOption">
-                            <TextBlock Text="{Binding DisplayName}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <Button Grid.Column="1"
-                        Margin="10,0,0,0"
-                        Command="{Binding ApplyHotKeyCommand}"
-                        Content="应用" />
-                <Button Grid.Column="2"
-                        Margin="8,0,0,0"
-                        Command="{Binding RestoreDefaultHotKeyCommand}"
-                        ToolTip.Tip="恢复默认快捷键">
-                    <materialIcons:MaterialIcon Width="18" Height="18" Kind="Restore" />
-                </Button>
-            </Grid>
-            <Border Grid.Row="2" Background="{DynamicResource DividerBrush}" />
-            <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
-                <StackPanel>
-                    <TextBlock FontWeight="SemiBold" Text="开机启动" />
-                    <TextBlock Margin="0,4,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
-                               Text="{Binding AutoStartStatus}" />
-                </StackPanel>
-                <ToggleSwitch Grid.Column="1"
-                              VerticalAlignment="Center"
-                              IsChecked="{Binding IsAutoStartEnabled, Mode=TwoWay}" />
-            </Grid>
-            <TextBlock Grid.Row="4"
-                       Foreground="{DynamicResource SecondaryTextBrush}"
-                       Text="{Binding HotKeyStatus}" />
-        </Grid>
+        <ScrollViewer Grid.Row="1"
+                      Background="{DynamicResource SubtleSurfaceBrush}"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="30,24,30,28" Spacing="10">
+                <TextBlock FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="常规" />
+
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <Grid RowDefinitions="166,1,104">
+                        <Grid Margin="20,17,20,16" RowDefinitions="Auto,Auto,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="6"
+                                        Background="{DynamicResource SelectionSurfaceBrush}">
+                                    <materialIcons:MaterialIcon Width="20"
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                Kind="Keyboard" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="全局快捷键" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="用于从任意窗口打开快速粘贴" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Grid Grid.Row="1"
+                                  Margin="46,12,0,0"
+                                  ColumnDefinitions="*,Auto,Auto"
+                                  ColumnSpacing="8">
+                                <Button x:Name="HotKeyCaptureButton"
+                                        Classes="shortcut-recorder"
+                                        Classes.capturing="{Binding IsCapturingHotKey}"
+                                        Click="OnHotKeyCaptureClicked"
+                                        ToolTip.Tip="点击后直接按下新的组合键">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <materialIcons:MaterialIcon Width="18"
+                                                                    Height="18"
+                                                                    Margin="0,0,9,0"
+                                                                    VerticalAlignment="Center"
+                                                                    Kind="KeyboardOutline" />
+                                        <TextBlock Grid.Column="1"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding HotKeyDisplayName}" />
+                                        <TextBlock Grid.Column="2"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="Normal"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   IsVisible="{Binding IsCapturingHotKey}"
+                                                   Text="录入中" />
+                                    </Grid>
+                                </Button>
+                                <Button Grid.Column="1"
+                                        Classes="primary-command"
+                                        Command="{Binding ApplyHotKeyCommand}"
+                                        IsEnabled="{Binding HasPendingHotKeyChange}"
+                                        ToolTip.Tip="应用新的全局快捷键">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="CheckCircle" />
+                                        <TextBlock VerticalAlignment="Center" Text="应用" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="2"
+                                        Classes="icon"
+                                        Width="40"
+                                        Height="40"
+                                        Command="{Binding RestoreDefaultHotKeyCommand}"
+                                        ToolTip.Tip="恢复默认快捷键 Ctrl+Shift+V">
+                                    <materialIcons:MaterialIcon Width="18" Height="18" Kind="Restore" />
+                                </Button>
+                            </Grid>
+
+                            <TextBlock Grid.Row="2"
+                                       Margin="46,9,0,0"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       MaxLines="1"
+                                       Text="{Binding HotKeyStatus}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Grid>
+
+                        <Border Grid.Row="1" Background="{DynamicResource DividerBrush}" />
+
+                        <Grid Grid.Row="2" Margin="20,0" ColumnDefinitions="Auto,*,Auto">
+                            <Border Width="36"
+                                    Height="36"
+                                    VerticalAlignment="Center"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource HoverSurfaceBrush}">
+                                <materialIcons:MaterialIcon Width="20"
+                                                            Height="20"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{DynamicResource PrimaryTextBrush}"
+                                                            Kind="Laptop" />
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Margin="10,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Spacing="3">
+                                <TextBlock FontWeight="SemiBold" Text="开机启动" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding AutoStartStatus}" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2"
+                                          Classes="settings-toggle"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding IsAutoStartEnabled, Mode=TwoWay}"
+                                          OffContent="未开启"
+                                          OnContent="已开启" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <TextBlock Margin="2,2,0,0"
+                           FontSize="12"
+                           Foreground="{DynamicResource TertiaryTextBrush}"
+                           Text="快捷键至少需要一个修饰键；冲突时会保留原有配置。" />
+            </StackPanel>
+        </ScrollViewer>
 
         <Border Grid.Row="2"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource DividerBrush}"
                 BorderThickness="0,1,0,0">
-            <Button Margin="0,0,20,0"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Center"
-                    Click="OnCloseClicked"
-                    Content="完成" />
+            <Grid Margin="22,0" ColumnDefinitions="*,Auto">
+                <TextBlock VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="设置会保存在当前 Windows 用户下" />
+                <Button Grid.Column="1"
+                        Classes="primary-command"
+                        VerticalAlignment="Center"
+                        Click="OnCloseClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="Check" />
+                        <TextBlock VerticalAlignment="Center" Text="完成" />
+                    </StackPanel>
+                </Button>
+            </Grid>
         </Border>
     </Grid>
 </Window>

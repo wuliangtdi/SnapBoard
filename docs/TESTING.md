@@ -36,7 +36,7 @@ dotnet list SnapBoard.slnx package --vulnerable --include-transitive --no-restor
 
 Windows 剪贴板测试分为三层：
 
-- 确定性测试：消息宿主生命周期、启动取消、序列去重、有限重试、队列溢出、来源标记、反馈抑制、`INPUT` ABI、UIPI 结果映射、发送前 HWND/PID 与前台窗口二次校验、后台第二实例不激活 UI、热键冲突回滚和开机启动配置。
+- 确定性测试：消息宿主生命周期、启动取消、序列去重、有限重试、队列溢出、来源标记、反馈抑制、`INPUT` ABI、UIPI 结果映射、发送前 HWND/PID 与前台窗口二次校验、后台第二实例不激活 UI、热键冲突回滚、自定义按键映射和开机启动配置。
 - Windows 原生集成测试：真实系统剪贴板监听、Unicode/ANSI Text、HTML、RTF、DIB、File List、格式清单、来源进程、自写事件抑制、两个真实热键 message-only window 冲突和 CurrentUserOnly 单实例命名管道；测试集合禁用并行，非 Windows 自动跳过。
 - 交互式桌面测试：外部应用复制、前台恢复、自动粘贴和权限边界。实际结果记录在 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`，不能由 fake 或 Headless 测试替代。
 
@@ -63,13 +63,13 @@ macOS 剪贴板测试同样分为三层：
 
 Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTests` 已独立切换到 xUnit 3.2.2，仓库其余测试继续使用 xUnit 2.9.3；项目文件显式移除继承的 v2 引用，避免同一测试程序集混用两个主版本。
 
-当前 Desktop Headless 共 12 项测试，覆盖：
+当前 Desktop Headless 共 14 项测试，覆盖：
 
 - 默认命令中心数据与选择状态。
 - 搜索、类型筛选、删除和紧凑模式 ViewModel 行为。
 - 1487 x 1058 真实 Skia 窗口渲染和稳定截图。
 - 从渲染窗口输入搜索文本、激活代码筛选和切换紧凑模式。
 - Desktop 组合根在 macOS/Windows 上将四个剪贴板端口显式注册为同一个平台适配器实例。
-- 快速窗口真实 XAML 渲染、设置窗口关闭后重新创建、后台第二实例不激活主窗口，以及暂停记录时持续排空 100 个事件但不读取正文、恢复后继续读取。
+- 快速窗口真实 XAML 渲染、设置窗口 640 x 520 真实帧与关闭后重新创建、自定义快捷键录入与应用、后台第二实例不激活主窗口，以及暂停记录时持续排空 100 个事件但不读取正文、恢复后继续读取。
 
-2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行全量 69 项测试：64 项通过、5 项仅限 macOS 原生环境的测试跳过、0 项失败。Windows 平台项目 29/29，macOS 平台项目 14 项确定性测试通过、5 项原生测试跳过，Desktop Headless 12/12。`dotnet format --verify-no-changes` 和直接/传递 NuGet 漏洞检查均通过。托盘菜单点击、物理热键、多显示器/DPI、真实开机启动、管理员目标和完整外部应用矩阵仍需交互验收。
+2026-07-27 在 Windows 11 x64、.NET SDK 10.0.302 上执行全量 79 项测试：74 项通过、5 项仅限 macOS 原生环境的测试跳过、0 项失败。Windows 平台项目 37/37，macOS 平台项目 14 项确定性测试通过、5 项原生测试跳过，Desktop Headless 14/14。`dotnet format --verify-no-changes` 和直接/传递 NuGet 漏洞检查均通过。托盘菜单点击、物理热键、多显示器/DPI、真实开机启动、管理员目标和完整外部应用矩阵仍需交互验收。

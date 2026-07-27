@@ -69,6 +69,10 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
         }
     }
 
+    public GlobalHotKeyGestureCreationResult CreateGesture(
+        GlobalHotKeyModifiers modifiers,
+        string keyName) => WindowsHotKeyKeyMap.CreateGesture(modifiers, keyName);
+
     public async ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
         GlobalHotKeyGesture gesture,
         CancellationToken cancellationToken)
