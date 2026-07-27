@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+using BitMiracle.LibTiff.Classic;
 using SkiaSharp;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Domain.Clipboard;
@@ -9,6 +11,7 @@ internal static class SkiaThumbnailGenerator
 {
     private const int MaximumWidth = 320;
     private const int MaximumHeight = 180;
+    private const int MaximumDecodedPixels = 40_000_000;
 
     public static ValueTask<ReadOnlyMemory<byte>> GenerateAsync(
         ClipboardCapturedRepresentation representation,
@@ -37,7 +40,10 @@ internal static class SkiaThumbnailGenerator
             : representation.Data.ToArray();
         try
         {
-            using SKBitmap? source = SKBitmap.Decode(encoded);
+            using SKBitmap? source = representation.BitmapEncoding ==
+                ClipboardStoredBitmapEncoding.TaggedImageFileFormat
+                ? DecodeTiff(encoded)
+                : SKBitmap.Decode(encoded);
             if (source is null || source.Width <= 0 || source.Height <= 0)
             {
                 return ReadOnlyMemory<byte>.Empty;
@@ -69,9 +75,79 @@ internal static class SkiaThumbnailGenerator
         {
             return ReadOnlyMemory<byte>.Empty;
         }
+        catch (InvalidDataException)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+        catch (InvalidOperationException)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+        catch (OverflowException)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
         finally
         {
             Array.Clear(encoded);
+        }
+    }
+
+    private static SKBitmap? DecodeTiff(byte[] encoded)
+    {
+        using MemoryStream stream = new(encoded, writable: false);
+        using Tiff? tiff = Tiff.ClientOpen(
+            "clipboard-thumbnail.tiff",
+            "r",
+            stream,
+            new TiffStream());
+        if (tiff is null)
+        {
+            return null;
+        }
+
+        FieldValue[]? widthField = tiff.GetField(TiffTag.IMAGEWIDTH);
+        FieldValue[]? heightField = tiff.GetField(TiffTag.IMAGELENGTH);
+        if (widthField is not { Length: > 0 } || heightField is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        int width = widthField[0].ToInt();
+        int height = heightField[0].ToInt();
+        int pixelCount = checked(width * height);
+        if (width <= 0 || height <= 0 || pixelCount > MaximumDecodedPixels)
+        {
+            return null;
+        }
+
+        int[] raster = new int[pixelCount];
+        try
+        {
+            if (!tiff.ReadRGBAImageOriented(width, height, raster, Orientation.TOPLEFT))
+            {
+                return null;
+            }
+
+            SKBitmap bitmap = new(new SKImageInfo(
+                width,
+                height,
+                SKColorType.Rgba8888,
+                SKAlphaType.Unpremul));
+            nint pixels = bitmap.GetPixels();
+            if (pixels == 0)
+            {
+                bitmap.Dispose();
+                return null;
+            }
+
+            // LibTiff 在小端平台返回内存顺序 RGBA 的 ABGR 整数，可直接复制给 Skia。
+            Marshal.Copy(raster, 0, pixels, raster.Length);
+            return bitmap;
+        }
+        finally
+        {
+            Array.Clear(raster);
         }
     }
 

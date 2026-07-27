@@ -5,7 +5,7 @@
 | 平台 | 目标版本/桌面 | 剪贴板监听 | 全局快捷键 | 自动粘贴 | 凭据存储 | 当前状态 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Windows | Windows 11 x64 | 受限：原生适配器、delayed rendering、持久历史、检索、事件时来源快照及 PNG 已自动验证，外部应用矩阵未完成 | 受限：自定义按键录入、原生注册、冲突回滚和配置已自动验证，物理按键待验收 | 受限：Notepad/WinUI 已实机通过，管理员目标待验收 | Credential Manager 原生服务已验证 | Phase 1.4 自动验证完成，实机矩阵收口中 |
-| macOS | macOS 26.2 arm64 已测；x64 待测 | 受限：原生适配器与 10,000 次功能压力已验证，资源增长预算未满足且 8 小时长稳未执行 | 受限：自定义录入、原生注册、冲突回滚、持久化和物理组合键已验证 | 受限：TextEdit 允许/拒绝状态已测，需辅助功能权限 | Keychain 原生服务已验证 | 二期核心完成，发布验收进行中 |
+| macOS | macOS 26.2 arm64 已测；x64 待测 | 受限：原生适配器、APFS 持久历史、100,000 条检索与 10,000 次功能压力已验证，资源预算未满足且 8 小时未执行 | 受限：自定义录入、原生注册、冲突回滚、持久化和物理组合键已验证 | 受限：TextEdit 允许/拒绝状态已测，需辅助功能权限 | Keychain 原生服务已验证 | 共享历史通过；正式发布与环境矩阵进行中 |
 | Ubuntu | GNOME X11 | 计划完整 | 计划完整 | 计划完整 | Secret Service | 三期 |
 | Ubuntu/Fedora | GNOME Wayland | 配套扩展或受限 | 桌面接口决定 | 通常受限 | Secret Service | 三期高风险 |
 | Fedora/KDE | Plasma Wayland | 待验证 | 待验证 | 可能受限 | KWallet/Secret Service | 三期 |
@@ -33,15 +33,17 @@
 
 - [x] `NSPasteboard.changeCount` 生命周期、去重、取消、有界队列、反馈抑制和 100/500 ms 退避；AOT 监听探针平均 CPU 0.001%，`DroppedEvents=0`。
 - [x] Text、HTML、RTF、PNG、TIFF、文件 URL、UTI 清单、完整写回和纯文本写回。
+- [x] APFS 上 SQLite v1-v5/重复迁移/损坏恢复/重启一致性、CAS Blob、PNG/TIFF 原图与缩略图、后台精确孤儿清理，以及中文/英文/代码分页筛选取消和 100,000 条检索。
+- [x] 来源无法可靠识别时，PID/名称/路径/AUMID/Package Family 保持 NULL，归属保持 Unknown；macOS 不注册 AppsFolder/Windows 来源图标解析器，UI 使用通用图标。
 - [x] TextEdit 目标捕获、切换到 Finder 后恢复目标并发送 Command+V。
 - [~] 辅助功能允许与独立应用身份拒绝已实测；设置页状态、受限模式和仅由用户触发的系统设置入口已实现，撤销后同一稳定身份重试和重新授予待实测。
-- [~] Finder、Safari、Chrome、Preview 和 `pbcopy` CLI 已实测；可见 Terminal UI、Office 和远程桌面未验证。
+- [~] TextEdit、Finder、Safari、Chrome、Preview PNG/同像素 TIFF 去重和 `pbcopy` 已确认进入持久历史；可见 Terminal UI 被安全策略阻止，Office 未安装，远程客户端未启动。
 - [x] 每用户单实例、带确认的第二实例激活、关闭窗口后台常驻、三类窗口重建、Template 状态菜单、暂停/恢复和明确退出。
 - [x] 默认 `Command+Shift+V`、自定义 `Option+Control+A`、重启后持久化、冲突失败回滚和恢复默认。
 - [~] ServiceManagement 登录启动与 App Bundle 能力检测已实现，当前状态为未启用；真实启用/禁用及重新登录待用户确认后验收。
 - [x] Keychain 临时密钥新增、读取和删除通过原生验证，平台抽象可供后续同步复用。
-- [ ] 睡眠唤醒、多 Space、多显示器、Retina 和全屏应用；当前主机仅一台 1920 x 1080 非 Retina 显示器。
-- [~] `osx-arm64` Native AOT 0 告警，裸产物与 DMG 内 Bundle 均实际启动；本地 ad-hoc Hardened Runtime、DMG/PKG 通过，Developer ID、公证、Gatekeeper 接受、GitHub Runner 和 `osx-x64` 待验证。
+- [ ] 睡眠唤醒、多 Space、多显示器、Retina 和全屏应用；当前主机仅一台 1920 x 1080 非 Retina 显示器，未从该环境外推。
+- [~] `osx-arm64` Native AOT 0 告警并实际启动；三轮后台 Physical Footprint 为 100.05/100.19/100.19 MiB，仍未通过内存线。DMG 校验通过，但 Bundle 仅 ad-hoc、PKG 未签名且 `spctl` 拒绝；Developer ID、公证、staple、安装升级/卸载、GitHub Runner、`osx-x64` 和 8 小时长稳待验证。
 
 详细证据、性能样本和未验证项见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 

@@ -250,3 +250,15 @@ SQLite Schema v5 增加来源 AUMID、Package Family 和归属依据的显式投
 同轮定位到一个仍在监听真实剪贴板的旧 AOT 桌面进程：数据库仅约 4.1 MB，Private Bytes 已达到 7,242,338,304 字节。调用链显示每次保存都会发布 `HistoryChanged`，旧 UI 为每个事件向调度器排队一次完整 50 项查询、ViewModel 重建以及图标/缩略图加载。当前实现改为单个可复用 150 ms 定时器，只在静默期刷新；Headless 测试连续发送 10,000 次事件后，除初始查询外只发生一次刷新。受旧进程竞争污染的首轮探针在 8,010 次因 `ClipboardBusy` 停止，其 16.29 MiB 增长不作为干净基线；旧进程已通过自身 `--exit` 正常退出。
 
 当前 `win-x64` self-contained Native AOT EXE 为 29,531,648 字节，SHA-256 `F712C3D312F0AE60AEFCF669001AC03ED279E11A51AA2EADA7DDA71BD7AD6E36`。发布输出无 AOT/裁剪警告，目录无 `coreclr.dll`/`clrjit.dll`；单次实际启动在 413.22 ms 创建主窗口，2 秒样本 Working Set 180,600,832 字节、Private Bytes 168,071,168 字节、句柄 1328，并通过 `--exit` 明确退出。该单次样本不替代 6.7 的三轮 PWS/资源数据。修复后的完整 AOT 桌面尚未使用隔离数据目录重跑 10,000 次端到端压力，8 小时长稳也未执行，不能把平台探针通过外推为整体内存门槛通过。
+
+### 6.10 2026-07-28 macOS arm64 共享历史与检索复测
+
+版本：`phase2/macos-history-search-validation`，基线提交 `3be5faa5707c72d80dfc9d7fc01b81edeb9eb66e`。主机为 Apple M4 10 核、16 GB、macOS 26.2 (25C56)、APFS PCIe SSD、.NET SDK 10.0.302；构建为 Release、`osx-arm64` self-contained Native AOT，发布输出无 AOT/裁剪警告。
+
+100,000 条、平均 554.7 字符的生成数据导入耗时 15,289.62 ms，数据库为 515,645,440 字节。150 次中文/英文/代码选择性查询总体 P50 0.46 ms、P95 1.04 ms、最大 1.72 ms；加入 150 次宽查询后的 300 次总体 P50 0.53 ms、P95 1.01 ms、最大 2.23 ms。所有查询都满足 P95 `< 80 ms` 和单次 `<= 200 ms`，该结论只适用于本机 APFS 与当前索引。
+
+最终 App 主程序为 26,606,368 字节 arm64 Mach-O。三次独立启动分别为 1262.00/420.21/458.88 ms；可见窗口峰值 Physical Footprint 为 200.05/200.02/199.66 MiB，RSS 为 164.14/165.53/166.23 MiB。关闭全部窗口后的 Physical Footprint 为 100.05/100.19/100.19 MiB，RSS 为 164.61/164.78/164.56 MiB，Physical 分别回落 100.00/99.83/99.47 MiB；峰值线程 16、FD 45，平均 CPU 0.021%-0.022%。Physical Footprint 三轮都略高于 100 MiB 失败线，因此内存门槛仍未通过。
+
+真实 NSPasteboard 探针执行 100 次预热和 10,000 次写入，耗时 2044.52 ms，写入、抽样读回、来源标记、反馈事件和队列丢弃均为 0 失败；探针 RSS 61.17 -> 76.86 MiB，线程 17 -> 21，FD 49 -> 51，未满足 `< 8 MiB` 资源预算。完整 AOT 桌面同时保持同一 PID，RSS 约 162.1 -> 163.7 MiB、线程 16 -> 17、FD 不变，数据库只收敛保存预热末项和事件末项。10,000 次 `HistoryChanged` 静默期只刷新一次由 Headless 自动测试独立验证，不能与平台写入探针混为同一指标。
+
+另一次完整桌面先加载真实外部应用历史和 10,000 次压力，再通过 `--close-windows` 保持菜单栏后台 12 分 23 秒。RSS 从 170,240 KiB（166.25 MiB）回落到 99,264 KiB（96.94 MiB），线程 15 -> 14，FD 51 -> 47，CPU 两端为 0.0%；但 `footprint` 从首个关闭后样本 138 MB 变为 139 MB，Lifetime Peak 256 MB。该样本满足至少 10 分钟的观察时长，但 Physical Footprint 明确失败；8 小时测试未执行。重启一致性与字段明细见 `docs/MACOS_CLIPBOARD_VALIDATION.md` 9.6。

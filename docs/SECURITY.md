@@ -16,6 +16,7 @@
 - 数据目录仅当前用户可读写。
 - SQLite 使用参数化 SQL、外键、WAL 和明确迁移。
 - 大对象写入临时文件并强制落盘后原子重命名，数据库只在文件成功后提交哈希、大小、MIME、引用计数和相对路径；原始图片不长期放入数据库或列表内存。
+- TIFF 缩略图只在 Infrastructure 后台使用 `BitMiracle.LibTiff.NET` 解码，像素数上限为 40,000,000；损坏、尺寸溢出或不支持的 TIFF 保留原图但不生成缩略图，临时编码/栅格缓冲在使用后清零。UI 与快速列表不直接持有 TIFF 原图。
 - 孤儿扫描延迟到启动两分钟后在后台执行，候选文件至少保留 24 小时；每批删除前在单写队列内按完整相对路径重新查询数据库，无法证明无引用时保留文件。
 - SQLCipher 是否默认启用由 AOT、内存和恢复测试决定；未启用时必须在设置中明确本地保护边界。
 - 清理操作使用 Tombstone/事务，防止同步设备把已删除内容复活。
@@ -48,6 +49,7 @@
 - 辅助功能状态刷新只调用无提示的预检 API；只有设置页中用户主动执行“请求权限”或“打开系统设置”命令时，平台服务才请求 TCC 或跳转系统设置。应用启动、窗口打开和后台轮询不得自动弹出权限提示。
 - 权限拒绝、撤销、目标恢复失败或事件注入失败不阻止剪贴板写入；结果进入受限模式并提示用户手动粘贴。UI 只消费平台无关状态，不直接引用 Accessibility、CoreGraphics 或 AppKit。
 - App Bundle Identifier 固定为 `com.wuliangtdi.snapboard`。开发裸程序明确标记为开发身份，不把它的 TCC/登录启动状态当成正式 Bundle 状态；撤销和重新授权必须使用相同 Bundle ID 与稳定 Developer ID 签名身份实测。
+- NSPasteboard 不提供可靠来源时，macOS 必须把 PID、进程名、路径、AUMID 和 Package Family 留空并把归属记为 Unknown；不得用当前前台应用猜测，也不得注册 AppsFolder 或其他 Windows 身份解析器。
 - `MacOSKeychainSecretStore` 使用 Security.framework Generic Password 项，Service 固定为 `com.wuliangtdi.snapboard`，账户名经过长度与控制字符校验，单项上限 64 KiB。新增、读取、覆盖和删除返回结构化状态，临时明文缓冲区使用后清零，不回退为 JSON、plist 或其他明文凭据文件。
 - 正式包的 entitlement 集为空并启用 Hardened Runtime；本机 ad-hoc 验证包因 Native AOT 原生库加载仅使用独立的 `disable-library-validation` entitlement。正式发布不得沿用该本地 entitlement，且 Developer ID Application、Developer ID Installer 和公证凭据必须同时存在才允许进入正式签名路径。
 
@@ -66,7 +68,7 @@
 
 ## 9. 依赖安全
 
-NuGet restore 开启漏洞审计并将警告视为错误。Microsoft.Data.Sqlite 10.0.10 的原始传递依赖会选择已公告的 SQLitePCLRaw 2.1.11，仓库显式固定 `SQLitePCLRaw.bundle_e_sqlite3 2.1.12`，测试要求 SQLite >= 3.50.2。
+NuGet restore 开启漏洞审计并将警告视为错误。Microsoft.Data.Sqlite 10.0.10 的原始传递依赖会选择已公告的 SQLitePCLRaw 2.1.11，仓库显式固定 `SQLitePCLRaw.bundle_e_sqlite3 2.1.12`，测试要求 SQLite >= 3.50.2。`BitMiracle.LibTiff.NET 2.4.660` 只进入 Infrastructure，没有额外包依赖；2026-07-28 的直接/传递漏洞审计、Release 构建和 `osx-arm64` Native AOT 均通过。任何后续 TIFF 解码器升级仍需重跑损坏输入、像素上限、临时文件和 AOT 验证。
 
 Dependabot 每周检查 NuGet 和 GitHub Actions。升级原生依赖后必须重新执行三个平台的 AOT、数据库版本和基本 CRUD 测试。
 

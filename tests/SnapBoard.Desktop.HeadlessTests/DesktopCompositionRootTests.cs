@@ -3,6 +3,7 @@ using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.MacOS;
 using SnapBoard.Platform.Windows;
+using SnapBoard.Platform.Windows.Clipboard;
 
 namespace SnapBoard.Desktop.HeadlessTests;
 
@@ -20,6 +21,7 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IClipboardContentReader>());
             Assert.Same(adapter, provider.GetRequiredService<IClipboardWriter>());
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
+            Assert.Null(provider.GetService<IClipboardSourceApplicationMetadataResolver>());
         }
         else if (OperatingSystem.IsWindows())
         {
@@ -27,6 +29,8 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IClipboardContentReader>());
             Assert.Same(adapter, provider.GetRequiredService<IClipboardWriter>());
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
+            Assert.IsType<WindowsClipboardSourceApplicationMetadataResolver>(
+                provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
         }
         else
         {

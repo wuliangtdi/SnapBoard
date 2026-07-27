@@ -72,7 +72,7 @@ dotnet run --project tools/SnapBoard.MacOSClipboardProbe -c Release --no-build -
 
 Avalonia.Headless.XUnit 12.1.0 要求 xUnit v3。`SnapBoard.Desktop.HeadlessTests` 已独立切换到 xUnit 3.2.2，仓库其余测试继续使用 xUnit 2.9.3；项目文件显式移除继承的 v2 引用，避免同一测试程序集混用两个主版本。
 
-当前 Desktop Headless 共 26 项测试，覆盖：
+当前 Desktop Headless 共 29 项测试，覆盖：
 
 - 默认命令中心数据与选择状态。
 - 搜索、类型筛选、删除和紧凑模式 ViewModel 行为。
@@ -114,3 +114,17 @@ dotnet run --project tests/SnapBoard.PerformanceTests/SnapBoard.PerformanceTests
 Schema v5 来源身份投影接入后重新执行该场景：导入 100,000 条平均 554.7 字符的混合数据耗时 31,113.58 ms，分别测量中文、英文、代码的选择性与宽查询，各 50 次，共 300 次；总体 P95 2.37 ms、最大 7.49 ms。性能测试只输出计数、耗时和大小，不打印正文。它不是 `dotnet test` 的一部分，必须单独执行。
 
 Windows 原生探针最新干净样本为 100 次预热和 10,000 次事件，事件匹配 10,000/10,000，反馈和 Channel 丢弃为 0；Private Bytes 增长 7.38 MiB，满足该隔离探针的 `< 8 MiB` 预算。测试期间同时发现旧 AOT 桌面进程因每个历史事件都排队全量刷新而增长到 7.24 GB Private Bytes；当前代码已合并刷新并有 10,000 次 Headless 回归测试，但尚未用隔离数据目录重新执行完整 AOT 桌面端到端压力。功能、平台探针和完整桌面资源结论必须继续分开；8 小时长稳未执行。
+
+## 7. macOS 共享历史与检索验证
+
+2026-07-28 在 macOS 26.2 arm64、Apple M4、APFS 和 .NET SDK 10.0.302 上执行 `phase2/macos-history-search-validation`：全量 159 项中 144 项通过、15 项 Windows 原生测试按平台跳过、0 项失败。项目分布为 Application 9、Architecture 2、Domain 1、Infrastructure 26、Linux 1、macOS 36、Windows 37 通过/15 跳过、Sync 3、Desktop Headless 29。locked restore、Release build、format、NuGet 漏洞审计和 `osx-arm64` Native AOT 均通过。
+
+本轮在共享测试层新增或强化：
+
+- Schema v1-v5 分别新建并重复迁移，v4 实际行升级 v5 后 Windows 身份列保持 NULL/Unknown。
+- 重启后标签、置顶、使用次数/时间、软删除/时间和设置一致；损坏备份恢复、WAL、外键、busy timeout 和重复初始化继续通过。
+- PNG/TIFF 原图、缩略图、临时文件、原子替换、回滚、共享引用、删除/清空/过期及精确孤儿复查；损坏 TIFF 保留原图并安全跳过缩略图。
+- macOS 未注册 Windows 来源解析器，Unknown 来源保持通用图标且 UI 无 Windows 专属术语。
+- 正式 ViewModel 的分页、筛选、取消、旧查询隔离、按需图片，以及 10,000 次 `HistoryChanged` 静默期一次刷新。
+
+100,000 条独立性能命令导入耗时 15,289.62 ms；150 次目标查询 P95 1.04 ms、最大 1.72 ms，300 次全部查询 P95 1.01 ms、最大 2.23 ms，满足 `< 80 ms` 和 `<= 200 ms`。真实外部应用、AOT、资源与未执行项见 `docs/MACOS_CLIPBOARD_VALIDATION.md`；性能命令不是 `dotnet test` 的一部分，发布验证必须单独运行。

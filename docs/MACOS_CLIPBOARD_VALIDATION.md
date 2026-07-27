@@ -1,9 +1,10 @@
 # macOS 剪贴板与桌面二期验收记录
 
-> 日期：2026-07-27
+> 最后更新：2026-07-28
 > 环境：Mac mini，Apple M4 10 核，16 GB，macOS 26.2 (25C56)，arm64
 > SDK：.NET SDK 10.0.302（由 `global.json` 锁定）
-> 分支：`phase2/macos-completion`
+> 历史基线分支：`phase2/macos-completion`
+> 当前验证分支：`phase2/macos-history-search-validation`，基线提交 `3be5faa5707c72d80dfc9d7fc01b81edeb9eb66e`
 
 ## 1. 本轮范围
 
@@ -153,3 +154,98 @@ Threads=18->20; FileDescriptors=50->52
 - `osx-x64`、通用应用和 Intel 未验证；GitHub Actions 的 macOS 构建/发布 Job 尚未实际运行。
 - 本地 ad-hoc Bundle 和未签名 PKG 不能替代 Developer ID 签名、公证、staple、Gatekeeper 和真实安装升级/卸载验证。
 - 10,000 次功能正确性通过，但 RSS、线程和文件描述符有一次性增长；后台 Physical Footprint 仍超过 100 MB，性能退出条件未完成。
+
+## 9. 2026-07-28 合并后共享历史与检索复验
+
+本节只记录 Windows 三个历史提交进入 `main` 后，在 macOS 目标机对共享能力的新增复验。未把 Windows 的 AUMID、Package Family、AppsFolder 或前台应用猜测移植到 macOS。验证前已执行 `fetch --prune`、`pull --ff-only`，并确认基线提交是当前 HEAD 的祖先。
+
+### 9.1 APFS、迁移、恢复与 Blob
+
+本机数据卷 `/dev/disk5s2` 为 999.8 GB PCIe SSD、APFS；测试临时目录和实际 `Application Support` 数据目录均位于该 APFS 数据卷。新增或扩展的集成测试实际覆盖：
+
+- Schema v1-v5 分别新建、同版本重复迁移、再升级到当前版本并重复执行；v4 实际行升级到 v5 后，AUMID 与 Package Family 保持 NULL，来源归属为 Unknown。
+- 每个连接的 WAL、外键和 busy timeout，损坏数据库及可用 WAL/SHM 的时间戳备份、重建、诊断和恢复后 CRUD。
+- 重启后正文、标签、置顶、使用次数/最后使用时间、软删除/删除时间和设置一致；实际桌面重启另见 9.6。
+- Blob 临时文件、原子移动、事务失败回滚、共享引用计数、删除、清空、过期和孤儿清理。启动返回时不等待目录扫描，过期临时文件与旧孤儿在后台处理，删除前仍按数据库完整相对路径复查。
+- PNG 与 TIFF 原图字节保持不变，缩略图按需读取为 PNG，Blob 暂存目录无残留。Skia 不支持 TIFF 解码，因此 Infrastructure 新增 `BitMiracle.LibTiff.NET 2.4.660`，只在后台以 40,000,000 像素上限解码缩略图；损坏 TIFF 保留原图但不生成缩略图，不让异常中断持久化。
+
+macOS 的来源边界由 Application、Infrastructure 和 Desktop 组合根共同回归：PID、进程名、可执行路径、AUMID、Package Family 全部为 NULL，访问状态与归属类型均为 Unknown；macOS 不注册 Windows 来源图标解析器，主窗口稳定显示“未知来源”和通用应用图标。
+
+### 9.2 检索、高频刷新与 UI
+
+在本机重新生成 100,000 条、平均 554.7 字符的中文、英文、C#、JSON、URL 和路径混合数据。导入耗时 15,289.62 ms，数据库 515,645,440 字节；每页只投影 50 条摘要，不读取正文、原图或缩略图。
+
+| 查询组 | P50 | P95 | 最大值 |
+| --- | ---: | ---: | ---: |
+| 中文选择性 | 0.39 ms | 0.70 ms | 1.02 ms |
+| 英文选择性 | 0.89 ms | 1.22 ms | 1.72 ms |
+| 代码选择性 | 0.42 ms | 0.68 ms | 0.79 ms |
+| 中文宽查询 | 0.26 ms | 0.46 ms | 0.58 ms |
+| 英文宽查询 | 0.67 ms | 0.98 ms | 1.03 ms |
+| 代码宽查询 | 0.57 ms | 1.10 ms | 2.23 ms |
+| 150 次目标查询总体 | 0.46 ms | 1.04 ms | 1.72 ms |
+| 300 次全部查询总体 | 0.53 ms | 1.01 ms | 2.23 ms |
+
+P95 低于 80 ms 目标，所有样本低于 200 ms 失败线。自动测试同时覆盖特殊字符、筛选、稳定游标分页、取消、旧查询代际隔离、每页增量加载、虚拟化和图片按需解码；连续发布 10,000 次 `HistoryChanged` 后，除初始查询外只在 150 ms 静默期触发一次刷新。
+
+真实 AOT 主窗口从空库开始观察到以下持久结果：
+
+| 输入 | 数据库/主窗口结果 | 来源 |
+| --- | --- | --- |
+| TextEdit 生成中英文文本 | 新增文本/RTF 历史，重开主窗口可见 | Unknown |
+| Finder 复制仓库 `README.md` | 新增历史；`clipboard_files` 保存完整 POSIX 路径，同时保存 Finder 提供的 TIFF 图标 | Unknown |
+| Safari `example.com` | 新增 Text/HTML/RTF 历史 | Unknown |
+| Chrome IANA Example Domains | 新增 Text/HTML 历史 | Unknown |
+| Preview PNG | 新增 1254 x 1254 PNG Blob 与缩略图 | Unknown |
+| Preview 同像素 TIFF | 命中同一图片记录，`capture_count` 从 1 增至 2，未制造重复历史 | Unknown |
+| `pbcopy` 特殊字符文本 | 新增文本历史并可检索 | Unknown |
+
+主窗口真实历史、图片缩略图和增量更新已可见。锁屏发生前未完成本轮快速窗口的可见真实历史复核；快速窗口真实 XAML、选择、共享 ViewModel 分页/取消/按需图片路径由 Headless 测试通过，但本节不把它替代为交互通过。
+
+### 9.3 Native AOT、资源与 10,000 次压力
+
+`osx-arm64` self-contained Native AOT 发布和 App Bundle 启动通过，发布输出 0 个 AOT/裁剪警告。最终 App 主程序为 26,606,368 字节 arm64 Mach-O，包内无 `coreclr`、`hostfxr` 或 `clrjit`。三次独立进程样本如下：
+
+| 轮次 | 启动 | 可见 Physical | 可见 RSS | 后台 Physical | 后台 RSS | 回落 | Lifetime Peak | 线程 | FD | CPU | 能耗 | Wakeups |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1262.00 ms | 200.05 MiB | 164.14 MiB | 100.05 MiB | 164.61 MiB | 100.00 MiB | 200.09 MiB | 16 | 45 | 0.022% | 54.746 mJ | 419 |
+| 2 | 420.21 ms | 200.02 MiB | 165.53 MiB | 100.19 MiB | 164.78 MiB | 99.83 MiB | 203.61 MiB | 16 | 45 | 0.021% | 54.257 mJ | 409 |
+| 3 | 458.88 ms | 199.66 MiB | 166.23 MiB | 100.19 MiB | 164.56 MiB | 99.47 MiB | 200.02 MiB | 16 | 45 | 0.022% | 57.772 mJ | 409 |
+
+窗口关闭后的 Physical Footprint 明显回落，但三轮均略高于 100 MiB 失败线，内存门槛仍未通过。完整桌面保持运行时又执行真实 NSPasteboard 探针：
+
+```text
+Events=10000; Warmup=100; DurationMs=2044.52;
+WriteFailures=0; ReadFailures=0; MarkerFailures=0;
+FeedbackEvents=0; DroppedEvents=0;
+InitialRssMiB=61.17; PeakRssMiB=76.20; FinalRssMiB=76.86;
+Threads=17->21; FileDescriptors=49->51
+```
+
+探针功能正确性通过，但自身 RSS 增长 15.69 MiB、线程 +4、FD +2，不满足 `< 8 MiB` 资源预算。桌面进程在压力前后保持同一 PID，RSS 约 162.1 -> 163.7 MiB、线程 16 -> 17、FD 51 -> 51，数据库条数 6 -> 8；这里只证明完整桌面存活、收敛保存预热末项与事件末项，不把 10,000 个快速变化误述为 10,000 条历史。
+
+关闭全部窗口后已开始独立 10 分钟菜单栏常驻样本；最终时长与资源见 9.6。8 小时测试未执行。
+
+### 9.4 构建、测试与包
+
+交接要求的六条命令全部通过：locked restore；Release build 0 警告/0 错误；全量 159 项中 144 项通过、15 项 Windows 原生测试按平台跳过、0 项失败；format 无改动；直接/传递 NuGet 漏洞为 0；100,000 条检索结果为 PASS。
+
+本地生成 0.2.0 (build 3) App/DMG/PKG。DMG 为 21,989,704 字节，`hdiutil verify` 通过，SHA-256 为 `103ddd65b902d3d8b5294651340015cd9c5b883a2228166475b6cf0637273e09`；PKG 为 20,200,493 字节，SHA-256 为 `d0114f27948e1667965d2695a9052c627a5623d175df1c3373310c2f5c4af085`。
+
+`codesign --verify --deep --strict` 只证明本地 ad-hoc Bundle 结构有效；签名 flags 为 `adhoc,runtime`、无 Team ID，PKG 明确为 `no signature`，`spctl` 拒绝。钥匙串返回 0 个有效代码签名身份，因此 Developer ID Application/Installer、正式 entitlement、签名 PKG、公证、staple、Gatekeeper 接受、安装升级/卸载和 GitHub macOS Runner 均未完成，不能把本地产物当成正式发布结果。
+
+### 9.5 明确未完成或受限的项目
+
+- `osx-x64` 未在 Intel 或对应 Runner 发布和启动，不能从 M4 推断。
+- 当前只有单台 1920 x 1080 非 Retina 显示器；睡眠唤醒、多 Space、多显示器、Retina 和全屏应用未执行。
+- 登录启动真实启用/重新登录未执行；没有稳定 Developer ID 身份，辅助功能权限撤销后以同一稳定签名重新授权也未执行。
+- 可见 Terminal UI 被桌面安全策略拒绝操作；Office 未安装；发现 UU 远程客户端但未启动，因此 Office 与远程桌面均不标记通过。
+- 10 分钟菜单栏样本只覆盖短期常驻，8 小时长稳明确未执行。
+
+### 9.6 菜单栏常驻与真实重启
+
+01:57:32 通过应用自己的第二实例 `--close-windows` 命令关闭全部窗口，同一 AOT PID 继续运行；02:09:55 结束样本，关闭窗口阶段持续 12 分 23 秒。开始时 RSS 170,240 KiB（166.25 MiB）、15 线程、51 FD；结束时 RSS 99,264 KiB（96.94 MiB）、14 线程、47 FD，CPU 两端均为 0.0%。首个关闭后 `footprint` 样本为 138 MB，结束为 139 MB，Lifetime Peak 256 MB。RSS、线程和 FD 有回落，但 Physical Footprint 未低于 100 MB，因此 10 分钟时长完成、内存目标失败。
+
+随后使用 `--exit` 干净结束 PID 25766，并以同一 App Bundle `--background` 启动 PID 28621。重启前后实际数据库聚合完全一致：11 条历史、1 个文件路径、`capture_count` 总和 13、11 条 Unknown 来源，Finder `README.md` 完整路径仍为 1 条；`journal_mode=wal`、`quick_check=ok`。这证明本轮真实外部应用内容和 Unknown 来源投影跨进程重启保持一致。标签、置顶、使用次数、软删除和设置的非零状态由 9.1 的独立 APFS 集成测试验证；实际桌面样本这些字段均为零，未伪造非零交互结果。
+
+重启后系统仍处于锁屏，无法补做快速窗口可见历史和全屏场景；它们继续保持自动测试通过/交互未完成的分级结论。

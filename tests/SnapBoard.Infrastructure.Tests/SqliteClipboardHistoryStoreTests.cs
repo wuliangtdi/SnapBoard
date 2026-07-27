@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -26,6 +27,50 @@ public sealed class SqliteClipboardHistoryStoreTests
         Assert.Equal(
             SnapBoardDatabaseMigrator.CurrentVersion,
             await ExecuteScalarInt64Async(connection, "PRAGMA user_version;"));
+        Assert.Equal(
+            SnapBoardDatabaseMigrator.CurrentVersion,
+            await ExecuteScalarInt64Async(connection, "SELECT COUNT(*) FROM schema_migrations;"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task EverySchemaVersionCanBeCreatedAndRepeatedMigrationIsIdempotent(
+        int targetVersion)
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync(
+            initialize: false);
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+
+        Assert.Equal(
+            targetVersion,
+            await context.Migrator.MigrateAsync(
+                connection,
+                CancellationToken.None,
+                targetVersion));
+        Assert.Equal(
+            targetVersion,
+            await context.Migrator.MigrateAsync(
+                connection,
+                CancellationToken.None,
+                targetVersion));
+        Assert.Equal(
+            targetVersion,
+            await ExecuteScalarInt64Async(connection, "PRAGMA user_version;"));
+        Assert.Equal(
+            targetVersion,
+            await ExecuteScalarInt64Async(connection, "SELECT COUNT(*) FROM schema_migrations;"));
+
+        Assert.Equal(
+            SnapBoardDatabaseMigrator.CurrentVersion,
+            await context.Migrator.MigrateAsync(connection, CancellationToken.None));
+        Assert.Equal(
+            SnapBoardDatabaseMigrator.CurrentVersion,
+            await context.Migrator.MigrateAsync(connection, CancellationToken.None));
         Assert.Equal(
             SnapBoardDatabaseMigrator.CurrentVersion,
             await ExecuteScalarInt64Async(connection, "SELECT COUNT(*) FROM schema_migrations;"));
@@ -131,7 +176,21 @@ public sealed class SqliteClipboardHistoryStoreTests
                 connection,
                 CancellationToken.None,
                 targetVersion: 4));
+        await ExecuteNonQueryAsync(
+            connection,
+            """
+            INSERT INTO clipboard_items(
+                id, sequence_number, primary_kind, display_category,
+                captured_at_utc, updated_at_utc, source_access_status,
+                content_hash, preview_text, searchable_text, total_size_bytes)
+            VALUES (
+                '44444444-4444-4444-4444-444444444444', '4', 1, 1,
+                4, 4, 0, 'v4-hash', 'v4 source', 'v4 source', 9);
+            """);
 
+        Assert.Equal(
+            SnapBoardDatabaseMigrator.CurrentVersion,
+            await context.Migrator.MigrateAsync(connection, CancellationToken.None));
         Assert.Equal(
             SnapBoardDatabaseMigrator.CurrentVersion,
             await context.Migrator.MigrateAsync(connection, CancellationToken.None));
@@ -156,6 +215,20 @@ public sealed class SqliteClipboardHistoryStoreTests
                 FROM sqlite_master
                 WHERE type = 'index' AND name = 'ix_clipboard_items_source_identity';
                 """));
+        await using SqliteCommand source = connection.CreateCommand();
+        source.CommandText = """
+            SELECT
+                source_application_user_model_id,
+                source_package_family_name,
+                source_attribution_kind
+            FROM clipboard_items
+            WHERE id = '44444444-4444-4444-4444-444444444444';
+            """;
+        await using SqliteDataReader reader = await source.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(await reader.IsDBNullAsync(0));
+        Assert.True(await reader.IsDBNullAsync(1));
+        Assert.Equal(0L, reader.GetInt64(2));
     }
 
     [Fact]
@@ -199,6 +272,9 @@ public sealed class SqliteClipboardHistoryStoreTests
             sourceApplicationUserModelId: "Example.App_123!App",
             sourcePackageFamilyName: "Example.App_123",
             sourceAttributionKind: 1);
+        ClipboardCapturedItem deletedItem = CreateTextItem("restart deleted state");
+        DateTimeOffset usedAt = DateTimeOffset.FromUnixTimeMilliseconds(
+            DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds());
         await using (HistoryStoreTestContext first = await HistoryStoreTestContext.CreateAsync(
             root,
             deleteOnDispose: false))
@@ -208,6 +284,14 @@ public sealed class SqliteClipboardHistoryStoreTests
             Assert.True(await first.Store.SetTagsAsync(
                 item.Id,
                 ["work", "中文"],
+                CancellationToken.None));
+            Assert.True(await first.Store.RecordUseAsync(
+                item.Id,
+                usedAt,
+                CancellationToken.None));
+            await first.Store.SaveAsync(deletedItem, CancellationToken.None);
+            Assert.True(await first.Store.SoftDeleteAsync(
+                deletedItem.Id,
                 CancellationToken.None));
             await first.Store.SetSettingAsync("history.page-size", "75", CancellationToken.None);
         }
@@ -226,12 +310,73 @@ public sealed class SqliteClipboardHistoryStoreTests
         Assert.Equal(item.SourceAttributionKind, restored.SourceAttributionKind);
         Assert.True(restored.IsPinned);
         Assert.Equal(["work", "中文"], restored.Tags);
+        Assert.Equal(1, restored.UseCount);
+        Assert.Equal(usedAt, restored.LastUsedAt);
         Assert.Equal(
             "75",
             await second.Store.GetSettingAsync("history.page-size", CancellationToken.None));
         Assert.Equal(
             "restart persistence 中文",
             (await second.Store.GetContentAsync(item.Id, CancellationToken.None))?.Text);
+        await using SqliteConnection connection = await second.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        Assert.Equal(
+            3L,
+            await ExecuteScalarInt64Async(
+                connection,
+                """
+                SELECT is_deleted + (deleted_at_utc IS NOT NULL) * 2
+                FROM clipboard_items
+                WHERE id = @id;
+                """,
+                deletedItem.Id.ToString()));
+    }
+
+    [Fact]
+    public async Task UnknownMacOSSourceKeepsWindowsIdentityNullAcrossRestart()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"SnapBoard.Infrastructure.Tests-{Guid.NewGuid():N}");
+        ClipboardCapturedItem item = CreateTextItem(
+            "macOS unknown source persistence",
+            sourceProcessName: null);
+        await using (HistoryStoreTestContext first = await HistoryStoreTestContext.CreateAsync(
+            root,
+            deleteOnDispose: false))
+        {
+            await first.Store.SaveAsync(item, CancellationToken.None);
+        }
+
+        await using HistoryStoreTestContext second = await HistoryStoreTestContext.CreateAsync(root);
+        ClipboardHistoryItemSummary restored = Assert.Single((await second.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 10 },
+            CancellationToken.None)).Items);
+        Assert.Equal("未知来源", restored.SourceApplication);
+        Assert.Null(restored.SourceExecutablePath);
+        Assert.Null(restored.SourceApplicationUserModelId);
+        Assert.Null(restored.SourcePackageFamilyName);
+        Assert.Equal(0, restored.SourceAttributionKind);
+
+        await using SqliteConnection connection = await second.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                source_application_user_model_id,
+                source_package_family_name,
+                source_access_status,
+                source_attribution_kind
+            FROM clipboard_items
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", item.Id.ToString());
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(await reader.IsDBNullAsync(0));
+        Assert.True(await reader.IsDBNullAsync(1));
+        Assert.Equal(0L, reader.GetInt64(2));
+        Assert.Equal(0L, reader.GetInt64(3));
     }
 
     [Fact]
@@ -380,9 +525,19 @@ public sealed class SqliteClipboardHistoryStoreTests
         File.Copy(livePath, orphanPath);
         File.SetLastWriteTimeUtc(orphanPath, old);
 
+        string temporaryDirectory = Path.Combine(context.Paths.BlobDirectory, ".tmp");
+        Directory.CreateDirectory(temporaryDirectory);
+        string expiredTemporaryPath = Path.Combine(temporaryDirectory, "expired.tmp");
+        string recentTemporaryPath = Path.Combine(temporaryDirectory, "recent.tmp");
+        await File.WriteAllBytesAsync(expiredTemporaryPath, [1, 2, 3]);
+        await File.WriteAllBytesAsync(recentTemporaryPath, [4, 5, 6]);
+        File.SetLastWriteTimeUtc(expiredTemporaryPath, old);
+
         Assert.Equal(1, await context.Store.CleanupOrphanedBlobsAsync(CancellationToken.None));
         Assert.True(File.Exists(livePath));
         Assert.False(File.Exists(orphanPath));
+        Assert.False(File.Exists(expiredTemporaryPath));
+        Assert.True(File.Exists(recentTemporaryPath));
     }
 
     [Fact]
@@ -520,38 +675,120 @@ public sealed class SqliteClipboardHistoryStoreTests
     }
 
     [Fact]
-    public async Task ImageOriginalAndThumbnailAreLoadedOnDemand()
+    public async Task PngAndTiffOriginalsUseAtomicBlobStagingAndThumbnailsLoadOnDemand()
     {
         await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
         byte[] png = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
-        ClipboardCapturedItem item = CreateItem(
-            "image",
-            [
-                new ClipboardCapturedRepresentation(
-                    ClipboardContentKind.Image,
+        byte[] tiff = CreateDecodableTiff();
+        (ClipboardCapturedItem Item, byte[] Original, ClipboardStoredBitmapEncoding Encoding)[] images =
+        [
+            (
+                CreateImageItem(
+                    "png image",
                     "image/png",
-                    null,
                     png,
-                    ClipboardStoredBitmapEncoding.PortableNetworkGraphics,
-                    1,
-                    1,
-                    32),
-            ]);
+                    ClipboardStoredBitmapEncoding.PortableNetworkGraphics),
+                png,
+                ClipboardStoredBitmapEncoding.PortableNetworkGraphics),
+            (
+                CreateImageItem(
+                    "tiff image",
+                    "image/tiff",
+                    tiff,
+                    ClipboardStoredBitmapEncoding.TaggedImageFileFormat),
+                tiff,
+                ClipboardStoredBitmapEncoding.TaggedImageFileFormat),
+        ];
+
+        foreach ((ClipboardCapturedItem item, _, _) in images)
+        {
+            await context.Store.SaveAsync(item, CancellationToken.None);
+        }
+
+        ClipboardHistoryPage page = await context.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 10 },
+            CancellationToken.None);
+        Assert.Equal(images.Length, page.Items.Count);
+        Assert.All(page.Items, summary => Assert.True(summary.HasThumbnail));
+        foreach ((ClipboardCapturedItem item, byte[] original, ClipboardStoredBitmapEncoding encoding)
+            in images)
+        {
+            ReadOnlyMemory<byte> thumbnail = await context.Store.GetThumbnailAsync(
+                item.Id,
+                CancellationToken.None);
+            Assert.True(thumbnail.Span.StartsWith(
+                new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A }));
+
+            ClipboardHistoryContent? content = await context.Store.GetContentAsync(
+                item.Id,
+                CancellationToken.None);
+            Assert.NotNull(content?.Bitmap);
+            Assert.Equal(encoding, content.Bitmap.Encoding);
+            Assert.Equal(original, content.Bitmap.Data.ToArray());
+
+            string originalRelativePath = await ReadBlobPathAsync(
+                context,
+                """
+                SELECT b.relative_path
+                FROM clipboard_representations r
+                JOIN content_blobs b ON b.hash = r.blob_hash
+                WHERE r.item_id = @id AND r.kind = @kind;
+                """,
+                item.Id,
+                includeKindParameter: true);
+            Assert.Equal(
+                original,
+                await File.ReadAllBytesAsync(Path.Combine(
+                    context.Paths.BlobDirectory,
+                    originalRelativePath)));
+
+            string thumbnailRelativePath = await ReadBlobPathAsync(
+                context,
+                """
+                SELECT b.relative_path
+                FROM clipboard_items i
+                JOIN content_blobs b ON b.hash = i.thumbnail_blob_hash
+                WHERE i.id = @id;
+                """,
+                item.Id);
+            Assert.Equal(
+                thumbnail.ToArray(),
+                await File.ReadAllBytesAsync(Path.Combine(
+                    context.Paths.BlobDirectory,
+                    thumbnailRelativePath)));
+        }
+
+        Assert.Empty(Directory.EnumerateFiles(
+            Path.Combine(context.Paths.BlobDirectory, ".tmp"),
+            "*.tmp"));
+    }
+
+    [Fact]
+    public async Task MalformedTiffOriginalIsPreservedWithoutThumbnail()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        byte[] malformed = [(byte)'I', (byte)'I', 42, 0, 8, 0, 0, 0];
+        ClipboardCapturedItem item = CreateImageItem(
+            "malformed tiff image",
+            "image/tiff",
+            malformed,
+            ClipboardStoredBitmapEncoding.TaggedImageFileFormat);
 
         await context.Store.SaveAsync(item, CancellationToken.None);
 
         ClipboardHistoryItemSummary summary = Assert.Single((await context.Store.SearchAsync(
             new ClipboardHistoryQuery { PageSize = 10 },
             CancellationToken.None)).Items);
-        Assert.True(summary.HasThumbnail);
-        Assert.NotEmpty((await context.Store.GetThumbnailAsync(item.Id, CancellationToken.None)).ToArray());
+        Assert.False(summary.HasThumbnail);
         ClipboardHistoryContent? content = await context.Store.GetContentAsync(
             item.Id,
             CancellationToken.None);
-        Assert.NotNull(content);
-        Assert.NotNull(content.Bitmap);
-        Assert.Equal(png, content.Bitmap.Data.ToArray());
+        Assert.NotNull(content?.Bitmap);
+        Assert.Equal(malformed, content.Bitmap.Data.ToArray());
+        Assert.Empty(Directory.EnumerateFiles(
+            Path.Combine(context.Paths.BlobDirectory, ".tmp"),
+            "*.tmp"));
     }
 
     [Fact]
@@ -597,7 +834,7 @@ public sealed class SqliteClipboardHistoryStoreTests
     private static ClipboardCapturedItem CreateTextItem(
         string text,
         DateTimeOffset? capturedAt = null,
-        string sourceProcessName = "test-source",
+        string? sourceProcessName = "test-source",
         string? sourceExecutablePath = null,
         string? sourceApplicationUserModelId = null,
         string? sourcePackageFamilyName = null,
@@ -637,7 +874,7 @@ public sealed class SqliteClipboardHistoryStoreTests
         string seed,
         IReadOnlyList<ClipboardCapturedRepresentation> representations,
         DateTimeOffset? capturedAt = null,
-        string sourceProcessName = "test-source",
+        string? sourceProcessName = "test-source",
         string? sourceExecutablePath = null,
         string? sourceApplicationUserModelId = null,
         string? sourcePackageFamilyName = null,
@@ -657,12 +894,18 @@ public sealed class SqliteClipboardHistoryStoreTests
             SourceAttributionKind = sourceAttributionKind,
             ContentHash = Hash(seed),
             PrimaryKind = representations.Any(representation =>
-                representation.Kind == ClipboardContentKind.Html)
-                ? ClipboardContentKind.Html
-                : ClipboardContentKind.Text,
-            DisplayCategory = seed.Contains("public ", StringComparison.Ordinal)
-                ? ClipboardHistoryDisplayCategory.Code
-                : ClipboardHistoryDisplayCategory.Text,
+                representation.Kind == ClipboardContentKind.Image)
+                ? ClipboardContentKind.Image
+                : representations.Any(representation =>
+                    representation.Kind == ClipboardContentKind.Html)
+                    ? ClipboardContentKind.Html
+                    : ClipboardContentKind.Text,
+            DisplayCategory = representations.Any(representation =>
+                representation.Kind == ClipboardContentKind.Image)
+                ? ClipboardHistoryDisplayCategory.Image
+                : seed.Contains("public ", StringComparison.Ordinal)
+                    ? ClipboardHistoryDisplayCategory.Code
+                    : ClipboardHistoryDisplayCategory.Text,
             PreviewText = seed,
             SearchableText = seed,
             Representations = representations,
@@ -677,6 +920,112 @@ public sealed class SqliteClipboardHistoryStoreTests
     private static byte[] CreateLargePayload() => Enumerable
         .Repeat((byte)'x', 70 * 1024)
         .ToArray();
+
+    private static ClipboardCapturedItem CreateImageItem(
+        string seed,
+        string mediaType,
+        byte[] data,
+        ClipboardStoredBitmapEncoding encoding) => CreateItem(
+        seed,
+        [
+            new ClipboardCapturedRepresentation(
+                ClipboardContentKind.Image,
+                mediaType,
+                null,
+                data,
+                encoding,
+                1,
+                1,
+                8),
+        ]);
+
+    private static byte[] CreateDecodableTiff()
+    {
+        const ushort entryCount = 13;
+        const int directoryOffset = 8;
+        const int bitsPerSampleOffset = directoryOffset + 2 + (entryCount * 12) + 4;
+        const int xResolutionOffset = bitsPerSampleOffset + 6;
+        const int yResolutionOffset = xResolutionOffset + 8;
+        const int pixelOffset = yResolutionOffset + 8;
+        byte[] data = new byte[pixelOffset + 3];
+        data[0] = (byte)'I';
+        data[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), directoryOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(directoryOffset), entryCount);
+        int entryOffset = directoryOffset + 2;
+        WriteTiffEntry(data.AsSpan(entryOffset, 12), 256, 3, 1, 1);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 257, 3, 1, 1);
+        WriteTiffEntry(
+            data.AsSpan(entryOffset += 12, 12),
+            258,
+            3,
+            3,
+            bitsPerSampleOffset);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 259, 3, 1, 1);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 262, 3, 1, 2);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 273, 4, 1, pixelOffset);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 277, 3, 1, 3);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 278, 4, 1, 1);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 279, 4, 1, 3);
+        WriteTiffEntry(
+            data.AsSpan(entryOffset += 12, 12),
+            282,
+            5,
+            1,
+            xResolutionOffset);
+        WriteTiffEntry(
+            data.AsSpan(entryOffset += 12, 12),
+            283,
+            5,
+            1,
+            yResolutionOffset);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 284, 3, 1, 1);
+        WriteTiffEntry(data.AsSpan(entryOffset += 12, 12), 296, 3, 1, 2);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(bitsPerSampleOffset), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(bitsPerSampleOffset + 2), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(bitsPerSampleOffset + 4), 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(xResolutionOffset), 72);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(xResolutionOffset + 4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(yResolutionOffset), 72);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(yResolutionOffset + 4), 1);
+        data[pixelOffset] = 0x40;
+        data[pixelOffset + 1] = 0x80;
+        data[pixelOffset + 2] = 0xC0;
+        return data;
+    }
+
+    private static void WriteTiffEntry(
+        Span<byte> entry,
+        ushort tag,
+        ushort type,
+        uint count,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(entry, tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(entry[2..], type);
+        BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], count);
+        BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], value);
+    }
+
+    private static async Task<string> ReadBlobPathAsync(
+        HistoryStoreTestContext context,
+        string commandText,
+        ClipboardItemId itemId,
+        bool includeKindParameter = false)
+    {
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.Parameters.AddWithValue("@id", itemId.ToString());
+        if (includeKindParameter)
+        {
+            command.Parameters.AddWithValue("@kind", (int)ClipboardContentKind.Image);
+        }
+
+        return Assert.IsType<string>(await command.ExecuteScalarAsync());
+    }
 
     private static async Task<(string RelativePath, long ReferenceCount)> ReadSingleBlobAsync(
         HistoryStoreTestContext context)

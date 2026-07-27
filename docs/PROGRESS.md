@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-28
-> 当前阶段：Phase 1 Windows 本地历史与检索已完成实现和自动验证；Windows 实机矩阵继续收口
+> 当前阶段：共享本地历史与检索已在 Windows 和 macOS arm64 验证；Windows 同步与两平台发布/环境矩阵继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -14,10 +14,10 @@
 | Phase 1.1 AOT/内存基线 | 进行中 | 最终历史构建三轮可见峰值 PWS 155.74/155.33/138.97 MiB，关闭窗口后为 103.32/110.13/94.82 MiB；Private Bytes 为 136.59/135.54/127.82 MiB，内存门槛未完成 |
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
-| Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、缩略图、FTS5、策略链及 100,000 条检索已通过 |
+| Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 未开始 | 下一阶段为 Windows 端到端加密 WebDAV 同步，之后才进入签名、安装包、自动更新和正式发布 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、生命周期、菜单栏、自定义快捷键、Keychain 与本地 DMG/PKG 已验证；登录启动交互、Intel、Developer ID、公证和环境矩阵待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 持久历史/检索、生命周期、Keychain 与本地 DMG/PKG 已验证；内存、8 小时、Intel、Developer ID、公证和环境矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -58,11 +58,12 @@
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
 | 全量自动测试 | 通过 | Windows 11 x64 共 150 项：142 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Application 8/8、Infrastructure 19/19、Windows 52/52、Desktop Headless 28/28 |
-| `osx-arm64` Native AOT | 通过 | App Bundle 内 arm64 Mach-O 为 24,430,144 字节；0 个 AOT/裁剪警告，裸产物与 DMG 挂载 Bundle 均已实际启动 |
+| macOS 历史全量测试 | 通过 | macOS arm64 共 159 项：144 项通过、15 项 Windows 原生测试按平台跳过、0 项失败；Application 9/9、Infrastructure 26/26、macOS 36/36、Desktop Headless 29/29 |
+| `osx-arm64` Native AOT | 通过 | 当前 App Bundle arm64 Mach-O 为 26,606,368 字节；0 个 AOT/裁剪警告并已实际启动；正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 当前 Windows 11 x64 原生 EXE 29,531,648 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、明确退出；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
-| macOS 窗口/后台内存 | 未达标 | 最终 AOT 三次可见窗口峰值 Physical Footprint 205.63/206.16/205.44 MiB；关闭全部窗口 3 秒后为 107.81/107.53/107.64 MiB，仍高于 100 MB |
+| macOS 窗口/后台内存 | 未达标 | 共享历史 AOT 三次可见 Physical Footprint 200.05/200.02/199.66 MiB；关闭窗口后为 100.05/100.19/100.19 MiB，仍略高于 100 MB；8 小时未执行 |
 
 ## 4. 重要发现
 
@@ -328,7 +329,32 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
   - Office 与远程桌面未执行；Windows ARM64、macOS 和 Linux 未由本轮结果推断通过。
 ```
 
-## 13. 更新规则
+## 13. 2026-07-28 执行记录：macOS 共享历史与检索
+
+```text
+日期：2026-07-28
+阶段/任务：Phase 1.4/1.5 共享历史能力在 macOS arm64 复验
+状态：[x] 持久化、检索、来源边界、外部应用和 arm64 AOT 功能通过；[~] 性能、正式发布和环境矩阵未完成
+完成内容：
+  - 在 APFS 上补齐 Schema v1-v5 分别新建/重复迁移、v4→v5 行升级、重启后使用次数/软删除和 macOS Unknown 来源投影。
+  - PNG/TIFF 原图继续使用 CAS Blob；新增受限纯托管 TIFF 缩略图解码，覆盖损坏 TIFF、临时文件、原子替换和按需加载。
+  - macOS 不注册 Windows 来源解析器；AUMID、Package Family、PID/名称/路径保持 NULL，UI 显示通用图标和“未知来源”。
+  - TextEdit、Finder README、Safari、Chrome、Preview PNG/同像素 TIFF 去重及 pbcopy 均确认进入真实持久历史。
+验证结果：
+  - locked restore、Release build、format、NuGet 漏洞检查通过；全量 159 项中 144 通过、15 个 Windows 原生测试跳过、0 失败。
+  - 100,000 条导入 15,289.62 ms；150 次目标查询 P95 1.04 ms、最大 1.72 ms；300 次总体 P95 1.01 ms、最大 2.23 ms。
+  - 连续 10,000 次 HistoryChanged 只在静默期刷新一次；真实 NSPasteboard 10,000 次写入/抽样读回/标记/丢弃均 0 失败，完整桌面保持存活。
+  - osx-arm64 Native AOT 0 告警并实际启动；三次启动 1262.00/420.21/458.88 ms。
+  - DMG 校验通过；Bundle 仅 ad-hoc、PKG 未签名且 spctl 拒绝，未把本地产物标记为正式发布。
+限制：
+  - 三轮后台 Physical Footprint 100.05/100.19/100.19 MiB，仍未通过 >100 MiB 失败线；探针 RSS 增长 15.69 MiB，也未满足 <8 MiB 预算。
+  - 关闭窗口后菜单栏保持 12 分 23 秒，RSS 166.25 -> 96.94 MiB、线程 15 -> 14、FD 51 -> 47，但 Physical 138 -> 139 MB，10 分钟时长完成而内存目标失败。
+  - 8 小时、osx-x64/Intel、登录启动重新登录、同一稳定签名权限重授予、睡眠/Space/多显示器/Retina/全屏未执行。
+  - Terminal UI 被安全策略拒绝；Office 未安装；远程客户端未启动。
+  - Developer ID Application/Installer、公证、staple、Gatekeeper 接受、安装升级/卸载和 GitHub macOS Runner 未完成。
+```
+
+## 14. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

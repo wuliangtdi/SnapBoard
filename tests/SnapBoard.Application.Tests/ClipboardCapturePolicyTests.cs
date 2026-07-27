@@ -111,6 +111,35 @@ public sealed class ClipboardCapturePolicyTests
     }
 
     [Fact]
+    public async Task NormalizationKeepsUnknownMacOSSourceFreeOfWindowsIdentity()
+    {
+        ClipboardCaptureOptions options = new();
+        ClipboardContentSnapshot snapshot = CreateSnapshot(
+            processName: null,
+            sourceProcessId: null,
+            sourceAccessStatus: ClipboardSourceAccessStatus.Unknown);
+        ClipboardCapturePolicyDecision decision = await CreateChain(options).EvaluateAsync(
+            snapshot,
+            CancellationToken.None);
+
+        ClipboardCapturedItem? normalized = ClipboardContentNormalizer.Normalize(
+            snapshot,
+            decision,
+            options);
+
+        Assert.NotNull(normalized);
+        Assert.Null(normalized.SourceProcessId);
+        Assert.Null(normalized.SourceProcessName);
+        Assert.Null(normalized.SourceExecutablePath);
+        Assert.Null(normalized.SourceApplicationUserModelId);
+        Assert.Null(normalized.SourcePackageFamilyName);
+        Assert.Equal((int)ClipboardSourceAccessStatus.Unknown, normalized.SourceAccessStatus);
+        Assert.Equal(
+            (int)ClipboardSourceAttributionKind.Unknown,
+            normalized.SourceAttributionKind);
+    }
+
+    [Fact]
     public async Task PayloadLimitAndUnsupportedContentAreIgnored()
     {
         ClipboardCaptureOptions small = new() { MaximumPayloadBytes = 4 };
@@ -208,19 +237,21 @@ public sealed class ClipboardCapturePolicyTests
         bool isFromCurrentApplication = false,
         string? applicationUserModelId = null,
         string? packageFamilyName = null,
+        int? sourceProcessId = 42,
+        ClipboardSourceAccessStatus sourceAccessStatus = ClipboardSourceAccessStatus.Identified,
         ClipboardSourceAttributionKind sourceAttributionKind =
             ClipboardSourceAttributionKind.Unknown) => new()
             {
                 SequenceNumber = 1,
                 CapturedAt = DateTimeOffset.UtcNow,
                 Source = new ClipboardSourceInfo(
-            42,
-            processName,
-            processName is null ? null : $"C:\\Apps\\{processName}",
-            ClipboardSourceAccessStatus.Identified,
-            applicationUserModelId,
-            packageFamilyName,
-            sourceAttributionKind),
+                    sourceProcessId,
+                    processName,
+                    processName is null ? null : $"C:\\Apps\\{processName}",
+                    sourceAccessStatus,
+                    applicationUserModelId,
+                    packageFamilyName,
+                    sourceAttributionKind),
                 Text = text,
                 Html = html ?? Array.Empty<byte>(),
                 Bitmap = bitmap,

@@ -1,3 +1,4 @@
+using Material.Icons;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Domain.Clipboard;
@@ -156,6 +157,33 @@ public sealed class RuntimeMainViewModelTests
     }
 
     [Fact]
+    public async Task RuntimeViewModelWithoutSourceResolverKeepsGenericApplicationIcon()
+    {
+        ClipboardHistoryItemSummary summary = CreateSummary(
+            "unknown macOS source",
+            DateTimeOffset.UtcNow,
+            sourceApplication: "未知来源");
+        FakeHistoryService service = new()
+        {
+            SearchHandler = (_, _) => ValueTask.FromResult(new ClipboardHistoryPage(
+                [summary],
+                null,
+                1)),
+        };
+        using MainViewModel viewModel = new(service);
+        viewModel.Start();
+        await viewModel.WaitForIdleAsync();
+        ClipboardHistoryItemViewModel item = Assert.Single(viewModel.VisibleItems);
+
+        await viewModel.LoadSourceApplicationMetadataAsync(item);
+
+        Assert.Equal("未知来源", item.SourceApplication);
+        Assert.Equal(MaterialIconKind.ApplicationOutline, item.SourceIcon);
+        Assert.True(item.HasSourceIconFallback);
+        Assert.False(item.HasSourceIconBitmap);
+    }
+
+    [Fact]
     public async Task HistoryChangeBurstIsCoalescedIntoOneReload()
     {
         FakeHistoryService service = new()
@@ -200,12 +228,13 @@ public sealed class RuntimeMainViewModelTests
         string preview,
         DateTimeOffset capturedAt,
         string? sourceExecutablePath = null,
-        string? sourceApplicationUserModelId = null) => new(
+        string? sourceApplicationUserModelId = null,
+        string sourceApplication = "test-app") => new(
         ClipboardItemId.New(),
         ClipboardContentKind.Text,
         ClipboardHistoryDisplayCategory.Text,
         capturedAt,
-        "test-app",
+        sourceApplication,
         preview,
         false,
         Array.Empty<string>(),

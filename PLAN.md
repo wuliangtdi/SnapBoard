@@ -3,8 +3,8 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：Phase 1 Windows 本地历史与检索已完成实现和自动验证，Windows 实机矩阵继续收口；下一阶段为 `phase1/windows-sync`
-> 实现状态：Windows 版本化 SQLite、内容寻址 Blob、FTS5、真实历史 UI 和 Credential Manager 已接入；10,000 次资源预算、8 小时长稳及部分外部应用矩阵未完成
+> 当前阶段：共享本地历史与检索已在 Windows 和 macOS arm64 验证；Windows 实机矩阵继续收口，下一阶段为 `phase1/windows-sync`
+> 实现状态：SQLite v5、内容寻址 Blob、FTS5 和真实历史 UI 已跨 Windows/macOS 验证；正式 macOS 签名/公证、Intel、8 小时长稳及部分环境矩阵未完成
 > 总体顺序：Windows -> macOS -> Linux
 
 ## 1. 项目目标
@@ -38,6 +38,7 @@
 | Material.Icons.Avalonia | 3.0.2 | 当前命令中心图标库；已通过 macOS arm64 Native AOT |
 | Microsoft.Data.Sqlite | 10.0.10 | 默认且唯一的数据访问 Provider，使用参数化 SQL 和显式映射 |
 | SQLitePCLRaw.bundle_e_sqlite3 | 2.1.12 | 显式覆盖 2.1.11，确保 SQLite 版本包含 CVE-2025-6965 修复 |
+| BitMiracle.LibTiff.NET | 2.4.660 | Skia 不支持 TIFF 解码；仅在 Infrastructure 后台受限解码 TIFF 缩略图，原图字节保持不变 |
 | System.Text.Json | .NET 10 内置 | 同步协议使用源生成上下文；禁止 Newtonsoft.Json 和反射序列化 |
 | SqlSugar | 5.1.4.216 / AOT 5.1.4.186 | 已实测但不采用；不能满足零 AOT 警告和最小依赖图 |
 | EF Core / SQLite | 10.0.10 | 不采用；微软目前仍将 EF NativeAOT 查询预编译标记为高度实验性 |
@@ -654,6 +655,7 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 - [ ] 验证 Windows 与 macOS 格式映射和同步互操作。
 - [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复和单显示器窗口重开已实测；多 Space、多显示器、Retina 和全屏应用待验收。
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
+- [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
 - [ ] 验证 Intel 与 Apple Silicon。
 - [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：`osx-arm64` 本机 0 个 AOT/裁剪警告并实际启动，`osx-x64` 待 Intel 或对应 Runner 验证。
 
@@ -661,7 +663,7 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 
 - [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、Hardened Runtime、DMG/PKG 脚本均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
 - [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、签名和公证步骤已配置，远程 Runner 尚未实际执行。
-- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：三次最终 arm64 AOT 可见窗口/后台数据、当前授权状态和 10,000 次事件已记录；后台 Physical Footprint 仍为 107.53-107.81 MiB，睡眠唤醒、多 Space、多显示器、Retina 和全屏待验证。
+- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：共享历史 arm64 AOT 三次后台 Physical 为 100.05/100.19/100.19 MiB，另有真实历史下 12 分 23 秒菜单栏样本最终 Physical 139 MB；均未通过内存线。10,000 次事件已记录，8 小时、睡眠唤醒、多 Space、多显示器、Retina 和全屏待验证。
 - [x] 更新平台支持矩阵和已知限制。
 
 退出条件：Windows 与 macOS 数据一致同步，macOS 正式包通过签名和公证。
