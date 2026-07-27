@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-27
-> 当前阶段：Phase 2.1 macOS 原生剪贴板适配器进行中，Phase 1 后续项保留
+> 当前阶段：Phase 1.2/1.3 Windows 收口进行中；macOS 原生剪贴板适配器已合入 `main`
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -11,11 +11,11 @@
 | --- | --- | --- |
 | Phase 0 规划与决策 | 已完成 | 名称、MIT、三期平台、WebDAV 和同步范围已确认 |
 | Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
-| Phase 1.1 AOT/内存基线 | 进行中 | Windows AOT 可见窗口三次峰值 PWS 184.38-218.20 MiB，超过目标；UI 依赖 A/B 待执行 |
-| Phase 1.2 UI 生命周期 | 进行中 | 第 2 版命令中心 UI、核心交互与真实 Headless/Skia 视觉测试已完成 |
-| Phase 1.3 Windows 剪贴板 | 进行中 | 原生适配器、自动/集成测试和记事本实机通过；兼容性矩阵未完成 |
+| Phase 1.1 AOT/内存基线 | 进行中 | Windows AOT 可见窗口峰值 PWS 84.47-109.50 MiB；窗口关闭后最终 PWS 66.22/66.86/130.38 MiB，Private Bytes 130.67-180.64 MiB，释放行为不稳定且尚未达标 |
+| Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、原生热键、暂停和退出已实现；托盘点击、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
+| Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI 写回与自动粘贴及 10,000 次功能压力通过；外部应用矩阵和资源增长预算未完成 |
 | Phase 1.4-1.8 | 未开始 | 数据、搜索、快速粘贴、WebDAV 和发布待后续执行 |
-| Phase 2 macOS | 进行中 | arm64 原生监听、格式读写、目标恢复、自动粘贴及权限降级已通过；桌面生命周期与发布链路待完成 |
+| Phase 2 macOS | 进行中 | arm64 原生监听、格式读写、目标恢复、自动粘贴及权限降级已合入 `main`；桌面生命周期与发布链路待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -55,11 +55,11 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | 52 项：47 项通过、5 项 Windows 原生集成因当前为 macOS 跳过；macOS 项目 19/19，Desktop Headless 8/8 |
+| 全量自动测试 | 通过 | Windows 11 共 69 项：64 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 项目 29/29，Desktop Headless 12/12 |
 | `osx-arm64` Native AOT | 通过 | arm64 Mach-O 可执行文件 23,906,928 字节，剥离后发布目录约 91.68 MiB；0 个 AOT/裁剪警告并实际启动三次 |
-| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 26,828,288 字节；无 CoreCLR/JIT 文件；0 个 AOT/裁剪警告；Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | Windows 11 x64 原生 EXE 27,700,736 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
-| 可见窗口运行内存 | 未达标 | macOS AOT 三次峰值 Physical Footprint 194.78/194.74/194.94 MiB；Windows AOT 三次峰值 PWS 184.38/207.12/218.20 MiB；都不是托盘常驻样本 |
+| Windows 窗口/后台内存 | 未达标 | AOT 三次可见窗口峰值 PWS 84.47/85.12/109.50 MiB；关闭窗口后最终 PWS 66.22/66.86/130.38 MiB，最终 Private Bytes 130.67/140.51/180.64 MiB，不能声称常驻低于 100 MB |
 
 ## 4. 重要发现
 
@@ -83,9 +83,9 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
 
 ### 4.5 Windows 剪贴板与 AOT 基线
 
-Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipboardFormatListener`、`GetClipboardSequenceNumber`、有界 Channel 和有限退避。真实 Windows 剪贴板集成测试覆盖 Unicode/ANSI Text、HTML、RTF、DIB、File List、格式清单、来源进程、自定义来源标记和反馈抑制；自动粘贴覆盖 UIPI 结构化降级，并校验 x64 `INPUT` ABI 为 40 字节。
+Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipboardFormatListener`、`GetClipboardSequenceNumber`、有界 Channel 和有限退避。真实 Windows 剪贴板集成测试覆盖 Unicode/ANSI Text、HTML、RTF、DIB、File List、格式清单、来源进程、自定义来源标记和反馈抑制；自动粘贴覆盖 UIPI 结构化降级、目标 HWND/PID 与发送前前台窗口二次校验，并校验 x64 `INPUT` ABI 为 40 字节。
 
-Windows 11 打包版记事本的交互式复制已由探针捕获，来源识别为 `Notepad`，队列丢弃计数为 0。浏览器控制因无法可靠确认 URL 被安全机制终止；Explorer、UWP/WinUI、管理员窗口、Office 和远程桌面未执行，不能标记为通过。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
+真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 完成按需渲染。Windows 11 打包版 Notepad 的交互式复制已由探针捕获，来源识别为 `Notepad`；同一应用已确认加载 `Microsoft.UI.Xaml.dll`，并通过指定 HWND 的纯文本写回、目标恢复和 `SendInput` 自动粘贴。三轮 10,000 次压力测试均观察到 10,000/10,000 个自写事件，反馈事件和 Channel 丢弃均为 0；但 Private Bytes 增长超过 8 MiB 预算。Explorer、浏览器、管理员窗口、Office 和远程桌面未完成，不能标记为通过。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
 ### 4.6 macOS 剪贴板与权限基线
 
@@ -95,11 +95,11 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
 
 ## 5. 下一执行顺序
 
-1. 将 macOS 监听器接入桌面采集生命周期，并实现菜单栏、全局快捷键、登录启动和单实例。
-2. 增加辅助功能设置入口与授权引导，完成撤销/重新授予、多 Space、多显示器、全屏和睡眠唤醒测试。
-3. 建立纯 Avalonia、Material Icons、Ursa 和最终壳的内存/启动 A/B 测量，并在窗口卸载后重测常驻内存。
-4. 在 GitHub 上验证 Windows/macOS/Linux CI 与 AOT Job；补齐 `osx-x64`，但不以 arm64 结果代替 Intel。
-5. 后续完成 Keychain、应用 Bundle、签名、公证和正式安装包，不在 Phase 2.1 伪装完成。
+1. 补齐 Windows 托盘菜单点击、物理热键、多显示器/DPI、真实开机启动和 8 小时后台常驻验收。
+2. 在隔离测试数据下完成 Explorer、Chrome/Edge/Firefox，并在用户明确允许后验证管理员窗口/UIPI；Office 和远程桌面只记录实际执行结果。
+3. 分析 10,000 次压力测试的 Private Bytes 增长，完成 10 分钟与 8 小时资源增长门槛。
+4. 进入 Phase 1.4 SQLite Schema、迁移、单写队列、Blob、FTS5 和策略链。
+5. 在 GitHub 上验证 Windows/macOS/Linux CI 与 AOT Job，并继续保留 macOS Intel、签名、公证和桌面生命周期待办。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -190,7 +190,37 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
   - 未验证 osx-x64、睡眠唤醒、多 Space、多显示器、全屏、Office、远程桌面、签名、公证或 Keychain。
 ```
 
-## 9. 更新规则
+## 9. 2026-07-27 执行记录：Windows 生命周期与剪贴板收口
+
+```text
+日期：2026-07-27
+阶段/任务：Phase 1.2 Windows 桌面生命周期与 Phase 1.3 剪贴板收口
+状态：[~] 已完成核心实现和可自动化验证；外部应用矩阵、管理员目标和长稳资源门槛未完成
+完成内容：
+  - 新增每用户单实例、CurrentUserOnly 命名管道激活和后台/快速/设置/退出命令。
+  - 新增托盘生命周期、按需窗口创建与释放、暂停记录、原生全局热键、冲突回滚、恢复默认、HKCU 开机启动和 Per-Monitor V2 定位。
+  - 自动粘贴增加恢复目标端口和 SendInput 前 HWND/PID 二次校验；保持 macOS 四个平台端口构建通过。
+  - Windows 探针新增真实 delayed-rendering owner、指定 HWND 纯文本粘贴和 10,000 次压力模式。
+验证结果：
+  - .NET SDK 10.0.302；locked restore、Release build、dotnet format --verify-no-changes 均通过。
+  - 全量 69 项中 64 项通过、5 项仅限 macOS 原生环境的测试跳过；Windows 29/29，Desktop Headless 12/12。
+  - NuGet 直接与传递依赖漏洞为 0。
+  - win-x64 Native AOT 为 27,700,736 字节，0 个 AOT/裁剪警告，无 CoreCLR/JIT 文件，并由性能脚本实际启动与退出。
+  - 第二实例激活、后台启动、快速窗口、设置窗口和明确退出在 Windows 11 同一进程实测通过。
+  - delayed rendering 读取通过；Notepad/WinUI 纯文本写回、目标恢复和自动粘贴通过。
+  - 三轮 10,000 次均观察到 10,000/10,000 个自写事件，反馈循环和 Channel 丢弃均为 0。
+性能数据：
+  - 启动到主窗口：606.58/459.96/445.34 ms；窗口卸载：35.90/48.84/35.12 ms。
+  - 可见窗口峰值 PWS：84.47/85.12/109.50 MiB；Private Bytes：181.98/182.56/200.71 MiB。
+  - 窗口关闭后最终 PWS：66.22/66.86/130.38 MiB；Private Bytes：130.67/140.51/180.64 MiB。
+  - 窗口关闭后平均 CPU：0.000/0.000/0.000%；最终句柄：1264/1268/1289。
+限制：
+  - 10,000 次测试 Private Bytes 增长 15.56/8.43/15.12 MiB，未满足 8 MiB 预算。
+  - 当前只有 30 个、至少相隔 1 秒的窗口关闭样本，不等于 10 分钟托盘或 8 小时长稳；第三轮 PWS 反向增长 20.88 MiB，Private Bytes 仍高于 100 MiB，不能声称常驻低于 100 MB。
+  - 托盘菜单点击、物理热键、多显示器/DPI、真实开机启动、Explorer、浏览器、管理员窗口、Office 和远程桌面未完成。
+```
+
+## 10. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

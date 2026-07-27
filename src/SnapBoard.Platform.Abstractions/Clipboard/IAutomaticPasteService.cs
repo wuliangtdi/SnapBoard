@@ -33,6 +33,18 @@ public sealed record AutomaticPasteResult(
     public const string ManualPasteRequiredMessage = "已复制，请手动粘贴";
 }
 
+public enum ForegroundActivationStatus
+{
+    Activated = 0,
+    TargetUnavailable = 1,
+    Failed = 2,
+    Unsupported = 3,
+}
+
+public sealed record ForegroundActivationResult(
+    ForegroundActivationStatus Status,
+    AutomaticPasteFailureReason FailureReason = AutomaticPasteFailureReason.None);
+
 /// <summary>
 /// 写回剪贴板后恢复目标窗口并尝试注入粘贴快捷键。
 /// 权限或 UIPI 阻止输入时必须返回手动粘贴降级结果。
@@ -40,6 +52,10 @@ public sealed record AutomaticPasteResult(
 public interface IAutomaticPasteService
 {
     IAutomaticPasteTarget? CaptureForegroundTarget();
+
+    ValueTask<ForegroundActivationResult> TryActivateTargetAsync(
+        IAutomaticPasteTarget target,
+        CancellationToken cancellationToken);
 
     ValueTask<AutomaticPasteResult> TryPasteAsync(
         IAutomaticPasteTarget target,

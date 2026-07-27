@@ -130,6 +130,14 @@ public sealed class WindowsClipboardAdapter :
         return _automaticPaste.TryPasteAsync(target, cancellationToken);
     }
 
+    public ValueTask<ForegroundActivationResult> TryActivateTargetAsync(
+        IAutomaticPasteTarget target,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _automaticPaste.TryActivateTargetAsync(target, cancellationToken);
+    }
+
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     public async ValueTask DisposeAsync()

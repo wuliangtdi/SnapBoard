@@ -91,6 +91,31 @@ public sealed class MainWindowHeadlessTests
         }
     }
 
+    [AvaloniaFact]
+    public void QuickWindowRendersAndSelectsClipboardHistory()
+    {
+        MainViewModel viewModel = new();
+        QuickWindow window = new()
+        {
+            DataContext = viewModel,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(window.FindControl<TextBox>("QuickSearchBox"));
+            ListBox historyList = window.FindControl<ListBox>("QuickHistoryList")!;
+            Assert.Equal(viewModel.VisibleItems.Count, historyList.ItemCount);
+            Assert.NotNull(viewModel.SelectedItem);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     private static MainWindow CreateWindow(MainViewModel viewModel, double width = 1305, double height = 900)
         => new()
         {

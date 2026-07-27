@@ -8,6 +8,6 @@ public static class WindowsPlatformAssembly
 
     public static PlatformCapabilities Capabilities { get; } = new(
         PlatformSupportLevel.Full,
-        PlatformSupportLevel.Unsupported,
+        PlatformSupportLevel.Full,
         PlatformSupportLevel.Limited);
 }

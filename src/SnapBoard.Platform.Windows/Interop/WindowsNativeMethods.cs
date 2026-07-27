@@ -160,6 +160,64 @@ internal static partial class WindowsNativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool SetForegroundWindow(nint windowHandle);
 
+    [LibraryImport(User32, EntryPoint = "RegisterHotKey", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool RegisterHotKey(
+        nint windowHandle,
+        int identifier,
+        uint modifiers,
+        uint virtualKey);
+
+    [LibraryImport(User32, EntryPoint = "UnregisterHotKey", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool UnregisterHotKey(nint windowHandle, int identifier);
+
+    [LibraryImport(User32, EntryPoint = "GetWindowRect", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetWindowRectangle(
+        nint windowHandle,
+        out NativeRectangle rectangle);
+
+    [LibraryImport(User32, EntryPoint = "IsZoomed")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsZoomed(nint windowHandle);
+
+    [LibraryImport(User32, EntryPoint = "IsIconic")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsIconic(nint windowHandle);
+
+    [LibraryImport(User32, EntryPoint = "ShowWindow")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool ShowWindow(nint windowHandle, uint command);
+
+    [LibraryImport(User32, EntryPoint = "SetWindowPos", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetWindowPosition(
+        nint windowHandle,
+        nint insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
+    [LibraryImport(User32, EntryPoint = "MonitorFromWindow")]
+    internal static partial nint MonitorFromWindow(nint windowHandle, uint flags);
+
+    [LibraryImport(User32, EntryPoint = "MonitorFromRect")]
+    internal static partial nint MonitorFromRectangle(
+        in NativeRectangle rectangle,
+        uint flags);
+
+    [LibraryImport(User32, EntryPoint = "GetMonitorInfoW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetMonitorInfo(
+        nint monitor,
+        ref NativeMonitorInfo monitorInfo);
+
+    [LibraryImport(User32, EntryPoint = "GetDpiForWindow")]
+    internal static partial uint GetDpiForWindow(nint windowHandle);
+
     [LibraryImport(User32, EntryPoint = "GetAsyncKeyState")]
     internal static partial short GetAsyncKeyState(int virtualKey);
 

@@ -203,6 +203,11 @@ internal sealed class WindowsAutomaticPaste(IWindowsPasteNative native)
         CancellationToken cancellationToken) =>
         new(Task.Run(() => TryPasteCore(target, cancellationToken), cancellationToken));
 
+    public ValueTask<ForegroundActivationResult> TryActivateTargetAsync(
+        IAutomaticPasteTarget target,
+        CancellationToken cancellationToken) =>
+        new(Task.Run(() => TryActivateCore(target, cancellationToken), cancellationToken));
+
     private AutomaticPasteResult TryPasteCore(
         IAutomaticPasteTarget target,
         CancellationToken cancellationToken)
@@ -212,8 +217,7 @@ internal sealed class WindowsAutomaticPaste(IWindowsPasteNative native)
             return ManualPaste(AutomaticPasteFailureReason.InvalidTarget);
         }
 
-        if (!native.IsWindow(windowsTarget.WindowHandle) ||
-            native.GetWindowProcessId(windowsTarget.WindowHandle) != windowsTarget.ProcessId)
+        if (!IsTargetValid(windowsTarget))
         {
             return new AutomaticPasteResult(
                 AutomaticPasteStatus.TargetUnavailable,
@@ -234,6 +238,49 @@ internal sealed class WindowsAutomaticPaste(IWindowsPasteNative native)
             return ManualPaste(AutomaticPasteFailureReason.IntegrityLevelUnavailable);
         }
 
+        ForegroundActivationResult activation = TryActivateCore(windowsTarget, cancellationToken);
+        if (activation.Status != ForegroundActivationStatus.Activated)
+        {
+            return activation.Status == ForegroundActivationStatus.TargetUnavailable
+                ? new AutomaticPasteResult(
+                    AutomaticPasteStatus.TargetUnavailable,
+                    activation.FailureReason)
+                : ManualPaste(activation.FailureReason);
+        }
+
+        // 激活等待期间目标 HWND 可能被销毁并复用。SendInput 前再次核对 HWND/PID，
+        // 防止把粘贴快捷键发送给后来占用同一句柄的无关窗口。
+        if (!IsTargetValid(windowsTarget))
+        {
+            return new AutomaticPasteResult(
+                AutomaticPasteStatus.TargetUnavailable,
+                AutomaticPasteFailureReason.InvalidTarget);
+        }
+
+        if (native.GetForegroundWindow() != windowsTarget.WindowHandle)
+        {
+            // 目标句柄仍有效并不代表它仍在前台。激活后若被系统或用户切走，必须停止注入，
+            // 否则 Ctrl+V 会落入无关窗口；剪贴板已写好，按手动粘贴安全降级。
+            return ManualPaste(AutomaticPasteFailureReason.TargetActivationFailed);
+        }
+
+        // SendInput 被 UIPI 阻止时没有可靠的专用错误码；返回数量不足一律按手动粘贴降级。
+        return native.SendPasteShortcut()
+            ? new AutomaticPasteResult(AutomaticPasteStatus.Pasted)
+            : ManualPaste(AutomaticPasteFailureReason.InputInjectionBlocked);
+    }
+
+    private ForegroundActivationResult TryActivateCore(
+        IAutomaticPasteTarget target,
+        CancellationToken cancellationToken)
+    {
+        if (target is not WindowsAutomaticPasteTarget windowsTarget || !IsTargetValid(windowsTarget))
+        {
+            return new ForegroundActivationResult(
+                ForegroundActivationStatus.TargetUnavailable,
+                AutomaticPasteFailureReason.InvalidTarget);
+        }
+
         native.SetForegroundWindow(windowsTarget.WindowHandle);
         for (int attempt = 0; attempt < 5; attempt++)
         {
@@ -248,14 +295,17 @@ internal sealed class WindowsAutomaticPaste(IWindowsPasteNative native)
 
         if (native.GetForegroundWindow() != windowsTarget.WindowHandle)
         {
-            return ManualPaste(AutomaticPasteFailureReason.TargetActivationFailed);
+            return new ForegroundActivationResult(
+                ForegroundActivationStatus.Failed,
+                AutomaticPasteFailureReason.TargetActivationFailed);
         }
 
-        // SendInput 被 UIPI 阻止时没有可靠的专用错误码；返回数量不足一律按手动粘贴降级。
-        return native.SendPasteShortcut()
-            ? new AutomaticPasteResult(AutomaticPasteStatus.Pasted)
-            : ManualPaste(AutomaticPasteFailureReason.InputInjectionBlocked);
+        return new ForegroundActivationResult(ForegroundActivationStatus.Activated);
     }
+
+    private bool IsTargetValid(WindowsAutomaticPasteTarget target) =>
+        native.IsWindow(target.WindowHandle) &&
+        native.GetWindowProcessId(target.WindowHandle) == target.ProcessId;
 
     private static AutomaticPasteResult ManualPaste(AutomaticPasteFailureReason reason) =>
         new(AutomaticPasteStatus.ManualPasteRequired, reason);

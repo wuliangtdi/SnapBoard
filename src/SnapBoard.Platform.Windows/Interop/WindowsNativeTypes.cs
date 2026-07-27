@@ -17,7 +17,11 @@ internal static class WindowsNativeConstants
     public const uint WindowMessageNonClientCreate = 0x0081;
     public const uint WindowMessageNonClientDestroy = 0x0082;
     public const uint WindowMessageClipboardUpdate = 0x031D;
+    public const uint WindowMessageHotKey = 0x0312;
+    public const uint WindowMessageRenderFormat = 0x0305;
+    public const uint WindowMessageRenderAllFormats = 0x0306;
     public const uint WindowMessageQuit = 0x0012;
+    public const uint WindowMessageHotKeyCommand = 0x8001;
 
     public const int WindowLongUserData = -21;
     public static readonly nint MessageOnlyWindowParent = new(-3);
@@ -34,6 +38,12 @@ internal static class WindowsNativeConstants
     public const uint KeyEventKeyUp = 0x0002;
     public const ushort VirtualKeyControl = 0x11;
     public const ushort VirtualKeyV = 0x56;
+
+    public const int ErrorHotKeyAlreadyRegistered = 1409;
+    public const uint MonitorDefaultToNearest = 0x00000002;
+    public const uint SetWindowPositionNoActivate = 0x0010;
+    public const uint ShowWindowMaximized = 3;
+    public const uint ShowWindowRestore = 9;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -58,6 +68,24 @@ internal struct NativePoint
 {
     public int X;
     public int Y;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeRectangle
+{
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeMonitorInfo
+{
+    public uint Size;
+    public NativeRectangle Monitor;
+    public NativeRectangle WorkArea;
+    public uint Flags;
 }
 
 [StructLayout(LayoutKind.Sequential)]

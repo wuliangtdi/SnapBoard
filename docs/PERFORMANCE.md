@@ -133,3 +133,25 @@ scripts/macos/Measure-SnapBoardProcess.sh \
 轮询开销另用同一份最终代码发布的 AOT 探针测量，避免把尚未接入桌面生命周期的监听器与普通窗口空闲混为一谈。探针实际执行 `WatchAsync` 12 秒，在中间 10 秒计量窗口内无剪贴板变化：平均 CPU 0.001%、能耗增量 1.360 mJ、44 次 interrupt wakeups、最终 Physical Footprint 6.41 MiB、RSS 27.17 MiB，`DroppedEvents=0`。该数据验证轮询退避开销，不代表完整桌面应用内存。
 
 结论：轮询 CPU 满足当前空闲预算，但完整可见窗口三次 Physical Footprint 均约 195 MiB，明确超过 120 MB 失败线。第一轮启动 3.97 秒也必须继续调查。当前尚未实现菜单栏常驻和窗口卸载，因此没有“常驻低于 100 MB”的有效样本；2026-07-26 的单次旧样本只能作为历史数据，不能替代本轮三次复测。
+
+### 6.4 2026-07-27 Windows 11 x64 生命周期收口样本
+
+版本：`phase1/windows-completion` 最终代码工作树。主机为 Windows 11 Pro 10.0.28000、AMD Ryzen 9 7945HX、100,617,691,136 字节物理内存，.NET SDK 10.0.302。构建为 Release、`win-x64`、self-contained Native AOT；`SnapBoard.Desktop.exe` 为 27,700,736 字节，发布目录不存在 `coreclr.dll` 或 `clrjit.dll`，发布输出为 0 个 AOT/裁剪警告。
+
+`scripts/windows/Measure-SnapBoardProcess.ps1` 每轮启动独立 AOT 进程，以主窗口句柄出现记录启动终点；可见窗口与窗口关闭阶段各采集 30 个至少相隔 1 秒的样本，CIM 查询耗时计入实际墙钟时间，最后通过第二实例 `--exit` 请求干净退出。CPU 已按逻辑处理器数归一化。该数据是三次应用冷启动，不是重启系统或干净 VM 后的 OS-cold，也不是 10 分钟或 8 小时长稳结果。
+
+```powershell
+scripts/windows/Measure-SnapBoardProcess.ps1 `
+  -ExecutablePath C:\path\to\SnapBoard.Desktop.exe `
+  -Runs 3 -SampleSeconds 30 -ClosedSampleSeconds 30
+```
+
+| 轮次 | 启动到主窗口 | 窗口卸载 | 可见峰值 PWS | 可见峰值 Private Bytes | 可见平均 CPU | 可见峰值句柄 | 关闭后最终 PWS | 关闭后最终 Private Bytes | 关闭后平均 CPU | 最终句柄 | PWS 回落 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 606.58 ms | 35.90 ms | 84.47 MiB | 181.98 MiB | 0.016% | 1267 | 66.22 MiB | 130.67 MiB | 0.000% | 1264 | 18.25 MiB |
+| 2 | 459.96 ms | 48.84 ms | 85.12 MiB | 182.56 MiB | 0.012% | 1271 | 66.86 MiB | 140.51 MiB | 0.000% | 1268 | 18.26 MiB |
+| 3 | 445.34 ms | 35.12 ms | 109.50 MiB | 200.71 MiB | 0.094% | 1287 | 130.38 MiB | 180.64 MiB | 0.000% | 1289 | -20.88 MiB |
+
+窗口关闭后第 1、2 轮 PWS 分别回落 18.25/18.26 MiB，最终为 66.22/66.86 MiB；第 3 轮先回落，约 30 秒后 PWS、Private Bytes 和句柄同时上升，最终 PWS 比可见峰值高 20.88 MiB。三轮最终 Private Bytes 均为 130.67-180.64 MiB。这里的“30 秒”参数实际生成 30 个至少相隔 1 秒的样本，CIM 查询开销会延长墙钟时间；它仍不是 10 分钟或 8 小时长稳。资源释放存在真实波动，因此不能声称“托盘常驻低于 100 MB”，后续仍需定位第三轮增长、做 10 分钟托盘、8 小时长稳和 UI 依赖 A/B。
+
+同一最终代码的三轮 10,000 次剪贴板压力测试均完成 10,000/10,000 个自写事件，反馈事件与 Channel 丢弃均为 0，平均 CPU 为 0.07%/0.07%/0.05%，句柄变化为 +14/+2/-11；Private Bytes 增长分别为 15.56/8.43/15.12 MiB，三轮都未满足严格的 `< 8 MiB` 预算，资源增长门槛保持未完成。

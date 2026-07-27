@@ -1,0 +1,102 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SnapBoard.Desktop.ViewModels"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="SnapBoard.Desktop.Views.QuickWindow"
+        x:DataType="vm:MainViewModel"
+        Width="680"
+        Height="480"
+        MinWidth="560"
+        MinHeight="380"
+        CanResize="True"
+        ShowInTaskbar="True"
+        WindowStartupLocation="Manual"
+        Title="SnapBoard 快速粘贴">
+    <Grid RowDefinitions="64,*,52">
+        <Border Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="18,0" ColumnDefinitions="Auto,*">
+                <materialIcons:MaterialIcon Width="22"
+                                            Height="22"
+                                            Margin="0,0,12,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource AccentBrush}"
+                                            Kind="ClipboardTextSearchOutline" />
+                <TextBox x:Name="QuickSearchBox"
+                         Grid.Column="1"
+                         Classes="search-box"
+                         Height="42"
+                         Padding="14,0"
+                         VerticalAlignment="Center"
+                         PlaceholderText="搜索剪贴板记录"
+                         Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            </Grid>
+        </Border>
+
+        <ListBox x:Name="QuickHistoryList"
+                 Grid.Row="1"
+                 Classes="history-list"
+                 DoubleTapped="OnHistoryDoubleTapped"
+                 ItemsSource="{Binding VisibleItems}"
+                 SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ClipboardHistoryItemViewModel">
+                    <Grid Margin="18,10" ColumnDefinitions="Auto,*,Auto">
+                        <materialIcons:MaterialIcon Width="20"
+                                                    Height="20"
+                                                    Margin="0,0,12,0"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{DynamicResource AccentBrush}"
+                                                    Kind="{Binding TypeIcon}" />
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock FontWeight="SemiBold"
+                                       MaxLines="1"
+                                       Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       MaxLines="1"
+                                       Text="{Binding Subtitle}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2"
+                                   Margin="16,0,0,0"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Text="{Binding SourceApplication}" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid Margin="18,0" ColumnDefinitions="*,Auto,Auto">
+                <TextBlock VerticalAlignment="Center"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="{Binding StatusMessage}" />
+                <Button Grid.Column="1"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Click="OnPlainTextPasteClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Width="18" Height="18" Kind="FormatText" />
+                        <TextBlock Text="纯文本粘贴" />
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="2"
+                        VerticalAlignment="Center"
+                        Click="OnPasteClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Width="18" Height="18" Kind="ClipboardArrowRightOutline" />
+                        <TextBlock Text="粘贴" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

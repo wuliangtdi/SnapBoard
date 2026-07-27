@@ -1,4 +1,5 @@
 using SnapBoard.Platform.Windows.Clipboard;
+using SnapBoard.Platform.Windows.Desktop;
 
 namespace SnapBoard.Platform.Windows.Tests;
 
@@ -91,17 +92,36 @@ internal sealed class FakeWindowsPasteNative : IWindowsPasteNative
 
     public bool SendPasteCalled { get; private set; }
 
+    public bool ChangeProcessAfterActivation { get; set; }
+
+    public bool StealForegroundBeforeSend { get; set; }
+
+    private int _processIdReadCount;
+
     public nint GetForegroundWindow() => ForegroundWindow;
 
     public bool IsWindow(nint windowHandle) => WindowExists;
 
-    public uint GetWindowProcessId(nint windowHandle) => TargetProcessId;
+    public uint GetWindowProcessId(nint windowHandle)
+    {
+        uint processId = TargetProcessId;
+        if (StealForegroundBeforeSend && Interlocked.Increment(ref _processIdReadCount) >= 4)
+        {
+            ForegroundWindow = 999;
+        }
+
+        return processId;
+    }
 
     public bool SetForegroundWindow(nint windowHandle)
     {
         if (ActivateResult)
         {
             ForegroundWindow = windowHandle;
+            if (ChangeProcessAfterActivation)
+            {
+                TargetProcessId++;
+            }
         }
 
         return ActivateResult;
@@ -114,4 +134,49 @@ internal sealed class FakeWindowsPasteNative : IWindowsPasteNative
         SendPasteCalled = true;
         return SendPasteResult;
     }
+}
+
+internal sealed class FakeWindowsRegistryStore : IWindowsRegistryStore
+{
+    private readonly Dictionary<(string SubKey, string Name), string> _values = [];
+
+    public string? GetString(string subKey, string name) =>
+        _values.GetValueOrDefault((subKey, name));
+
+    public void SetString(string subKey, string name, string value) =>
+        _values[(subKey, name)] = value;
+
+    public void DeleteValue(string subKey, string name) => _values.Remove((subKey, name));
+}
+
+internal sealed class FakeWindowsHotKeyNative : IWindowsHotKeyNative
+{
+    private readonly Queue<(bool Result, int Error)> _registerResults = new();
+
+    public int RegisterCount { get; private set; }
+
+    public int UnregisterCount { get; private set; }
+
+    public int LastError { get; private set; }
+
+    public void EnqueueRegisterResult(bool result, int error = 0) =>
+        _registerResults.Enqueue((result, error));
+
+    public bool Register(nint windowHandle, int identifier, uint modifiers, uint virtualKey)
+    {
+        RegisterCount++;
+        (bool result, int error) = _registerResults.Count == 0
+            ? (true, 0)
+            : _registerResults.Dequeue();
+        LastError = error;
+        return result;
+    }
+
+    public bool Unregister(nint windowHandle, int identifier)
+    {
+        UnregisterCount++;
+        return true;
+    }
+
+    public int GetLastError() => LastError;
 }

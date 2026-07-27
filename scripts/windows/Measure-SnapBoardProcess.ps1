@@ -9,6 +9,9 @@ param(
     [ValidateRange(5, 600)]
     [int]$SampleSeconds = 30,
 
+    [ValidateRange(5, 600)]
+    [int]$ClosedSampleSeconds = 30,
+
     [ValidateRange(1, 60)]
     [int]$StartupTimeoutSeconds = 15,
 
@@ -23,12 +26,18 @@ if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
 }
 
 $snapExecutable = (Resolve-Path -LiteralPath $ExecutablePath).Path
-$snapOutputDirectory = [System.IO.Path]::GetFullPath(
-    (Join-Path -Path (Get-Location) -ChildPath $OutputDirectory))
+$snapOutputDirectory = if ([System.IO.Path]::IsPathFullyQualified($OutputDirectory)) {
+    [System.IO.Path]::GetFullPath($OutputDirectory)
+}
+else {
+    [System.IO.Path]::GetFullPath(
+        (Join-Path -Path (Get-Location) -ChildPath $OutputDirectory))
+}
 [System.IO.Directory]::CreateDirectory($snapOutputDirectory) | Out-Null
 
 $snapSamples = [System.Collections.Generic.List[object]]::new()
 $snapSummaries = [System.Collections.Generic.List[object]]::new()
+$snapLogicalProcessorCount = [System.Environment]::ProcessorCount
 
 for ($snapRun = 1; $snapRun -le $Runs; $snapRun++) {
     $snapProcess = $null
@@ -73,12 +82,16 @@ for ($snapRun = 1; $snapRun -le $Runs; $snapRun++) {
             if ($null -ne $snapMetric) {
                 $snapSamples.Add([pscustomobject]@{
                     Run = $snapRun
+                    Phase = "Visible"
                     SampleSecond = $snapSecond
                     ProcessId = $snapProcess.Id
                     StartupMilliseconds = $snapStartupMilliseconds
                     PrivateWorkingSetBytes = [uint64]$snapMetric.WorkingSetPrivate
                     PrivateBytes = [uint64]$snapMetric.PrivateBytes
                     HandleCount = [uint64]$snapMetric.HandleCount
+                    CpuPercent = [Math]::Round(
+                        [double]$snapMetric.PercentProcessorTime / $snapLogicalProcessorCount,
+                        3)
                     CapturedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
                 })
             }
@@ -86,22 +99,119 @@ for ($snapRun = 1; $snapRun -le $Runs; $snapRun++) {
             Start-Sleep -Seconds 1
         }
 
-        $snapRunSamples = @($snapSamples | Where-Object Run -eq $snapRun)
-        if ($snapRunSamples.Count -eq 0) {
+        $snapVisibleSamples = @(
+            $snapSamples | Where-Object { $_.Run -eq $snapRun -and $_.Phase -eq "Visible" })
+        if ($snapVisibleSamples.Count -eq 0) {
             throw "No Win32 performance samples were available for process $($snapProcess.Id)."
+        }
+
+        $null = $snapProcess.CloseMainWindow()
+        $snapCloseStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($true) {
+            if ($snapProcess.HasExited) {
+                throw "SnapBoard exited after closing its main window instead of remaining resident."
+            }
+
+            $snapProcess.Refresh()
+            if ($snapProcess.MainWindowHandle -eq [IntPtr]::Zero) {
+                break
+            }
+
+            if ($snapCloseStopwatch.Elapsed.TotalSeconds -ge 10) {
+                throw "SnapBoard main window did not unload within 10 seconds."
+            }
+
+            Start-Sleep -Milliseconds 25
+        }
+
+        $snapCloseStopwatch.Stop()
+        $snapWindowUnloadMilliseconds = [Math]::Round(
+            $snapCloseStopwatch.Elapsed.TotalMilliseconds,
+            2)
+
+        for ($snapSecond = 1; $snapSecond -le $ClosedSampleSeconds; $snapSecond++) {
+            if ($snapProcess.HasExited) {
+                throw "SnapBoard exited during closed-window sampling. ExitCode=$($snapProcess.ExitCode)"
+            }
+
+            $snapMetric = Get-CimInstance `
+                -ClassName Win32_PerfFormattedData_PerfProc_Process `
+                -Filter "IDProcess = $($snapProcess.Id)" `
+                -ErrorAction SilentlyContinue
+
+            if ($null -ne $snapMetric) {
+                $snapSamples.Add([pscustomobject]@{
+                    Run = $snapRun
+                    Phase = "Closed"
+                    SampleSecond = $snapSecond
+                    ProcessId = $snapProcess.Id
+                    StartupMilliseconds = $snapStartupMilliseconds
+                    PrivateWorkingSetBytes = [uint64]$snapMetric.WorkingSetPrivate
+                    PrivateBytes = [uint64]$snapMetric.PrivateBytes
+                    HandleCount = [uint64]$snapMetric.HandleCount
+                    CpuPercent = [Math]::Round(
+                        [double]$snapMetric.PercentProcessorTime / $snapLogicalProcessorCount,
+                        3)
+                    CapturedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+                })
+            }
+
+            Start-Sleep -Seconds 1
+        }
+
+        $snapClosedSamples = @(
+            $snapSamples | Where-Object { $_.Run -eq $snapRun -and $_.Phase -eq "Closed" })
+        if ($snapClosedSamples.Count -eq 0) {
+            throw "No closed-window performance samples were available for process $($snapProcess.Id)."
         }
 
         $snapSummaries.Add([pscustomobject]@{
             Run = $snapRun
             StartupMilliseconds = $snapStartupMilliseconds
-            PeakPrivateWorkingSetBytes = ($snapRunSamples.PrivateWorkingSetBytes | Measure-Object -Maximum).Maximum
-            PeakPrivateBytes = ($snapRunSamples.PrivateBytes | Measure-Object -Maximum).Maximum
-            PeakHandleCount = ($snapRunSamples.HandleCount | Measure-Object -Maximum).Maximum
+            WindowUnloadMilliseconds = $snapWindowUnloadMilliseconds
+            VisiblePeakPrivateWorkingSetBytes =
+                ($snapVisibleSamples.PrivateWorkingSetBytes | Measure-Object -Maximum).Maximum
+            VisiblePeakPrivateBytes =
+                ($snapVisibleSamples.PrivateBytes | Measure-Object -Maximum).Maximum
+            VisiblePeakHandleCount =
+                ($snapVisibleSamples.HandleCount | Measure-Object -Maximum).Maximum
+            VisibleAverageCpuPercent = [Math]::Round(
+                ($snapVisibleSamples.CpuPercent | Measure-Object -Average).Average,
+                3)
+            ClosedPeakPrivateWorkingSetBytes =
+                ($snapClosedSamples.PrivateWorkingSetBytes | Measure-Object -Maximum).Maximum
+            ClosedFinalPrivateWorkingSetBytes = $snapClosedSamples[-1].PrivateWorkingSetBytes
+            ClosedPeakPrivateBytes =
+                ($snapClosedSamples.PrivateBytes | Measure-Object -Maximum).Maximum
+            ClosedFinalPrivateBytes = $snapClosedSamples[-1].PrivateBytes
+            ClosedPeakHandleCount =
+                ($snapClosedSamples.HandleCount | Measure-Object -Maximum).Maximum
+            ClosedFinalHandleCount = $snapClosedSamples[-1].HandleCount
+            ClosedAverageCpuPercent = [Math]::Round(
+                ($snapClosedSamples.CpuPercent | Measure-Object -Average).Average,
+                3)
+            PrivateWorkingSetDropBytes =
+                ($snapVisibleSamples.PrivateWorkingSetBytes | Measure-Object -Maximum).Maximum -
+                $snapClosedSamples[-1].PrivateWorkingSetBytes
         })
     }
     finally {
         if ($null -ne $snapProcess -and -not $snapProcess.HasExited) {
-            $null = $snapProcess.CloseMainWindow()
+            $snapExitSignal = $null
+            try {
+                $snapExitSignal = Start-Process `
+                    -FilePath $snapExecutable `
+                    -ArgumentList "--exit" `
+                    -PassThru `
+                    -WindowStyle Hidden
+                $null = $snapExitSignal.WaitForExit(5000)
+            }
+            finally {
+                if ($null -ne $snapExitSignal) {
+                    $snapExitSignal.Dispose()
+                }
+            }
+
             if (-not $snapProcess.WaitForExit(5000)) {
                 Stop-Process -Id $snapProcess.Id -Force
                 $snapProcess.WaitForExit()
@@ -126,17 +236,18 @@ $snapOperatingSystem = Get-CimInstance Win32_OperatingSystem
 $snapProcessor = Get-CimInstance Win32_Processor | Select-Object -First 1
 $snapComputer = Get-CimInstance Win32_ComputerSystem
 $snapMetadata = [pscustomobject]@{
-    MeasurementKind = "process-cold-visible-window"
+    MeasurementKind = "process-cold-visible-and-closed-window"
     Executable = $snapExecutable
     Runs = $Runs
     SampleSeconds = $SampleSeconds
+    ClosedSampleSeconds = $ClosedSampleSeconds
     OperatingSystem = $snapOperatingSystem.Caption
     OperatingSystemVersion = $snapOperatingSystem.Version
     Architecture = $snapOperatingSystem.OSArchitecture
     Processor = $snapProcessor.Name
     TotalPhysicalMemoryBytes = [uint64]$snapComputer.TotalPhysicalMemory
     CapturedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
-    Note = "This is a process-cold visible-window measurement. It is not an OS-cold boot and not a tray-resident measurement."
+    Note = "This is a process-cold visible-window measurement followed by a closed-window resident phase. It is not an OS-cold boot or a 10-minute endurance sample."
 }
 $snapMetadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $snapMetadataPath -Encoding utf8
 

@@ -12,10 +12,13 @@ namespace SnapBoard.Desktop.HeadlessTests;
 public static class TestAppBuilder
 {
     public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
+    {
+        App.EnableNativeWindowsLifecycle = false;
+        return AppBuilder.Configure<App>()
             .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions
             {
                 UseHeadlessDrawing = false,
             });
+    }
 }

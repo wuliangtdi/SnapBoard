@@ -74,4 +74,54 @@ public sealed class WindowsAutomaticPasteTests
         Assert.Equal(AutomaticPasteStatus.ManualPasteRequired, result.Status);
         Assert.Equal(AutomaticPasteFailureReason.InputInjectionBlocked, result.FailureReason);
     }
+
+    [Fact]
+    public async Task RestoresForegroundTargetWithoutInjectingInput()
+    {
+        FakeWindowsPasteNative native = new();
+        WindowsAutomaticPaste paste = new(native);
+        IAutomaticPasteTarget target = Assert.IsAssignableFrom<IAutomaticPasteTarget>(
+            paste.CaptureForegroundTarget());
+
+        ForegroundActivationResult result =
+            await paste.TryActivateTargetAsync(target, CancellationToken.None);
+
+        Assert.Equal(ForegroundActivationStatus.Activated, result.Status);
+        Assert.False(native.SendPasteCalled);
+    }
+
+    [Fact]
+    public async Task RevalidatesWindowAndProcessImmediatelyBeforeSendInput()
+    {
+        FakeWindowsPasteNative native = new()
+        {
+            ChangeProcessAfterActivation = true,
+        };
+        WindowsAutomaticPaste paste = new(native);
+        IAutomaticPasteTarget target = Assert.IsAssignableFrom<IAutomaticPasteTarget>(
+            paste.CaptureForegroundTarget());
+
+        AutomaticPasteResult result = await paste.TryPasteAsync(target, CancellationToken.None);
+
+        Assert.Equal(AutomaticPasteStatus.TargetUnavailable, result.Status);
+        Assert.False(native.SendPasteCalled);
+    }
+
+    [Fact]
+    public async Task DoesNotInjectWhenAnotherWindowTakesForegroundBeforeSendInput()
+    {
+        FakeWindowsPasteNative native = new()
+        {
+            StealForegroundBeforeSend = true,
+        };
+        WindowsAutomaticPaste paste = new(native);
+        IAutomaticPasteTarget target = Assert.IsAssignableFrom<IAutomaticPasteTarget>(
+            paste.CaptureForegroundTarget());
+
+        AutomaticPasteResult result = await paste.TryPasteAsync(target, CancellationToken.None);
+
+        Assert.Equal(AutomaticPasteStatus.ManualPasteRequired, result.Status);
+        Assert.Equal(AutomaticPasteFailureReason.TargetActivationFailed, result.FailureReason);
+        Assert.False(native.SendPasteCalled);
+    }
 }

@@ -40,6 +40,9 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsCompactMode { get; set; }
 
     [ObservableProperty]
+    public partial bool IsRecordingPaused { get; set; }
+
+    [ObservableProperty]
     public partial GridLength HistoryColumnWidth { get; set; } = new(49, GridUnitType.Star);
 
     [ObservableProperty]
@@ -75,6 +78,20 @@ public partial class MainViewModel : ViewModelBase
 
     public bool IsLinkFilterSelected => SelectedFilter == ClipboardItemType.Link;
 
+    public string RecordingStateText => IsRecordingPaused ? "记录已暂停" : "正在记录";
+
+    public event EventHandler? CopyRequested;
+
+    public event EventHandler? PasteRequested;
+
+    public event EventHandler? QuickWindowRequested;
+
+    public event EventHandler? SettingsRequested;
+
+    public event EventHandler? RecordingPauseToggleRequested;
+
+    public event EventHandler? ExitRequested;
+
     partial void OnSearchTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasSearchText));
@@ -103,6 +120,9 @@ public partial class MainViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(SortLabel));
     }
+
+    partial void OnIsRecordingPausedChanged(bool value) =>
+        OnPropertyChanged(nameof(RecordingStateText));
 
     [RelayCommand]
     private void SelectFilter(string? filterName)
@@ -165,6 +185,7 @@ public partial class MainViewModel : ViewModelBase
         if (SelectedItem is not null)
         {
             StatusMessage = "已复制到剪贴板";
+            CopyRequested?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -174,7 +195,27 @@ public partial class MainViewModel : ViewModelBase
         if (SelectedItem is not null)
         {
             StatusMessage = "已准备粘贴";
+            PasteRequested?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    [RelayCommand]
+    private void OpenQuickWindow() => QuickWindowRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void OpenSettings() => SettingsRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void ToggleRecordingPause() =>
+        RecordingPauseToggleRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void ExitApplication() => ExitRequested?.Invoke(this, EventArgs.Empty);
+
+    internal void UpdateRecordingState(bool paused)
+    {
+        IsRecordingPaused = paused;
+        StatusMessage = paused ? "剪贴板记录已暂停" : "剪贴板记录已恢复";
     }
 
     [RelayCommand]

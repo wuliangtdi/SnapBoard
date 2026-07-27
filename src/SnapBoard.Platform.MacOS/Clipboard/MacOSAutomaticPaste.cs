@@ -182,6 +182,15 @@ internal sealed class MacOSAutomaticPaste(
 
     public bool HasAccessibilityPermission => native.HasAccessibilityPermission();
 
+    public ValueTask<ForegroundActivationResult> TryActivateTargetAsync(
+        IAutomaticPasteTarget target,
+        CancellationToken cancellationToken) =>
+        target is MacOSAutomaticPasteTarget macTarget
+            ? ActivateTargetAsync(macTarget, cancellationToken)
+            : ValueTask.FromResult(new ForegroundActivationResult(
+                ForegroundActivationStatus.TargetUnavailable,
+                AutomaticPasteFailureReason.InvalidTarget));
+
     public async ValueTask<AutomaticPasteResult> TryPasteAsync(
         IAutomaticPasteTarget target,
         CancellationToken cancellationToken)
@@ -198,14 +207,39 @@ internal sealed class MacOSAutomaticPaste(
             return ManualPaste(AutomaticPasteFailureReason.AccessibilityPermissionDenied);
         }
 
+        ForegroundActivationResult activation =
+            await ActivateTargetAsync(macTarget, cancellationToken).ConfigureAwait(false);
+        if (activation.Status != ForegroundActivationStatus.Activated)
+        {
+            return ManualPaste(activation.FailureReason);
+        }
+
         if (!native.IsTargetAvailable(macTarget))
         {
             return ManualPaste(AutomaticPasteFailureReason.InvalidTarget);
         }
 
+        return native.SendPasteShortcut()
+            ? new AutomaticPasteResult(AutomaticPasteStatus.Pasted)
+            : ManualPaste(AutomaticPasteFailureReason.InputInjectionBlocked);
+    }
+
+    private async ValueTask<ForegroundActivationResult> ActivateTargetAsync(
+        MacOSAutomaticPasteTarget macTarget,
+        CancellationToken cancellationToken)
+    {
+        if (!native.IsTargetAvailable(macTarget))
+        {
+            return new ForegroundActivationResult(
+                ForegroundActivationStatus.TargetUnavailable,
+                AutomaticPasteFailureReason.InvalidTarget);
+        }
+
         if (!native.Activate(macTarget))
         {
-            return ManualPaste(AutomaticPasteFailureReason.TargetActivationFailed);
+            return new ForegroundActivationResult(
+                ForegroundActivationStatus.Failed,
+                AutomaticPasteFailureReason.TargetActivationFailed);
         }
 
         for (int attempt = 0; attempt < settings.TargetActivationAttempts; attempt++)
@@ -213,9 +247,7 @@ internal sealed class MacOSAutomaticPaste(
             cancellationToken.ThrowIfCancellationRequested();
             if (native.GetFrontmostProcessId() == macTarget.ProcessId)
             {
-                return native.SendPasteShortcut()
-                    ? new AutomaticPasteResult(AutomaticPasteStatus.Pasted)
-                    : ManualPaste(AutomaticPasteFailureReason.InputInjectionBlocked);
+                return new ForegroundActivationResult(ForegroundActivationStatus.Activated);
             }
 
             await delay.DelayAsync(
@@ -223,7 +255,9 @@ internal sealed class MacOSAutomaticPaste(
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return ManualPaste(AutomaticPasteFailureReason.TargetActivationFailed);
+        return new ForegroundActivationResult(
+            ForegroundActivationStatus.Failed,
+            AutomaticPasteFailureReason.TargetActivationFailed);
     }
 
     private static AutomaticPasteResult ManualPaste(AutomaticPasteFailureReason reason) =>

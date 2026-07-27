@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SnapBoard.Desktop.ViewModels"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="SnapBoard.Desktop.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Width="520"
+        Height="390"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Title="SnapBoard 设置">
+    <Grid RowDefinitions="64,*,56">
+        <Border Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <StackPanel Margin="22,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Spacing="10">
+                <materialIcons:MaterialIcon Width="22" Height="22" Kind="CogOutline" />
+                <TextBlock FontSize="18" FontWeight="SemiBold" Text="设置" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="24,20"
+              RowDefinitions="Auto,Auto,1,Auto,Auto"
+              RowSpacing="12">
+            <TextBlock FontWeight="SemiBold" Text="全局快捷键" />
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
+                <ComboBox x:Name="HotKeySelector"
+                          ItemsSource="{Binding HotKeyOptions}"
+                          SelectedItem="{Binding SelectedHotKey, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HotKeyOption">
+                            <TextBlock Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="1"
+                        Margin="10,0,0,0"
+                        Command="{Binding ApplyHotKeyCommand}"
+                        Content="应用" />
+                <Button Grid.Column="2"
+                        Margin="8,0,0,0"
+                        Command="{Binding RestoreDefaultHotKeyCommand}"
+                        ToolTip.Tip="恢复默认快捷键">
+                    <materialIcons:MaterialIcon Width="18" Height="18" Kind="Restore" />
+                </Button>
+            </Grid>
+            <Border Grid.Row="2" Background="{DynamicResource DividerBrush}" />
+            <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock FontWeight="SemiBold" Text="开机启动" />
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="{Binding AutoStartStatus}" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1"
+                              VerticalAlignment="Center"
+                              IsChecked="{Binding IsAutoStartEnabled, Mode=TwoWay}" />
+            </Grid>
+            <TextBlock Grid.Row="4"
+                       Foreground="{DynamicResource SecondaryTextBrush}"
+                       Text="{Binding HotKeyStatus}" />
+        </Grid>
+
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,1,0,0">
+            <Button Margin="0,0,20,0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Click="OnCloseClicked"
+                    Content="完成" />
+        </Border>
+    </Grid>
+</Window>

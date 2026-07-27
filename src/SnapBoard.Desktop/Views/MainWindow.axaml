@@ -93,15 +93,16 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Classes="icon" ToolTip.Tip="设置">
+                    <Button Classes="icon"
+                            Command="{Binding ToggleRecordingPauseCommand}"
+                            ToolTip.Tip="暂停或恢复剪贴板记录">
+                        <materialIcons:MaterialIcon Width="21" Height="21" Kind="PauseCircleOutline" />
+                    </Button>
+
+                    <Button Classes="icon"
+                            Command="{Binding OpenSettingsCommand}"
+                            ToolTip.Tip="设置">
                         <materialIcons:MaterialIcon Width="21" Height="21" Kind="SettingsApplications" />
-                        <Button.Flyout>
-                            <MenuFlyout>
-                                <MenuItem Header="外观" />
-                                <MenuItem Header="快捷键" />
-                                <MenuItem Header="同步" />
-                            </MenuFlyout>
-                        </Button.Flyout>
                     </Button>
 
                     <Button x:Name="CompactModeButton"
@@ -498,6 +499,10 @@
                                                 Foreground="{DynamicResource SuccessBrush}"
                                                 Kind="CheckCircle" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding LastSyncText}" />
+                    <Border Width="1" Height="16" Background="{DynamicResource DividerBrush}" />
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="{Binding RecordingStateText}" />
                 </StackPanel>
 
                 <TextBlock Grid.Column="1"

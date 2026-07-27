@@ -2,8 +2,10 @@ using System.Runtime.Versioning;
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.MacOS;
 using SnapBoard.Platform.Windows;
+using SnapBoard.Platform.Windows.Desktop;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
@@ -46,6 +48,10 @@ internal static class DesktopCompositionRoot
             provider.GetRequiredService<WindowsClipboardAdapter>());
         services.AddSingleton<IAutomaticPasteService>(provider =>
             provider.GetRequiredService<WindowsClipboardAdapter>());
+        services.AddSingleton<IGlobalHotKeyService, WindowsGlobalHotKeyService>();
+        services.AddSingleton<IAutoStartService, WindowsAutoStartService>();
+        services.AddSingleton<IPlatformWindowPlacementService, WindowsWindowPlacementService>();
+        services.AddSingleton<ClipboardCaptureCoordinator>();
     }
 
     [SupportedOSPlatform("macos")]
