@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -62,6 +63,12 @@ public sealed class MacOSStoragePlatformServiceTests
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                 UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
                 UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+            await RunProcessAsync(
+                "/bin/chmod",
+                "+a",
+                "everyone allow read",
+                root);
+            Assert.True(CountExtendedAccessControlEntries(root) > 0);
             MacOSStoragePlatformService service = new();
 
             await service.EnsurePrivateDirectoryAsync(
@@ -75,6 +82,7 @@ public sealed class MacOSStoragePlatformServiceTests
 
             UnixFileMode mode = File.GetUnixFileMode(root);
             Assert.True(inspection.IsPrivateToCurrentUser);
+            Assert.Equal(0, CountExtendedAccessControlEntries(root));
             Assert.Equal(
                 (UnixFileMode)0,
                 mode & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite |
@@ -88,22 +96,31 @@ public sealed class MacOSStoragePlatformServiceTests
     }
 
     [MacOSFact]
-    public async Task NonEmptyUserDirectoryIsNotModifiedByHardening()
+    public async Task NonEmptyUserDirectoryModeAclContentAndTimestampAreNotModified()
     {
         string root = CreateTemporaryRoot();
         string existing = Path.Combine(root, "existing.txt");
         await File.WriteAllTextAsync(existing, "keep");
         File.SetUnixFileMode(
             root,
-            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        await RunProcessAsync(
+            "/bin/chmod",
+            "+a",
+            "everyone allow read",
+            root);
         UnixFileMode modeBefore = File.GetUnixFileMode(root);
+        int aclEntriesBefore = CountExtendedAccessControlEntries(root);
         DateTime timestampBefore = Directory.GetLastWriteTimeUtc(root);
         MacOSStoragePlatformService service = new();
 
         try
         {
+            Assert.True(aclEntriesBefore > 0);
+            Assert.False((await service.InspectPathAsync(
+                root,
+                probeWriteCapabilities: false,
+                CancellationToken.None)).IsPrivateToCurrentUser);
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
                 await service.EnsurePrivateDirectoryAsync(
                     root,
@@ -111,6 +128,7 @@ public sealed class MacOSStoragePlatformServiceTests
                     CancellationToken.None));
 
             Assert.Equal(modeBefore, File.GetUnixFileMode(root));
+            Assert.Equal(aclEntriesBefore, CountExtendedAccessControlEntries(root));
             Assert.Equal(timestampBefore, Directory.GetLastWriteTimeUtc(root));
             Assert.Equal("keep", await File.ReadAllTextAsync(existing));
         }
@@ -219,6 +237,14 @@ public sealed class MacOSStoragePlatformServiceTests
                 await service.StopProcessAsync(
                     child with { StartTimeUtcTicks = child.StartTimeUtcTicks + 1 },
                     CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await service.WaitForProcessExitAsync(
+                    child with { ExecutablePath = "/usr/bin/true" },
+                    CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await service.StopProcessAsync(
+                    child with { ExecutablePath = "/usr/bin/true" },
+                    CancellationToken.None));
             await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
                 await service.StopProcessAsync(
                     child with { UserIdentity = "4294967295" },
@@ -318,6 +344,70 @@ public sealed class MacOSStoragePlatformServiceTests
                 0x1000,
                 1,
                 fixedMetadata with { Internal = false, Ejectable = true }));
+    }
+
+    private static int CountExtendedAccessControlEntries(string path)
+    {
+        const int accessControlEntryFirst = 0;
+        const int accessControlEntryNext = -1;
+        const int accessControlTypeExtended = 0x100;
+        nint acl = MacOSNativeMethods.AclGetFile(path, accessControlTypeExtended);
+        if (acl == 0)
+        {
+            int error = Marshal.GetLastPInvokeError();
+            if (error is 0 or 2 or 93)
+            {
+                return 0;
+            }
+
+            throw new InvalidOperationException("The test ACL could not be read.");
+        }
+
+        try
+        {
+            int count = 0;
+            int entryId = accessControlEntryFirst;
+            while (true)
+            {
+                int result = MacOSNativeMethods.AclGetEntry(acl, entryId, out _);
+                if (result < 0)
+                {
+                    if (Marshal.GetLastPInvokeError() == 22)
+                    {
+                        return count;
+                    }
+
+                    throw new InvalidOperationException("The test ACL is invalid.");
+                }
+
+                count++;
+                entryId = accessControlEntryNext;
+            }
+        }
+        finally
+        {
+            _ = MacOSNativeMethods.AclFree(acl);
+        }
+    }
+
+    private static async Task RunProcessAsync(string fileName, params string[] arguments)
+    {
+        ProcessStartInfo startInfo = new(fileName)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (string argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(startInfo) ??
+            throw new InvalidOperationException($"Could not start {fileName}.");
+        Task<string> errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        string error = await errorTask;
+        Assert.True(process.ExitCode == 0, error);
     }
 
     private static string CreateTemporaryRoot()

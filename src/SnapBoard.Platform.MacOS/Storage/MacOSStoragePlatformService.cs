@@ -29,6 +29,7 @@ public sealed class MacOSStoragePlatformService : IStoragePlatformService
     private const int AccessControlExtendedAllow = 1;
     private const int AccessControlTypeExtended = 0x100;
     private const int ErrorNoEntry = 2;
+    private const int ErrorInvalidArgument = 22;
     private const int ErrorAttributeNotFound = 93;
     private const int ErrorProcessNotFound = 3;
     private const int ErrorAlreadyExists = 17;
@@ -524,13 +525,15 @@ public sealed class MacOSStoragePlatformService : IStoragePlatformService
             while (true)
             {
                 int result = MacOSNativeMethods.AclGetEntry(acl, entryId, out nint entry);
-                if (result == 0)
-                {
-                    return true;
-                }
-
                 if (result < 0)
                 {
+                    // Darwin 在最后一个 ACL 条目后以 EINVAL 表示遍历结束，
+                    // 不提供单独的“已结束”返回值。
+                    if (Marshal.GetLastPInvokeError() == ErrorInvalidArgument)
+                    {
+                        return true;
+                    }
+
                     throw CreateNativeException("The directory access control list is invalid.");
                 }
 
