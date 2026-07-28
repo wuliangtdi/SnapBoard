@@ -5,6 +5,7 @@
 > 批准日期：2026-07-26
 > 当前阶段：`codex/webdav-provider-migration` 已完成共享 WebDAV 服务商迁移状态机、SQLite v8、双平台设置流程、真实 Apache WebDAV 双设备迁移、`osx-arm64` 本机包及 `osx-x64` Rosetta 启动预检；正式 Windows <-> macOS 双机、Nextcloud/Synology、Intel Runner 与正式发布继续收口
 > 实现状态：Windows 与 macOS 已共用安全数据目录迁移、加密同步、历史策略、真实同步 UI 和可恢复的 WebDAV 服务商迁移；设备撤销/密钥轮换、远端回收、长期资源验证及正式发布尚未完成
+> 本次目标口径：macOS 对等清单的代码实现、自动测试及当前可用环境验证已完成；缺少设备、服务或发布身份的项目作为外部验收继续保留，不阻塞本开发目标关闭，也不代表正式发布门槛已经通过
 > 总体顺序：Windows -> macOS -> Linux
 
 ## 1. 项目目标

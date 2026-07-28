@@ -2,6 +2,7 @@
 
 > 最后更新：2026-07-29
 > 当前阶段：共享 WebDAV 服务商迁移、缺失 Checkpoint 安全恢复、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测、`osx-arm64` 本机包及 `osx-x64` Rosetta 启动预检已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel Runner 与正式发布继续收口
+> 本次目标状态：已完成当前可用环境内的实现与验证；其余项目均为缺少对应设备、服务或发布身份的外部验收，继续如实列为待验证，但不阻塞本开发目标关闭
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -642,6 +643,9 @@ osx-arm64 最终开发包：
   - App 仍为 Hardened Runtime ad-hoc 签名，PKG 未签名，notary skipped；本机无 Developer ID Application/Installer 或公证凭据，Gatekeeper 正式接受未执行。
   - 分支尚未推送，新增的 macos-15-intel CI 与既有 arm64/x64 发布 Job 未远程运行，因此不记录虚构的 Runner 链接或结果。
   - 正式 Windows <-> macOS App 双机、两台正式 macOS App、Nextcloud/Synology、真实 TLS/配额、物理睡眠与网络恢复、Retina/多显示器、8 小时长稳和既有内存目标仍未完成。
+目标关闭说明：
+  - 用户确认上述剩余项目均属于当前不具备条件的实际验证。本开发目标按“代码实现、自动测试、当前可用环境验证和限制记录完整”关闭。
+  - 关闭本开发目标不改变这些条目的待验证状态，也不等同于 macOS 正式发布、跨设备产品验收或 PLAN.md 的最终发布退出条件通过。
 ```
 
 ## 22. 更新规则
