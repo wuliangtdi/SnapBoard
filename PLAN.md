@@ -3,8 +3,8 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：`phase1/windows-sync` 的 Windows 实现、自动测试、检索基准和本机 `win-x64` Native AOT 已落地；真实 WebDAV 服务、故障注入和跨平台对等矩阵继续收口
-> 实现状态：Windows 已使用 SQLite v7、安全数据目录迁移、加密 WebDAV 同步、同步历史策略和真实同步 UI；设备撤销/密钥轮换、长期资源验证及正式发布尚未完成
+> 当前阶段：`codex/macos-storage-sync-parity` 已完成 macOS 存储迁移、Keychain 同步接线和 `osx-arm64` Native AOT 本机实现；Intel、正式签名/公证、真实跨系统设备与 WebDAV 服务矩阵继续收口
+> 实现状态：Windows 与 macOS 已共用 SQLite v7、安全数据目录迁移、加密同步状态机、历史策略和真实同步 UI；WebDAV 服务商迁移、设备撤销/密钥轮换、长期资源验证及正式发布尚未完成
 > 总体顺序：Windows -> macOS -> Linux
 
 ## 1. 项目目标
@@ -651,23 +651,25 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [~] 实现菜单栏、全局快捷键、登录启动和单实例：菜单栏、单实例、第二实例激活与自定义快捷键已实机通过；登录启动服务和 App Bundle 能力已实现，真实启用及重新登录待用户确认后验收。
 - [x] 实现目标应用恢复和自动粘贴。
 - [~] 实现辅助功能权限引导、状态检测和受限模式：设置页状态、用户触发的授权/系统设置入口和“已复制，请手动粘贴”降级已完成；当前签名身份为已授权，撤销后同一身份重新授权待实测。
-- [x] 提供供设备与同步密钥复用的 Keychain 密钥服务，临时密钥新增、读取和删除已通过原生验证，凭据不写入明文配置。
+- [x] 提供供设备与同步密钥复用的 Keychain 密钥服务；真实 Keychain 已覆盖主密钥及完整 WebDAV 凭据的新增、读取、覆盖、删除、不存在和拒绝状态，普通文件与 SQLite 不保存明文凭据。
+- [x] 实现 macOS 固定 bootstrap、legacy 数据根识别、APFS/文件身份/路径关系/私有权限/云盘边界和身份校验进程控制，并复用共享存储迁移状态机。
+- [x] macOS 组合根接入真实 `SyncService`、历史策略与存储管理；共享设置页四个区域可见，owner 存在时使用 modal，迁移准备、失败恢复和 ViewModel 释放顺序已由 Headless 测试覆盖。
 
 当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。轮询 tick 只读取 `changeCount` 并向有界 Channel 写入轻量事件；正文、SQLite 和网络不进入轮询路径。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。来源应用无法由 NSPasteboard 可靠确定时固定返回 `Unknown`，不做猜测。完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 
 #### 2.2 跨平台一致性
 
-- [ ] 验证 Windows 与 macOS 格式映射和同步互操作。
+- [~] 验证 Windows 与 macOS 格式映射和同步互操作：共享固定算法、恢复材料与有状态双设备收敛矩阵已在 macOS 运行；正式 Windows 与 macOS 应用双机互操作尚未执行。
 - [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复和单显示器窗口重开已实测；多 Space、多显示器、Retina 和全屏应用待验收。
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
 - [ ] 验证 Intel 与 Apple Silicon。
-- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：`osx-arm64` 本机 0 个 AOT/裁剪警告并实际启动，`osx-x64` 待 Intel 或对应 Runner 验证。
+- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：`osx-arm64` 本机发布同时包含主程序和独立迁移器，架构、无 CoreCLR、无 helper 托管配置及退出码 4 均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
 
 #### 2.3 发布
 
-- [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、Hardened Runtime、DMG/PKG 脚本均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
-- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、签名和公证步骤已配置，远程 Runner 尚未实际执行。
+- [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、嵌套迁移器先签名、Hardened Runtime、DMG/PKG/校验和脚本均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，`spctl` 按预期拒绝，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
+- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、主程序与迁移器 Mach-O/架构/退出码、签名层级和公证步骤已配置，远程 Runner 尚未实际执行。
 - [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：Native AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB，排除按事件线性泄漏；完整桌面纯后台为 41.4 MiB，首次开窗后关窗约 94-96 MiB，100 轮快速窗口无单调增长，但历史三次 3 秒样本和 12 分 23 秒样本仍曾超过 100 MB，尚未达到 `<= 80 MB` 目标。8 小时、睡眠唤醒、多 Space、多显示器、Retina 和全屏待验证。
 - [x] 更新平台支持矩阵和已知限制。
 

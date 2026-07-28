@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-28
-> 当前阶段：Windows 安全存储迁移和端到端加密 WebDAV 同步已完成本机实现、自动测试及 `win-x64` AOT；真实服务与跨平台矩阵继续收口
+> 当前阶段：macOS 安全存储迁移与加密同步对等实现、自动测试及本机 `osx-arm64` AOT 已落地；Intel、正式发布、真实服务与跨系统设备矩阵继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -17,7 +17,7 @@
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 进行中 | Windows 安全存储迁移、加密同步引擎、SQLite v7、同步历史策略和真实 UI 已落地；真实 WebDAV 兼容矩阵、设备撤销/密钥轮换、长期资源验证及正式发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 持久历史/检索、生命周期、Keychain 与本地 DMG/PKG 已验证；内存、8 小时、Intel、Developer ID、公证和环境矩阵待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 持久历史/检索、存储迁移、完整 Keychain 同步、生命周期及含 Native AOT 迁移器的本地 DMG/PKG 已验证；内存、8 小时、Intel、Developer ID、公证和真实设备矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | Windows 11 x64 共 244 项：236 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 63/63、WebDAV 29/29、Windows 57/57、Desktop Headless 42/42 |
-| macOS 历史全量测试 | 通过 | macOS arm64 共 159 项：144 项通过、15 项 Windows 原生测试按平台跳过、0 项失败；Application 9/9、Infrastructure 26/26、macOS 36/36、Desktop Headless 29/29 |
-| `osx-arm64` Native AOT | 通过 | 当前 App Bundle arm64 Mach-O 为 26,606,368 字节；0 个 AOT/裁剪警告并已实际启动；正式签名/公证未完成 |
+| 全量自动测试 | 通过 | macOS arm64 共 268 项：248 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 69/69、WebDAV 29/29、macOS 48/48、Desktop Headless 48/48 |
+| macOS 存储与同步测试 | 通过 | macOS 原生项目 48/48 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实 Keychain 完整工作流、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
+| `osx-arm64` Native AOT | 本机通过 | 主程序 33,828,880 字节，迁移器 8,356,952 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -111,6 +111,10 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 
 稳定 Bundle ID 为 `com.wuliangtdi.snapboard`，标准 `.icns` 和浅色/深色 Template 状态图标已接入。最终 `osx-arm64` DMG 校验通过，挂载后的 App Bundle 实际后台启动并显示状态项，PKG 可展开；应用使用 Hardened Runtime ad-hoc 签名，PKG 未签名。当前钥匙串没有 Developer ID Application/Installer 身份，也未配置公证凭据，因此正式签名、Gatekeeper 接受和公证均未执行，不能标记完成。
 
+macOS 现已在 Avalonia 和 SQLite 初始化前解析固定 bootstrap 与活动数据根，保留 `~/Library/Application Support/SnapBoard` legacy 数据，locator 损坏恢复与缺失自定义根均明确失败。平台存储服务使用原生文件身份、实际卷大小写语义、卷 UUID、POSIX mode 与扩展 ACL 检查 APFS 目录，保守拒绝网络/移动/只读/未知卷和 iCloud/File Provider 根；进程启动、等待与停止使用 PID、启动时间、可执行路径和 UID 的完整身份。共享组合根在 macOS 注册真实同步、历史设置和存储迁移服务，设置窗口的存储、历史、同步与辅助功能区域全部可见并遵循 owner modal 及失败恢复顺序。
+
+Keychain 原生测试已覆盖 32 字节空间主密钥和包含 endpoint/root/user/password/certificate pin/loopback 的凭据包新增、读取、覆盖、删除、不存在与拒绝状态。已有空间重新配置改为先临时恢复并恒定时间比较主密钥，再用候选凭据验证远端，成功后才覆盖安全存储；错误恢复码、有效但不匹配的恢复材料及证书失败均逐字节保持既有主密钥、凭据和 SQLite 配置，后续同步仍可用。
+
 ### 4.9 Windows 安全存储迁移与加密同步
 
 Windows 启动阶段现由 bootstrap 定位器解析活动数据根，SQLite 与 Blob 只使用当前解析结果。迁移由独立 Native AOT 迁移器执行，主程序先暂停并排空同步与剪贴板持久化，再建立数据库屏障；清单、卷身份、重解析点、空间、哈希、Schema、`quick_check`、启动确认和回滚均有边界检查。目标目录分别在选择时、用户确认后的 `PrepareMigrationAsync`、主程序退出后的迁移器复制前检查为空；最终准备校验失败时不生成迁移状态、不启动迁移器、不关闭主程序，并显示模态错误窗口，迁移器侧竞态兜底会保留后来出现的文件、回滚并重启原应用。Desktop 发布通过 `$(MSBuildProjectDirectory)` 与 `$(IntermediateOutputPath)` 计算迁移器中间目录，因此没有写死本机盘符或用户名。
@@ -121,8 +125,8 @@ WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源�
 
 ## 5. 下一执行顺序
 
-1. 使用 Nextcloud、Synology 和标准 WebDAV 实例执行认证、路径、ETag、限流、重试、损坏响应及双设备离线收敛矩阵。
-2. 实现 WebDAV 服务器迁移向导：协调暂停设备、完整镜像并验证原空间密文对象，保留空间/设备身份、Checkpoint 和 Outbox；连接凭据由每台设备分别原子切换。
+1. 以独立共享功能分支和 ADR 实现 WebDAV 服务器迁移向导：协调暂停设备、完整镜像并验证原空间密文对象，保留空间/设备身份、Checkpoint 和 Outbox；连接凭据由每台设备分别暂存并原子切换。
+2. 使用 Nextcloud、Synology 和标准 WebDAV 实例执行认证、路径、ETag、限流、重试、损坏响应及双设备离线收敛矩阵。
 3. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，以及系统唤醒和网络恢复触发。
 4. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力、三次资源采样和 8 小时长稳。
 5. 在对应硬件补齐 Windows ARM64、macOS 同协议/Keychain、macOS Intel 和 Linux 验证；不得从当前 Windows x64 结果外推。
@@ -397,7 +401,36 @@ WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源�
   - Windows ARM64、macOS 同协议/Keychain 固定向量、macOS Intel、Linux 和 GitHub Runner 未由 Windows x64 本机结果推断通过。
 ```
 
-## 15. 更新规则
+## 15. 2026-07-28 执行记录：macOS 安全存储迁移与加密同步对等
+
+```text
+日期：2026-07-28
+阶段/任务：阶段 A，macOS 存储迁移、Keychain 同步接线、Native AOT helper 与打包对等
+状态：[x] Apple Silicon 本机实现与自动验证完成；[~] Intel、正式签名/公证、真实跨系统双机和真实 WebDAV 服务未完成
+Commit SHA: 03bd473a69863892ef2c39dcf4feed9ce812b3d2（feat(macos): add storage and sync parity）
+macOS 版本与构建号: macOS 26.2 (25C56)
+Mac 型号/CPU: Mac mini (Mac16,10)，Apple M4 10 核，16 GB
+.NET SDK: 10.0.302
+RID: osx-arm64
+Release build 警告/错误: 0/0
+全量测试总数/通过/跳过/失败: 268/248/20/0；20 项均为 Windows 原生测试
+macOS 平台测试: 48/48，0 跳过
+Desktop Headless 测试: 48/48，0 跳过
+主程序大小与 SHA-256: 33,828,880；F9E038E0C3269C09ECF13EE1C9185D591208734FC6B3336A8540ECFDF01F775
+迁移器大小与 SHA-256: 8,356,952；8D70F90B47B808A7702E46526043249DF24B6FDF13BD94CCE1ADE7C562534DCD
+file 输出: 主程序与迁移器均为 Mach-O 64-bit executable arm64；迁移器无参数退出码 4；无 helper DLL/deps/runtimeconfig 和 CoreCLR/hostfxr
+codesign/spctl/notary 结果: helper strict 与 Bundle deep/strict 通过；adhoc + Hardened Runtime；spctl rejected（预期，非 Developer ID）；PKG unsigned；notary skipped；DMG checksum valid
+legacy 升级结果: 自动测试通过，既有 Application Support 数据根优先于新空 data 根，不创建空库遮蔽历史
+成功迁移结果: 共享迁移器自动测试通过，数据库/Blob/恢复材料校验后切换并保留可识别源备份
+最终非空竞态结果: 选择后与主程序退出后两层自动测试通过；后来出现的目标内容保持不变，迁移不开始或回滚
+回滚结果: 缺失/不匹配启动确认自动回滚 locator、隔离目标并恢复源目录
+Windows <-> macOS 同步结果: 同一共享协议/加密实现的有状态双设备矩阵在 macOS 通过；正式 Windows 与 macOS 应用双机未执行，不能视为真实跨系统验收
+macOS <-> macOS 同步结果: 有状态双设备创建/加入、独立凭据、离线双向新增、置顶/标签冲突、Tombstone、保留策略和设置同步通过；两台正式 App 实机未执行
+AOT 告警说明: 0 个 trim/AOT 分析告警；链接时 2 个 module-cache 调试信息告警可追溯到 Microsoft.NETCore.App.Runtime.NativeAOT.osx-arm64 10.0.10 官方 Apple 加密静态库携带的 -gmodules 信息，未 suppression，不影响代码生成或运行时依赖验证
+未完成限制: osx-x64/Intel 匹配硬件或 Runner、Developer ID Application/Installer、notary/staple/Gatekeeper 接受、真实 Windows 双机、真实 Nextcloud/Synology/Apache WebDAV、Retina/大小写敏感 APFS/睡眠唤醒/网络恢复及完整手工迁移流程未执行
+```
+
+## 16. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。
