@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-29
-> 当前阶段：共享 WebDAV 服务商迁移、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测及本机 `osx-arm64` AOT 已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel 与正式发布继续收口
+> 当前阶段：共享 WebDAV 服务商迁移、缺失 Checkpoint 安全恢复、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测及本机 `osx-arm64` AOT 已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel 与正式发布继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | macOS arm64 共 304 项：284 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 92/92、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
+| 全量自动测试 | 通过 | macOS arm64 共 307 项：287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 95/95、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
 | macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/POSIX mode/真实扩展 ACL/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
-| `osx-arm64` Native AOT | 本机通过 | 扩展 ACL 修复后主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
+| `osx-arm64` Native AOT | 本机通过 | Checkpoint 恢复修复后主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -123,13 +123,13 @@ Windows 启动阶段现由 bootstrap 定位器解析活动数据根，SQLite 与
 
 SQLite Schema v7 新增同步空间、Outbox、Inbox、逐设备 Checkpoint、Blob staging 和逐设置键逻辑版本。历史新增、置顶、删除及 `history.capture`/`history.retention`/`sync.pollInterval` 设置与 Outbox 在同一写事务提交；`SyncService` 使用 single-flight、有界批次、动态轮询和暂停排空，远端只写加密元数据、不可变事件及 keyed Blob。Windows Credential Manager 分离保存内容主密钥与版本化、长度受限的完整 WebDAV 连接配置；SQLite 表结构不包含 URL、用户名或密码字段，恢复材料落盘前加密。设置页接入创建/加入、连接验证、证书指纹、恢复材料、记录类型、默认关闭的自动清理、后台检查频率和真实同步状态，密码及恢复码提交后清空。
 
-WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源同根重定向、条件写入、ETag、取消、有限重试、响应上限和严格 PROPFIND。精确 SHA-256 指纹允许自签名链错误，但证书缺失或主机名不匹配仍拒绝；DTD、外部实体、跨源 href、编码分隔符和路径逃逸也会被拒绝。自动化假远端已验证双设备创建/加入、加密事件与 Blob、重复收发、墓碑、序号缺口、迁移暂停排空及服务商迁移故障恢复；Apache 2.4.62 标准 WebDAV 已完成真实双设备迁移。Nextcloud、Synology、设备撤销/密钥轮换、远端回收及正式跨系统 App 矩阵仍待验证。
+WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源同根重定向、条件写入、ETag、取消、有限重试、响应上限和严格 PROPFIND。精确 SHA-256 指纹允许自签名链错误，但证书缺失或主机名不匹配仍拒绝；DTD、外部实体、跨源 href、编码分隔符和路径逃逸也会被拒绝。自动化假远端已验证双设备创建/加入、8 MiB 加密 Blob、重复收发、墓碑、序号缺口、缺失 Checkpoint 安全重建、迁移暂停排空及服务商迁移故障恢复；Apache 2.4.62 标准 WebDAV 已完成真实双设备迁移。Nextcloud、Synology、设备撤销/密钥轮换、远端回收及正式跨系统 App 矩阵仍待验证。
 
 ### 4.10 WebDAV 服务商迁移
 
 共享 Application 状态机实现 Draft 到 Completed 及全局 RollingBack/RolledBack，普通同步在上传前扫描旧端加密 intent；离线设备发现计划后先持久化阻断状态，再要求本机目标凭据。旧端一次性条件创建的 `terminal.enc` 在 `Completed` 与 `Rollback` 并发时裁决唯一赢家，目标端只镜像同一决定，陈旧参与设备不得生成相反终态。协调者只复制 metadata、不可变事件和 keyed Blob 的原始密文字节，同时在本机短暂解密副本验证认证标签、路径 descriptor、逐设备连续序号、ready 水位、Checkpoint 与 Blob 内容地址；目标端逐对象比较规范身份、长度和 SHA-256。相同对象幂等跳过，同路径不同密文阻断，旧端默认保留。
 
-SQLite v8 只保存计划 ID、epoch、远端指纹、阶段、水位和进度，不保存 endpoint、root、用户名、密码或证书。每台设备在 Credential Manager/Keychain 中使用独立 source/target 暂存槽；提交前校验 active 仍等于 source，写入 target 后读回验证，失败可恢复 source。目标密码提交后从 ViewModel 清空，不进入迁移 DTO、SQLite 或远端控制标记。共享设置页显示当前服务、设备就绪/离线/提交状态、对象/字节进度和可恢复错误，继续及回滚均使用 owner modal。
+SQLite v8 只保存计划 ID、epoch、远端指纹、阶段、水位和进度，不保存 endpoint、root、用户名、密码或证书。每台设备在 Credential Manager/Keychain 中使用独立 source/target 暂存槽；提交前校验 active 仍等于 source，写入 target 后读回验证，失败可恢复 source。目标密码提交后从 ViewModel 清空，不进入迁移 DTO、SQLite 或远端控制标记。缺失 Checkpoint 行只从序号自 1 连续的 Inbox 原子重建最后序号与事件 ID，存在缺口时明确失败；迁移 ready 水位仍对照远端最大序号和事件 ID。共享设置页显示当前服务、设备就绪/离线/提交状态、对象/字节进度和可恢复错误，继续及回滚均使用 owner modal。
 
 ## 5. 下一执行顺序
 
@@ -572,7 +572,38 @@ osx-arm64 开发包：
   - osx-x64/Intel、正式 Windows <-> macOS App 双机、两台正式 macOS App、Nextcloud/Synology、真实 TLS/配额、Developer ID/公证、物理睡眠与网络恢复、Retina/多显示器、8 小时长稳和既有内存目标仍未完成。
 ```
 
-## 20. 更新规则
+## 20. 2026-07-29 执行记录：Checkpoint 恢复与大 Blob 迁移收口
+
+```text
+日期：2026-07-29
+阶段/任务：按原始 macOS 对等清单补齐服务商迁移的大 Blob 与缺失 Checkpoint 恢复证据
+状态：[x] 安全恢复、8 MiB Blob、真实 Apache 全解及当前 osx-arm64 开发包通过；[~] 外部设备与正式发布门槛保持未完成
+开发基线：开发前 main 与 origin/main 均为 f6c1ffaa88f33d2b452f3707729f42388f6bb5f6
+Commit SHA: ec3eb59（fix(sync): rebuild missing checkpoints safely）
+发现与修复：
+  - Checkpoint 行丢失后，读取端会回到序号 0；既有 Inbox 仍含已应用事件，直接重放会撞上唯一约束并被误报为本地持久化失败。
+  - EnsureRemoteDevice 的同一 SQLite 写事务现只在 Checkpoint 缺失时统计 Inbox；记录必须从序号 1 开始且 count/min/max 证明无间隙，随后以最后一条已验证事件的序号和 EventId 重建。存在缺口或非法 EventId 时事务回滚，不推断、不跳过事件。
+  - 重建后的 ETag 保守置空；普通同步从已应用序号继续，服务商迁移 ready 水位继续用远端最大序号和 EventId 复核。
+  - 服务商迁移主路径载荷从 70 KiB 提升到 8 MiB，并新增两设备在冻结前丢失本地 Checkpoint 后重建、收敛、完成迁移及源/目标主密文哈希相等的端到端覆盖。
+自动验证：
+  - 相关测试 27 项：26 项通过、1 项真实 WebDAV 环境跳过；Release build 0 警告、0 错误；dotnet format 检查 342 个文件、0 个改动。
+  - 未注入外部服务时全量 307 项：286 项通过、20 项 Windows 原生测试和 1 项真实 WebDAV 测试跳过、0 项失败。
+  - 启用 Apache 2.4.62 双 loopback 端点和双账号后，全量 307 项：287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Infrastructure 95/95。
+  - 临时 Apache、账号、锁文件和远端数据已删除，18731/18732 无监听。
+osx-arm64 开发包：
+  - 输出目录 artifacts/macos-checkpoint-final-20260729 受 .gitignore 排除，不进入仓库。
+  - 主程序 34,573,888 字节，SHA-256 433AAB88C87F9B76AD2EDC9D367C7CCE6E73584DBDF5E623DC4BBEB1F75ED076；迁移器 8,326,528 字节，SHA-256 F7E9474ABB428810252F18F5144CEB452CA18B7141951F7F10AB7038122DBA8E。
+  - 两者均为 arm64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4，codesign strict/deep 通过。
+  - DMG 30,290,820 字节，SHA-256 0E96CCC36974FB4586E5BDBED43F532315C6550D8619A07252BE71E681B676BD，CRC 有效，根目录仅含 SnapBoard.app 与 Applications -> /Applications。
+  - PKG 27,020,455 字节，SHA-256 EE2A601D4721BAFFA74DC2348BD4EE9F5CCF4307ACB78A2DFBAAF4BEE33EAE9C；17 项 payload、com.wuliangtdi.snapboard、/Applications 安装位置和 root 授权要求均复核通过。
+  - 私有 /private/tmp bootstrap 下，AOT App 启动、第二实例 --exit 和主实例退出均返回 0；挂载、展开和 bootstrap 临时目录已删除。
+  - 0 个 trim/AOT 分析告警；2 个已解释 clang module-cache 调试信息告警仍来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，未 suppression。
+限制：
+  - App 仍为 ad-hoc Hardened Runtime 签名，PKG 未签名，notary skipped；Developer ID Application/Installer、notary/staple 与 Gatekeeper 接受未执行。
+  - osx-x64/Intel、正式 Windows <-> macOS App 双机、两台正式 macOS App、Nextcloud/Synology、真实 TLS/配额、物理睡眠与网络恢复、Retina/多显示器、8 小时长稳和既有内存目标仍未完成。
+```
+
+## 21. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

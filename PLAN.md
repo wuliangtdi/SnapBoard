@@ -621,12 +621,12 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 - [x] 实现 URL、用户、应用密码、证书指纹和连接验证设置。
 - [x] 实现记录类型与历史保留设置；配置作为加密事件逐键 LWW 同步，默认全部记录且不自动清理。
 - [x] 实现 WebDAV 后台检查频率设置；未设置时默认 5 分钟，修改后运行时生效并作为加密设置跨设备同步。
-- [x] 实现更换 WebDAV 服务器的迁移向导：共享状态机暂停多设备写入，完整镜像并逐项验证原空间密文对象，保留空间/设备身份与本地 Checkpoint，并由每台设备通过系统安全存储原子更新本机凭据。
+- [x] 实现更换 WebDAV 服务器的迁移向导：共享状态机暂停多设备写入，完整镜像并逐项验证原空间密文对象，保留空间/设备身份与本地 Checkpoint，并由每台设备通过系统安全存储原子更新本机凭据；8 MiB Blob 已覆盖，缺失 Checkpoint 仅从无间隙 Inbox 原子重建，Inbox 缺口会明确阻断。
 - [~] 已覆盖重试、乱序、重复、序号缺口、双设备离线收敛、Tombstone 及服务商迁移的镜像中断后进程级重建续传、commit 中断、部分设备提交、旧 epoch 重放、回滚和故障分类；HTTP 507 配额映射与不可信 ETag 降级已有协议测试，正式跨系统 App 离线矩阵待完成。
 - [~] Apache 2.4.62 标准 WebDAV 双端点、双账号迁移已通过；Nextcloud 与 Synology 兼容性矩阵待完成。
 - [x] 默认只同步文本、HTML、RTF 和受限大小图片；文件列表仅保留无本地路径的引用占位，不上传文件本体。
 
-Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同步空间，敏感输入在提交后清空，主窗口只展示真实状态并支持手动同步。SQLite v8 在 v7 同步表基础上增加不含 endpoint、用户名或密码的迁移计划与设备状态；版本化加密 intent、ready、freeze、commit、rollback 和完成标记使用条件创建，旧端 `terminal.enc` 通过单一不可变条件写入仲裁 Completed/Rollback 并发终态，源/目标凭据在 Credential Manager/Keychain 的独立计划槽中暂存、读回验证、提交或回滚。`history.capture`、`history.retention` 与 `sync.pollInterval` 继续使用同一加密事件流和逐键逻辑版本同步。共享设置页展示当前端点、设备状态、对象/字节进度和可恢复错误，继续与回滚均使用 owner modal。WebDAV 层限制 HTTPS、同源重定向、证书固定、响应大小和 XML 深度/数量，拒绝 DTD、编码路径逃逸及跨源 href；精确证书指纹只豁免自签名链错误，主机名不匹配仍拒绝。除有状态假远端故障矩阵外，本机 Apache 2.4.62 两个独立 WebDAV 端点与两个不同账号已完成真实迁移、逐密文字节校验及迁移后仅写新端；这仍不能替代 Nextcloud、Synology 或正式 Windows <-> macOS App 双机矩阵。
+Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同步空间，敏感输入在提交后清空，主窗口只展示真实状态并支持手动同步。SQLite v8 在 v7 同步表基础上增加不含 endpoint、用户名或密码的迁移计划与设备状态；版本化加密 intent、ready、freeze、commit、rollback 和完成标记使用条件创建，旧端 `terminal.enc` 通过单一不可变条件写入仲裁 Completed/Rollback 并发终态，源/目标凭据在 Credential Manager/Keychain 的独立计划槽中暂存、读回验证、提交或回滚。`history.capture`、`history.retention` 与 `sync.pollInterval` 继续使用同一加密事件流和逐键逻辑版本同步。逐设备 Checkpoint 行异常丢失时，SQLite 只从序号自 1 连续的已验证 Inbox 重建最后序号与事件 ID；存在缺口时事务回滚，不跳过未证明的远端事件。共享设置页展示当前端点、设备状态、对象/字节进度和可恢复错误，继续与回滚均使用 owner modal。WebDAV 层限制 HTTPS、同源重定向、证书固定、响应大小和 XML 深度/数量，拒绝 DTD、编码路径逃逸及跨源 href；精确证书指纹只豁免自签名链错误，主机名不匹配仍拒绝。除有状态假远端故障矩阵外，本机 Apache 2.4.62 两个独立 WebDAV 端点与两个不同账号已完成真实迁移、逐密文字节校验及迁移后仅写新端；这仍不能替代 Nextcloud、Synology 或正式 Windows <-> macOS App 双机矩阵。
 
 退出条件：两台 Windows 设备通过 WebDAV 离线后重连能一致收敛，远端只有密文，并且并发上传不会覆盖其他设备事件。
 
@@ -665,7 +665,7 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写，macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
 - [ ] 验证 Intel 与 Apple Silicon。
-- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：包含系统恢复监听与扩展 ACL 修复的新 `osx-arm64` 主程序、独立迁移器均为 arm64 Mach-O，架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储后台启动/第二实例退出均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
+- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：包含系统恢复监听、扩展 ACL 与 Checkpoint 恢复修复的新 `osx-arm64` 主程序、独立迁移器均为 arm64 Mach-O，架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储后台启动/第二实例退出均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
 
 #### 2.3 发布
 
