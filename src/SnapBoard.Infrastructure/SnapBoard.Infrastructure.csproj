@@ -3,6 +3,7 @@
   <ItemGroup>
     <!-- Skia 不解码 TIFF；使用带像素上限的纯托管解码器保留原图并生成缩略图。 -->
     <PackageReference Include="BitMiracle.LibTiff.NET" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <!-- 2.1.12 carries SQLite >= 3.50.2 and replaces the vulnerable 2.1.11 transitively requested by Microsoft.Data.Sqlite 10.0.10. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
@@ -13,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SnapBoard.Application\SnapBoard.Application.csproj" />
     <ProjectReference Include="..\SnapBoard.Domain\SnapBoard.Domain.csproj" />
+    <ProjectReference Include="..\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
     <ProjectReference Include="..\SnapBoard.Sync.Contracts\SnapBoard.Sync.Contracts.csproj" />
   </ItemGroup>
 

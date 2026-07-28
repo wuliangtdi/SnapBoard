@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
 using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Platform.Abstractions.Clipboard;
 
@@ -23,9 +24,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 {
     private const int PageSize = 50;
     private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan SourceIconRetryDelay = TimeSpan.FromMilliseconds(50);
     private readonly List<ClipboardHistoryItemViewModel> _designItems;
     private readonly IClipboardHistoryService? _historyService;
+    private readonly IHistorySettingsService? _historySettingsService;
     private readonly IClipboardSourceApplicationMetadataResolver? _sourceMetadataResolver;
+    private readonly ISyncService? _syncService;
     private readonly object _historyReloadGate = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
@@ -71,6 +75,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _historyService.HistoryChanged += OnHistoryChanged;
     }
 
+    public MainViewModel(
+        IClipboardHistoryService historyService,
+        IClipboardSourceApplicationMetadataResolver sourceMetadataResolver,
+        ISyncService syncService,
+        IHistorySettingsService? historySettingsService = null)
+    {
+        ArgumentNullException.ThrowIfNull(historyService);
+        ArgumentNullException.ThrowIfNull(sourceMetadataResolver);
+        ArgumentNullException.ThrowIfNull(syncService);
+        _uiContext = SynchronizationContext.Current;
+        _historyService = historyService;
+        _sourceMetadataResolver = sourceMetadataResolver;
+        _syncService = syncService;
+        _historySettingsService = historySettingsService;
+        _designItems = [];
+        _historyService.HistoryChanged += OnHistoryChanged;
+        _syncService.StatusChanged += OnSyncStatusChanged;
+        ApplySyncStatus(_syncService.Status);
+    }
+
     [ObservableProperty]
     public partial string SearchText { get; set; } = string.Empty;
 
@@ -84,7 +108,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public partial bool IsNewestFirst { get; set; } = true;
 
     [ObservableProperty]
-    public partial string LastSyncText { get; set; } = "已同步";
+    public partial string LastSyncText { get; set; } = "尚未配置";
 
     [ObservableProperty]
     public partial string StatusMessage { get; set; } = "就绪";
@@ -238,12 +262,22 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    [RelayCommand]
-    private void Sync()
+    [RelayCommand(CanExecute = nameof(CanSync))]
+    private async Task SyncAsync()
     {
-        LastSyncText = "刚刚同步";
-        StatusMessage = "同步完成";
+        if (_syncService is null)
+        {
+            return;
+        }
+
+        await _syncService.SynchronizeNowAsync(_lifetime.Token);
     }
+
+    private bool CanSync() => _syncService is not null &&
+        _syncService.Status.SpaceId is not null &&
+        _syncService.Status.State is SyncServiceState.Idle or SyncServiceState.Error or
+            SyncServiceState.AuthenticationRequired or SyncServiceState.PermissionDenied or
+            SyncServiceState.KeyUnavailable;
 
     [RelayCommand]
     private void ToggleCompactMode()
@@ -380,12 +414,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public void Start()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (_historyService is null || Interlocked.Exchange(ref _started, 1) != 0)
+        if (Interlocked.Exchange(ref _started, 1) != 0)
         {
             return;
         }
 
-        SetPendingOperation(InitializeHistoryAsync());
+        if (_historyService is not null)
+        {
+            SetPendingOperation(InitializeHistoryAsync());
+        }
     }
 
     public async ValueTask<ClipboardSelectedWriteRequest?> CreateSelectedWriteRequestAsync(
@@ -518,14 +555,22 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bool resolved = false;
         try
         {
+            ClipboardSourceApplicationIdentity identity = new(
+                item.SourceApplication,
+                item.SourceExecutablePath,
+                item.SourceApplicationUserModelId,
+                item.SourcePackageFamilyName);
             ClipboardSourceApplicationMetadata metadata = await _sourceMetadataResolver
-                .ResolveAsync(
-                    new ClipboardSourceApplicationIdentity(
-                        item.SourceApplication,
-                        item.SourceExecutablePath,
-                        item.SourceApplicationUserModelId,
-                        item.SourcePackageFamilyName),
+                .ResolveAsync(identity, _lifetime.Token);
+            if (metadata.Icon is null && HasResolvableSourceIdentity(identity))
+            {
+                // 只进行一次短延迟重试，覆盖 Shell 图标缓存的瞬态失败，同时避免坏路径循环读取。
+                await Task.Delay(SourceIconRetryDelay, _lifetime.Token);
+                metadata = await _sourceMetadataResolver.ResolveAsync(
+                    identity,
                     _lifetime.Token);
+            }
+
             if (metadata.Icon is { } icon)
             {
                 iconBitmap = CreateSourceIconBitmap(icon);
@@ -555,6 +600,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             }
         }
     }
+
+    private static bool HasResolvableSourceIdentity(ClipboardSourceApplicationIdentity identity) =>
+        !string.IsNullOrWhiteSpace(identity.ExecutablePath) ||
+        !string.IsNullOrWhiteSpace(identity.ApplicationUserModelId);
 
     [RelayCommand]
     private async Task LoadMoreAsync()
@@ -607,6 +656,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             _historyService.HistoryChanged -= OnHistoryChanged;
         }
 
+        if (_syncService is not null)
+        {
+            _syncService.StatusChanged -= OnSyncStatusChanged;
+        }
+
         Timer? historyReloadTimer;
         lock (_historyReloadGate)
         {
@@ -637,12 +691,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             ClipboardHistoryInitializationResult result = await _historyService!
                 .InitializeAsync(_lifetime.Token);
+            if (_historySettingsService is not null)
+            {
+                await _historySettingsService.InitializeAsync(_lifetime.Token);
+            }
+
             if (result.RecoveredCorruptDatabase)
             {
                 StatusMessage = "历史数据库已诊断恢复，原文件已备份";
             }
 
             ScheduleReload(debounce: false);
+            try
+            {
+                _syncService?.Start();
+            }
+            catch (InvalidOperationException)
+            {
+                StatusMessage = "同步后台服务启动失败";
+            }
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
@@ -817,6 +884,28 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 Timeout.InfiniteTimeSpan);
             _historyReloadTimer.Change(SearchDebounce, Timeout.InfiniteTimeSpan);
         }
+    }
+
+    private void OnSyncStatusChanged(object? sender, SyncStatusSnapshot status) =>
+        PostToUi(() => ApplySyncStatus(status));
+
+    private void ApplySyncStatus(SyncStatusSnapshot status)
+    {
+        LastSyncText = status.State switch
+        {
+            SyncServiceState.NotConfigured => "尚未配置",
+            SyncServiceState.Disabled => "同步已关闭",
+            SyncServiceState.Synchronizing => "正在同步",
+            SyncServiceState.Paused => "同步已暂停",
+            SyncServiceState.AuthenticationRequired => "需要登录",
+            SyncServiceState.PermissionDenied => "权限不足",
+            SyncServiceState.KeyUnavailable => "密钥不可用",
+            SyncServiceState.Error => "同步失败",
+            _ when status.LastSuccessfulSync is not null =>
+                $"已同步 {status.LastSuccessfulSync.Value.ToLocalTime():HH:mm}",
+            _ => "等待首次同步",
+        };
+        SyncCommand.NotifyCanExecuteChanged();
     }
 
     private void PostCoalescedHistoryReload()

@@ -1,5 +1,6 @@
 using Material.Icons;
 using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Platform.Abstractions.Clipboard;
@@ -122,7 +123,7 @@ public sealed class RuntimeMainViewModelTests
     }
 
     [Fact]
-    public async Task RuntimeViewModelResolvesSourceApplicationMetadataOnce()
+    public async Task RuntimeViewModelRetriesMissingSourceIconOnce()
     {
         const string executablePath = @"C:\Program Files\Tencent\Weixin\Weixin.exe";
         const string applicationUserModelId = "Tencent.Weixin_test!App";
@@ -150,7 +151,7 @@ public sealed class RuntimeMainViewModelTests
         Assert.Equal("微信", item.SourceApplication);
         Assert.Equal(executablePath, item.SourceExecutablePath);
         Assert.True(item.HasSourceIconFallback);
-        Assert.Equal(1, resolver.ResolveCount);
+        Assert.Equal(2, resolver.ResolveCount);
         Assert.Equal("test-app", resolver.ProcessName);
         Assert.Equal(executablePath, resolver.ExecutablePath);
         Assert.Equal(applicationUserModelId, resolver.ApplicationUserModelId);
@@ -208,6 +209,41 @@ public sealed class RuntimeMainViewModelTests
 
         Assert.Equal(2, service.SearchCount);
         Assert.Equal("coalesced", Assert.Single(viewModel.VisibleItems).Title);
+    }
+
+    [Fact]
+    public async Task SyncStartsAfterHistoryInitializationAndManualCommandUsesService()
+    {
+        TaskCompletionSource releaseInitialization = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        FakeHistoryService history = new()
+        {
+            InitializeHandler = async cancellationToken =>
+            {
+                await releaseInitialization.Task.WaitAsync(cancellationToken);
+                return new ClipboardHistoryInitializationResult(false);
+            },
+            SearchHandler = (_, _) => ValueTask.FromResult(CreatePage("sync-ready")),
+        };
+        FakeSyncService sync = new(new SyncStatusSnapshot(
+            SyncServiceState.Idle,
+            Guid.NewGuid(),
+            DateTimeOffset.Now));
+        using MainViewModel viewModel = new(
+            history,
+            new FakeSourceApplicationMetadataResolver(),
+            sync);
+
+        viewModel.Start();
+        Assert.Equal(0, sync.StartCount);
+        Assert.True(viewModel.SyncCommand.CanExecute(null));
+        releaseInitialization.SetResult();
+        await viewModel.WaitForIdleAsync();
+
+        Assert.Equal(1, sync.StartCount);
+        await viewModel.SyncCommand.ExecuteAsync(null);
+        Assert.Equal(1, sync.ManualSyncCount);
+        Assert.StartsWith("已同步 ", viewModel.LastSyncText, StringComparison.Ordinal);
     }
 
     private static async ValueTask<ClipboardHistoryPage> WaitForOldAsync(
@@ -281,13 +317,18 @@ public sealed class RuntimeMainViewModelTests
 
         public ClipboardHistoryContent? Content { get; init; }
 
+        public Func<CancellationToken, ValueTask<ClipboardHistoryInitializationResult>>?
+            InitializeHandler
+        { get; init; }
+
         public int SearchCount { get; private set; }
 
         public int ContentReadCount { get; private set; }
 
         public ValueTask<ClipboardHistoryInitializationResult> InitializeAsync(
-            CancellationToken cancellationToken) => ValueTask.FromResult(
-                new ClipboardHistoryInitializationResult(false));
+            CancellationToken cancellationToken) => InitializeHandler is null
+                ? ValueTask.FromResult(new ClipboardHistoryInitializationResult(false))
+                : InitializeHandler(cancellationToken);
 
         public ValueTask<ClipboardHistoryPage> SearchAsync(
             ClipboardHistoryQuery query,
@@ -344,5 +385,81 @@ public sealed class RuntimeMainViewModelTests
 
         public void RaiseChanged(ClipboardHistoryChangedEvent change) =>
             HistoryChanged?.Invoke(this, change);
+    }
+
+    private sealed class FakeSyncService : ISyncService
+    {
+        private SyncStatusSnapshot _status;
+
+        public FakeSyncService(SyncStatusSnapshot status)
+        {
+            _status = status;
+        }
+
+        public event EventHandler<SyncStatusSnapshot>? StatusChanged;
+
+        public event EventHandler<SyncPollingSettingsChangedEvent>? PollingSettingsChanged;
+
+        public SyncStatusSnapshot Status => _status;
+
+        public SyncPollingSettings PollingSettings { get; private set; } =
+            SyncPollingSettings.Default;
+
+        public int StartCount { get; private set; }
+
+        public int ManualSyncCount { get; private set; }
+
+        public void Start() => StartCount++;
+
+        public bool RequestSync() => true;
+
+        public ValueTask InitializePollingSettingsAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask UpdatePollingSettingsAsync(
+            SyncPollingSettings settings,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PollingSettings = settings;
+            PollingSettingsChanged?.Invoke(
+                this,
+                new SyncPollingSettingsChangedEvent(settings));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<SyncStatusSnapshot> SynchronizeNowAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ManualSyncCount++;
+            StatusChanged?.Invoke(this, _status);
+            return ValueTask.FromResult(_status);
+        }
+
+        public ValueTask<SyncSetupResult> CreateSpaceAsync(
+            SyncSetupRequest request,
+            ReadOnlyMemory<byte> password,
+            ReadOnlyMemory<byte> recoveryCode,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask<SyncSetupResult> JoinSpaceAsync(
+            Guid spaceId,
+            int keyVersion,
+            SyncSetupRequest request,
+            ReadOnlyMemory<byte> password,
+            ReadOnlyMemory<byte> recoveryEnvelope,
+            ReadOnlyMemory<byte> recoveryCode,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask PauseAndDrainAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public void ResumeAfterPause()
+        {
+        }
     }
 }

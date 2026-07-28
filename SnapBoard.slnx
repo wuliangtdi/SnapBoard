@@ -8,6 +8,7 @@
     <Project Path="src/SnapBoard.Platform.Linux/SnapBoard.Platform.Linux.csproj" />
     <Project Path="src/SnapBoard.Platform.MacOS/SnapBoard.Platform.MacOS.csproj" />
     <Project Path="src/SnapBoard.Platform.Windows/SnapBoard.Platform.Windows.csproj" />
+    <Project Path="src/SnapBoard.StorageMigrator/SnapBoard.StorageMigrator.csproj" />
     <Project Path="src/SnapBoard.Sync.Contracts/SnapBoard.Sync.Contracts.csproj" />
     <Project Path="src/SnapBoard.Sync.WebDav/SnapBoard.Sync.WebDav.csproj" />
   </Folder>

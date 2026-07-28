@@ -3,10 +3,14 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Storage;
+using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
+using SnapBoard.Platform.Abstractions.Storage;
 using SnapBoard.Platform.Windows.Desktop;
 using AvaloniaApplication = Avalonia.Application;
 
@@ -37,9 +41,14 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
     private readonly ClipboardCaptureCoordinator _captureCoordinator;
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;
     private readonly IGlobalHotKeyService _hotKeyService;
+    private readonly IHistorySettingsService? _historySettingsService;
     private readonly MainViewModel _mainViewModel;
     private readonly IPlatformWindowPlacementService _placementService;
     private readonly WindowsSingleInstanceCoordinator? _singleInstance;
+    private readonly IStorageManagementService? _storageManagementService;
+    private readonly IStorageMigrationBarrier? _storageMigrationBarrier;
+    private readonly IStoragePlatformService? _storagePlatformService;
+    private readonly ISyncService? _syncService;
     private readonly IClipboardWriter _writer;
     private MainWindow? _mainWindow;
     private QuickWindow? _quickWindow;
@@ -63,7 +72,12 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         IAutoStartService autoStartService,
         IPlatformWindowPlacementService placementService,
         ClipboardCaptureCoordinator captureCoordinator,
-        WindowsSingleInstanceCoordinator? singleInstance)
+        WindowsSingleInstanceCoordinator? singleInstance,
+        IStorageManagementService? storageManagementService = null,
+        IStorageMigrationBarrier? storageMigrationBarrier = null,
+        IStoragePlatformService? storagePlatformService = null,
+        ISyncService? syncService = null,
+        IHistorySettingsService? historySettingsService = null)
     {
         _application = application;
         _desktop = desktop;
@@ -75,6 +89,11 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         _placementService = placementService;
         _captureCoordinator = captureCoordinator;
         _singleInstance = singleInstance;
+        _storageManagementService = storageManagementService;
+        _storageMigrationBarrier = storageMigrationBarrier;
+        _storagePlatformService = storagePlatformService;
+        _syncService = syncService;
+        _historySettingsService = historySettingsService;
     }
 
     public void Initialize(DesktopStartupMode startupMode)
@@ -242,7 +261,14 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
         SettingsWindow window = new()
         {
-            DataContext = new SettingsViewModel(_hotKeyService, _autoStartService),
+            DataContext = new SettingsViewModel(
+                _hotKeyService,
+                _autoStartService,
+                storageManagementService: _storageManagementService,
+                storagePlatformService: _storagePlatformService,
+                requestStorageMigration: BeginStorageMigrationAsync,
+                syncService: _syncService,
+                historySettingsService: _historySettingsService),
         };
         window.Closed += OnSettingsWindowClosed;
         _settingsWindow = window;
@@ -253,11 +279,93 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
         if (_mainWindow is { IsVisible: true } owner)
         {
-            window.Show(owner);
+            _ = window.ShowDialog(owner);
         }
         else
         {
             window.Show();
+        }
+    }
+
+    private async ValueTask BeginStorageMigrationAsync(
+        string targetDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (_storageManagementService is null ||
+            _storageMigrationBarrier is null ||
+            _storagePlatformService is null)
+        {
+            throw new InvalidOperationException("Storage migration is unavailable.");
+        }
+
+        string mainExecutablePath = Environment.ProcessPath ??
+            throw new InvalidOperationException("The main executable path is unavailable.");
+        string migratorExecutablePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "SnapBoard.StorageMigrator.exe");
+        StorageProcessIdentity mainProcess = _storagePlatformService.GetCurrentProcessIdentity();
+        StorageMigrationLaunchPlan plan = await _storageManagementService.PrepareMigrationAsync(
+                targetDirectory,
+                mainProcess,
+                mainExecutablePath,
+                migratorExecutablePath,
+                cancellationToken)
+            .ConfigureAwait(false);
+        StorageProcessIdentity? migratorProcess = null;
+        bool syncPauseRequested = false;
+        try
+        {
+            migratorProcess = await _storagePlatformService.StartProcessAsync(
+                    plan.MigratorExecutablePath,
+                    plan.Arguments,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (_syncService is not null)
+            {
+                syncPauseRequested = true;
+                await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            _captureCoordinator.SetPaused(paused: true);
+            await _storageMigrationBarrier.PrepareForMigrationAsync(cancellationToken)
+                .ConfigureAwait(false);
+            PostToUi(ExitApplication);
+        }
+        catch
+        {
+            if (migratorProcess is not null)
+            {
+                try
+                {
+                    await _storagePlatformService.StopProcessAsync(
+                            migratorProcess,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is
+                    InvalidOperationException or UnauthorizedAccessException)
+                {
+                }
+            }
+
+            try
+            {
+                await _storageManagementService.CancelPreparedMigrationAsync(
+                        plan.MigrationId,
+                        "main-preparation-failed",
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _captureCoordinator.SetPaused(paused: false);
+                if (syncPauseRequested)
+                {
+                    _syncService?.ResumeAfterPause();
+                }
+            }
+
+            throw;
         }
     }
 
@@ -518,6 +626,11 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
     {
         if (sender is SettingsWindow window)
         {
+            if (window.DataContext is IDisposable disposableViewModel)
+            {
+                disposableViewModel.Dispose();
+            }
+
             window.DataContext = null;
             window.Closed -= OnSettingsWindowClosed;
         }

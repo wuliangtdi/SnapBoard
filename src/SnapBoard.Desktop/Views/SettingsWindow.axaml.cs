@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Desktop;
 
@@ -58,11 +61,147 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void OnWindowActivated(object? sender, EventArgs e)
+    private async void OnWindowActivated(object? sender, EventArgs e)
     {
         if (DataContext is SettingsViewModel viewModel)
         {
             viewModel.RefreshAccessibilityPermission();
+            await viewModel.InitializeHistorySettingsAsync();
+            await viewModel.InitializeStorageAsync();
+            await viewModel.InitializeSyncAsync();
+        }
+    }
+
+    private async void OnCopySyncSpaceIdClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel ||
+            string.IsNullOrWhiteSpace(viewModel.SyncActiveSpaceId) ||
+            TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+        {
+            return;
+        }
+
+        await clipboard.SetTextAsync(viewModel.SyncActiveSpaceId);
+        viewModel.SyncStatus = "空间 ID 已复制";
+    }
+
+    private void OnOpenSyncRecoveryFolderClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel ||
+            string.IsNullOrWhiteSpace(viewModel.SyncRecoveryMaterialPath))
+        {
+            return;
+        }
+
+        string? directory = Path.GetDirectoryName(viewModel.SyncRecoveryMaterialPath);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            viewModel.SyncStatus = "恢复材料所在目录不存在";
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = directory,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception exception) when (exception is
+            InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            viewModel.SyncStatus = "无法打开恢复材料所在目录";
+        }
+    }
+
+    private async void OnChooseSyncRecoveryMaterialClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel)
+        {
+            return;
+        }
+
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "选择 SnapBoard 同步恢复材料",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("SnapBoard 恢复材料")
+                    {
+                        Patterns = ["*.recovery"],
+                    },
+                ],
+            });
+        if (files.Count == 1)
+        {
+            viewModel.SelectSyncRecoveryMaterial(files[0].Path.LocalPath);
+        }
+    }
+
+    private async void OnChooseStorageFolderClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel)
+        {
+            return;
+        }
+
+        IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions
+            {
+                Title = "选择 SnapBoard 本地数据目录",
+                AllowMultiple = false,
+            });
+        if (folders.Count == 1)
+        {
+            await SelectAndConfirmStorageTargetAsync(
+                viewModel,
+                folders[0].Path.LocalPath);
+        }
+    }
+
+    private async void OnRestoreDefaultStorageClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel ||
+            string.IsNullOrWhiteSpace(viewModel.DefaultStorageDirectory))
+        {
+            return;
+        }
+
+        await SelectAndConfirmStorageTargetAsync(
+            viewModel,
+            viewModel.DefaultStorageDirectory);
+    }
+
+    private async Task SelectAndConfirmStorageTargetAsync(
+        SettingsViewModel viewModel,
+        string targetDirectory)
+    {
+        await viewModel.SelectStorageTargetAsync(targetDirectory);
+        if (!viewModel.CanConfirmStorageMigration)
+        {
+            return;
+        }
+
+        StorageMigrationConfirmationWindow confirmation = new(
+            viewModel.SelectedStorageDirectory,
+            viewModel.StorageTargetDetails);
+        bool confirmed = await confirmation.ShowDialog<bool>(this);
+        if (!confirmed)
+        {
+            viewModel.CancelStorageMigrationCommand.Execute(null);
+            return;
+        }
+
+        await viewModel.ConfirmStorageMigrationCommand.ExecuteAsync(null);
+        if (!string.IsNullOrWhiteSpace(viewModel.StorageMigrationErrorMessage))
+        {
+            StorageMigrationErrorWindow error = new(
+                viewModel.SelectedStorageDirectory,
+                viewModel.StorageMigrationErrorMessage);
+            await error.ShowDialog(this);
         }
     }
 

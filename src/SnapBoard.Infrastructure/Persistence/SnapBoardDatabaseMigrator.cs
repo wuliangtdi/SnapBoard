@@ -195,9 +195,154 @@ public sealed class SnapBoardDatabaseMigrator
             "ALTER TABLE clipboard_items ADD COLUMN source_attribution_kind INTEGER NOT NULL DEFAULT 0;",
             "CREATE INDEX ix_clipboard_items_source_identity ON clipboard_items(is_deleted, source_application_user_model_id, captured_at_utc DESC);",
         ]),
+        new(6, "encrypted-sync-state-v6",
+        [
+            """
+            CREATE TABLE sync_spaces (
+                space_id TEXT NOT NULL PRIMARY KEY,
+                key_version INTEGER NOT NULL CHECK (key_version > 0),
+                is_enabled INTEGER NOT NULL DEFAULT 0 CHECK (is_enabled IN (0, 1)),
+                tombstone_retention_days INTEGER NOT NULL DEFAULT 30
+                    CHECK (tombstone_retention_days BETWEEN 7 AND 3650),
+                created_at_utc INTEGER NOT NULL,
+                updated_at_utc INTEGER NOT NULL,
+                CHECK (length(space_id) = 32)
+            );
+            """,
+            """
+            CREATE TABLE sync_devices (
+                space_id TEXT NOT NULL REFERENCES sync_spaces(space_id) ON DELETE CASCADE,
+                device_id TEXT NOT NULL,
+                is_local INTEGER NOT NULL CHECK (is_local IN (0, 1)),
+                next_sequence INTEGER NOT NULL DEFAULT 1 CHECK (next_sequence > 0),
+                logical_clock INTEGER NOT NULL DEFAULT 0 CHECK (logical_clock >= 0),
+                revoked_at_utc INTEGER NULL,
+                created_at_utc INTEGER NOT NULL,
+                updated_at_utc INTEGER NOT NULL,
+                PRIMARY KEY (space_id, device_id),
+                CHECK (length(device_id) = 32)
+            );
+            """,
+            """
+            CREATE TABLE sync_outbox (
+                event_id TEXT NOT NULL PRIMARY KEY,
+                space_id TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL CHECK (sequence > 0),
+                event_json BLOB NOT NULL CHECK (
+                    (state = 2 AND length(event_json) = 0) OR
+                    (state IN (0, 1) AND length(event_json) BETWEEN 1 AND 8388608)
+                ),
+                state INTEGER NOT NULL DEFAULT 0 CHECK (state IN (0, 1, 2)),
+                retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+                next_attempt_at_utc INTEGER NOT NULL,
+                last_error_category TEXT NULL,
+                remote_etag TEXT NULL,
+                created_at_utc INTEGER NOT NULL,
+                uploaded_at_utc INTEGER NULL,
+                UNIQUE (space_id, device_id, sequence),
+                FOREIGN KEY (space_id, device_id)
+                    REFERENCES sync_devices(space_id, device_id) ON DELETE CASCADE,
+                CHECK (length(event_id) = 32)
+            );
+            """,
+            """
+            CREATE TABLE sync_inbox (
+                space_id TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL CHECK (sequence > 0),
+                payload_hash TEXT NOT NULL,
+                applied_at_utc INTEGER NOT NULL,
+                PRIMARY KEY (space_id, device_id, event_id),
+                UNIQUE (space_id, device_id, sequence),
+                FOREIGN KEY (space_id, device_id)
+                    REFERENCES sync_devices(space_id, device_id) ON DELETE CASCADE,
+                CHECK (length(event_id) = 32),
+                CHECK (length(payload_hash) = 64)
+            );
+            """,
+            """
+            CREATE TABLE sync_checkpoints (
+                space_id TEXT NOT NULL,
+                remote_device_id TEXT NOT NULL,
+                applied_sequence INTEGER NOT NULL DEFAULT 0 CHECK (applied_sequence >= 0),
+                applied_event_id TEXT NULL,
+                remote_etag TEXT NULL,
+                updated_at_utc INTEGER NOT NULL,
+                PRIMARY KEY (space_id, remote_device_id),
+                FOREIGN KEY (space_id, remote_device_id)
+                    REFERENCES sync_devices(space_id, device_id) ON DELETE CASCADE,
+                CHECK (applied_event_id IS NULL OR length(applied_event_id) = 32)
+            );
+            """,
+            """
+            CREATE TABLE sync_remote_blobs (
+                space_id TEXT NOT NULL REFERENCES sync_spaces(space_id) ON DELETE CASCADE,
+                blob_hash TEXT NOT NULL,
+                keyed_blob_id TEXT NOT NULL,
+                state INTEGER NOT NULL DEFAULT 0 CHECK (state IN (0, 1, 2)),
+                retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+                next_attempt_at_utc INTEGER NOT NULL,
+                last_error_category TEXT NULL,
+                remote_etag TEXT NULL,
+                updated_at_utc INTEGER NOT NULL,
+                PRIMARY KEY (space_id, blob_hash),
+                UNIQUE (space_id, keyed_blob_id),
+                CHECK (length(blob_hash) = 64),
+                CHECK (length(keyed_blob_id) = 64)
+            );
+            """,
+            """
+            CREATE TABLE sync_blob_staging (
+                blob_hash TEXT NOT NULL PRIMARY KEY,
+                relative_path TEXT NOT NULL UNIQUE,
+                media_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+                verified_at_utc INTEGER NOT NULL,
+                CHECK (length(blob_hash) = 64)
+            );
+            """,
+            """
+            CREATE TABLE sync_item_state (
+                space_id TEXT NOT NULL REFERENCES sync_spaces(space_id) ON DELETE CASCADE,
+                item_id TEXT NOT NULL,
+                content_logical_time INTEGER NOT NULL DEFAULT 0 CHECK (content_logical_time >= 0),
+                content_device_id TEXT NULL,
+                tags_logical_time INTEGER NOT NULL DEFAULT 0 CHECK (tags_logical_time >= 0),
+                tags_device_id TEXT NULL,
+                pin_logical_time INTEGER NOT NULL DEFAULT 0 CHECK (pin_logical_time >= 0),
+                pin_device_id TEXT NULL,
+                delete_logical_time INTEGER NOT NULL DEFAULT 0 CHECK (delete_logical_time >= 0),
+                delete_device_id TEXT NULL,
+                is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
+                PRIMARY KEY (space_id, item_id),
+                CHECK (length(item_id) = 36)
+            );
+            """,
+            "CREATE UNIQUE INDEX ux_sync_single_enabled_space ON sync_spaces(is_enabled) WHERE is_enabled = 1;",
+            "CREATE UNIQUE INDEX ux_sync_local_device ON sync_devices(space_id, is_local) WHERE is_local = 1;",
+            "CREATE INDEX ix_sync_outbox_due ON sync_outbox(state, next_attempt_at_utc, sequence);",
+            "CREATE INDEX ix_sync_inbox_sequence ON sync_inbox(space_id, device_id, sequence);",
+            "CREATE INDEX ix_sync_remote_blobs_due ON sync_remote_blobs(state, next_attempt_at_utc);",
+        ]),
+        new(7, "synchronized-history-settings-v7",
+        [
+            """
+            CREATE TABLE sync_setting_state (
+                space_id TEXT NOT NULL REFERENCES sync_spaces(space_id) ON DELETE CASCADE,
+                setting_key TEXT NOT NULL,
+                logical_time INTEGER NOT NULL CHECK (logical_time > 0),
+                device_id TEXT NOT NULL,
+                PRIMARY KEY (space_id, setting_key),
+                CHECK (length(setting_key) BETWEEN 1 AND 128),
+                CHECK (length(device_id) = 32)
+            );
+            """,
+        ]),
     ];
 
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 7;
 
     public async ValueTask<int> MigrateAsync(
         SqliteConnection connection,

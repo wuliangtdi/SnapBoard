@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SnapBoard.Infrastructure\SnapBoard.Infrastructure.csproj" />
+    <ProjectReference Include="..\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
+    <ProjectReference Include="..\SnapBoard.Platform.Windows\SnapBoard.Platform.Windows.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed Condition="'$(PublishAot)' == 'true'">true</PublishTrimmed>
+    <TrimMode Condition="'$(PublishAot)' == 'true'">full</TrimMode>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+</Project>

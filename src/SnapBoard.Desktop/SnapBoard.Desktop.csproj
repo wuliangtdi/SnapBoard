@@ -38,7 +38,41 @@
     <ProjectReference Include="..\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
     <ProjectReference Include="..\SnapBoard.Platform.MacOS\SnapBoard.Platform.MacOS.csproj" />
     <ProjectReference Include="..\SnapBoard.Platform.Windows\SnapBoard.Platform.Windows.csproj" />
+    <ProjectReference Include="..\SnapBoard.StorageMigrator\SnapBoard.StorageMigrator.csproj"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\SnapBoard.Sync.Contracts\SnapBoard.Sync.Contracts.csproj" />
     <ProjectReference Include="..\SnapBoard.Sync.WebDav\SnapBoard.Sync.WebDav.csproj" />
   </ItemGroup>
+
+  <Target Name="CopyStorageMigratorForBuild"
+          AfterTargets="Build"
+          Condition="'$(RuntimeIdentifier)' == '' and Exists('$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.exe')">
+    <ItemGroup>
+      <_StorageMigratorBuildFiles Include="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.exe" />
+      <_StorageMigratorBuildFiles Include="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.deps.json" />
+      <_StorageMigratorBuildFiles Include="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.runtimeconfig.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_StorageMigratorBuildFiles)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PublishNativeStorageMigrator"
+          AfterTargets="Publish"
+          Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">
+    <PropertyGroup>
+      <_StorageMigratorPublishDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(IntermediateOutputPath)storage-migrator-publish\'))</_StorageMigratorPublishDirectory>
+    </PropertyGroup>
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\SnapBoard.StorageMigrator.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishAot=true;PublishDir=$(_StorageMigratorPublishDirectory)" />
+    <Copy SourceFiles="$(_StorageMigratorPublishDirectory)SnapBoard.StorageMigrator.exe"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <_StorageMigratorFrameworkArtifacts Include="$(PublishDir)SnapBoard.StorageMigrator.deps.json" />
+      <_StorageMigratorFrameworkArtifacts Include="$(PublishDir)SnapBoard.StorageMigrator.runtimeconfig.json" />
+    </ItemGroup>
+    <Delete Files="@(_StorageMigratorFrameworkArtifacts)" />
+  </Target>
 </Project>

@@ -35,6 +35,11 @@
         "resolved": "3.1.5",
         "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
       },
+      "Konscious.Security.Cryptography.Blake2": {
+        "type": "Transitive",
+        "resolved": "1.1.1",
+        "contentHash": "odwOyzj/J/lHJZNwFWJGU/LRecBShupAJ2S8TQqZfhUe9niHzu/voBYK5wuVKsvSpzbfupKQYZguVyIk1sgOkQ=="
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "18.8.1",
@@ -144,11 +149,13 @@
         "type": "Project",
         "dependencies": {
           "BitMiracle.LibTiff.NET": "[2.4.660, )",
+          "Konscious.Security.Cryptography.Argon2": "[1.3.1, )",
           "Microsoft.Data.Sqlite": "[10.0.10, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[2.1.12, )",
           "SkiaSharp": "[3.119.4, )",
           "SnapBoard.Application": "[1.0.0, )",
           "SnapBoard.Domain": "[1.0.0, )",
+          "SnapBoard.Platform.Abstractions": "[1.0.0, )",
           "SnapBoard.Sync.Contracts": "[1.0.0, )"
         }
       },
@@ -185,6 +192,7 @@
       "snapboard.sync.webdav": {
         "type": "Project",
         "dependencies": {
+          "SnapBoard.Application": "[1.0.0, )",
           "SnapBoard.Sync.Contracts": "[1.0.0, )"
         }
       },
@@ -193,6 +201,15 @@
         "requested": "[2.4.660, )",
         "resolved": "2.4.660",
         "contentHash": "Drd0fDFVrR3v19IJtqiDVnjgcVZoGlzFw/CYni1OQ5/xVYvjPNp18E9eu+dH/RmpIUw6Pn/JhE/H+Yc3kHI89A=="
+      },
+      "Konscious.Security.Cryptography.Argon2": {
+        "type": "CentralTransitive",
+        "requested": "[1.3.1, )",
+        "resolved": "1.3.1",
+        "contentHash": "T+OAGwzYYXftahpOxO7J4xA5K6urxwGnWQf3M+Jpi+76Azv/0T3M5SuN+h7/QvXuiqNw3ZEZ5QqVLI5ygDAylw==",
+        "dependencies": {
+          "Konscious.Security.Cryptography.Blake2": "1.1.1"
+        }
       },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",

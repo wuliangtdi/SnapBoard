@@ -1,4 +1,3 @@
-using SnapBoard.Domain.Clipboard;
 using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Application.Clipboard;
@@ -7,7 +6,7 @@ public sealed class ClipboardCaptureService(
     IClipboardCapturePolicyChain policyChain,
     IClipboardHistoryStore store,
     ClipboardCaptureOptions options,
-    ClipboardRetentionPolicy retentionPolicy,
+    IHistorySettingsService historySettings,
     ClipboardHistoryChangeNotifier notifier) : IClipboardCaptureService
 {
     public async ValueTask<ClipboardCaptureResult> ProcessAsync(
@@ -16,6 +15,7 @@ public sealed class ClipboardCaptureService(
     {
         ArgumentNullException.ThrowIfNull(readResult);
         cancellationToken.ThrowIfCancellationRequested();
+        await historySettings.InitializeAsync(cancellationToken).ConfigureAwait(false);
         if (readResult.Snapshot is null ||
             readResult.Status is ClipboardReadStatus.ClipboardBusy or ClipboardReadStatus.Failed)
         {
@@ -64,25 +64,6 @@ public sealed class ClipboardCaptureService(
                 "history-write-failed");
         }
 
-        bool retentionPending = false;
-        try
-        {
-            await store.ApplyRetentionAsync(
-                    retentionPolicy,
-                    DateTimeOffset.UtcNow,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // 保存事务已经提交，保留策略由下一次采集重试；不能把已持久化记录误报为失败。
-            retentionPending = true;
-        }
-
         notifier.Publish(new ClipboardHistoryChangedEvent(
             saveResult.WasMerged
                 ? ClipboardHistoryChangeKind.Updated
@@ -92,9 +73,7 @@ public sealed class ClipboardCaptureService(
             saveResult.WasMerged
                 ? ClipboardCaptureStatus.Merged
                 : ClipboardCaptureStatus.Stored,
-            retentionPending
-                ? "stored-retention-pending"
-                : saveResult.WasMerged ? "adjacent-duplicate" : "stored",
+            saveResult.WasMerged ? "adjacent-duplicate" : "stored",
             saveResult);
     }
 }

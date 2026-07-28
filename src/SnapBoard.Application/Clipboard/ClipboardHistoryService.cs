@@ -1,3 +1,4 @@
+using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
 
 namespace SnapBoard.Application.Clipboard;
@@ -121,14 +122,26 @@ public sealed class ClipboardHistoryService(
         return store.GetSettingAsync(key, cancellationToken);
     }
 
-    public ValueTask SetSettingAsync(
+    public async ValueTask SetSettingAsync(
         string key,
         string value,
         CancellationToken cancellationToken)
     {
         ValidateSettingKey(key);
         ArgumentNullException.ThrowIfNull(value);
-        return store.SetSettingAsync(key, value, cancellationToken);
+        if (SynchronizedSettingRegistry.IsSynchronized(key) &&
+            !SynchronizedSettingRegistry.IsValidValue(key, value))
+        {
+            throw new ArgumentException("Synchronized setting value is invalid.", nameof(value));
+        }
+
+        await store.SetSettingAsync(key, value, cancellationToken).ConfigureAwait(false);
+        if (SynchronizedSettingRegistry.IsSynchronized(key))
+        {
+            notifier.Publish(new ClipboardHistoryChangedEvent(
+                ClipboardHistoryChangeKind.SettingChanged,
+                SettingKey: key));
+        }
     }
 
     private static void ValidateSettingKey(string key)

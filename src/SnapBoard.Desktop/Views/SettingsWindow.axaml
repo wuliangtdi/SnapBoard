@@ -4,9 +4,11 @@
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="SnapBoard.Desktop.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
-        Width="640"
-        Height="520"
-        CanResize="False"
+        Width="700"
+        Height="720"
+        MinWidth="660"
+        MinHeight="600"
+        CanResize="True"
         Background="{DynamicResource AppBackgroundBrush}"
         Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="CenterOwner"
@@ -173,6 +175,553 @@
                            FontSize="12"
                            Foreground="{DynamicResource TertiaryTextBrush}"
                            Text="快捷键至少需要一个修饰键；冲突时会保留原有配置。" />
+
+                <StackPanel Margin="0,12,0,0"
+                            Spacing="10"
+                            IsVisible="{Binding IsStorageSectionVisible}">
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="本地数据" />
+                    <Border Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Grid>
+                            <Grid Margin="20,17,20,15"
+                                  ColumnDefinitions="Auto,*,Auto"
+                                  RowDefinitions="Auto,Auto,Auto,Auto">
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="6"
+                                        Background="{DynamicResource SelectionSurfaceBrush}">
+                                    <materialIcons:MaterialIcon Width="20"
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                Kind="DatabaseOutline" />
+                                </Border>
+                                <StackPanel Grid.Column="1"
+                                            Margin="10,0,12,0"
+                                            Spacing="3">
+                                    <TextBlock FontWeight="SemiBold" Text="当前数据目录" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="{Binding CurrentStorageDirectory}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding CurrentStorageDirectory}" />
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Classes="icon"
+                                        Width="40"
+                                        Height="40"
+                                        Command="{Binding OpenStorageDirectoryCommand}"
+                                        ToolTip.Tip="打开当前数据目录">
+                                    <materialIcons:MaterialIcon Width="18"
+                                                                Height="18"
+                                                                Kind="FolderOpenOutline" />
+                                </Button>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Margin="10,12,0,0"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding StorageUsageText}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="StorageStatusText"
+                                           Grid.Row="2"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Margin="10,7,0,0"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TertiaryTextBrush}"
+                                           Text="{Binding StorageStatus}"
+                                           TextWrapping="Wrap" />
+                                <StackPanel Grid.Row="3"
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="2"
+                                            Margin="10,14,0,0"
+                                            Orientation="Horizontal"
+                                            Spacing="8">
+                                    <Button x:Name="ChooseStorageFolderButton"
+                                            Classes="primary-command"
+                                            Click="OnChooseStorageFolderClicked">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <materialIcons:MaterialIcon Width="17"
+                                                                        Height="17"
+                                                                        Kind="FolderMoveOutline" />
+                                            <TextBlock VerticalAlignment="Center" Text="更改位置" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Click="OnRestoreDefaultStorageClicked"
+                                            ToolTip.Tip="恢复默认数据位置">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <materialIcons:MaterialIcon Width="17"
+                                                                        Height="17"
+                                                                        Kind="BackupRestore" />
+                                            <TextBlock VerticalAlignment="Center" Text="恢复默认" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Margin="0,12,0,0"
+                            Spacing="10"
+                            IsVisible="{Binding IsHistorySettingsSectionVisible}">
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="历史与隐私" />
+                    <Border Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Grid RowDefinitions="Auto,1,Auto">
+                            <Grid Margin="20,17,20,15" ColumnDefinitions="Auto,*">
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="6"
+                                        Background="{DynamicResource SelectionSurfaceBrush}">
+                                    <materialIcons:MaterialIcon Width="20"
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                Kind="History" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="10,0,0,0" Spacing="3">
+                                    <TextBlock FontWeight="SemiBold" Text="记录内容" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="只影响以后复制的内容；已有历史不会因取消勾选而删除。"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Grid.Row="1" Background="{DynamicResource DividerBrush}" />
+
+                            <StackPanel Grid.Row="2" Margin="20,16,20,18" Spacing="15">
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="18" RowDefinitions="Auto,Auto">
+                                    <CheckBox Content="文本、链接和代码"
+                                              IsChecked="{Binding IsCaptureTextEnabled, Mode=TwoWay}" />
+                                    <CheckBox Grid.Column="1"
+                                              Content="图片"
+                                              IsChecked="{Binding IsCaptureImagesEnabled, Mode=TwoWay}" />
+                                    <CheckBox Grid.Row="1"
+                                              Margin="0,10,0,0"
+                                              Content="保留 HTML / RTF 富文本"
+                                              IsChecked="{Binding IsCaptureRichTextEnabled, Mode=TwoWay}" />
+                                    <CheckBox Grid.Row="1"
+                                              Grid.Column="1"
+                                              Margin="0,10,0,0"
+                                              Content="文件与文件夹"
+                                              IsChecked="{Binding IsCaptureFilesEnabled, Mode=TwoWay}" />
+                                </Grid>
+
+                                <Border Height="1" Background="{DynamicResource DividerBrush}" />
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock FontWeight="SemiBold" Text="自动清理历史" />
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="默认关闭。开启后只清理未置顶记录，删除状态会同步到其他设备。"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1"
+                                                  Classes="settings-toggle"
+                                                  OffContent="关闭"
+                                                  OnContent="开启"
+                                                  IsChecked="{Binding IsRetentionEnabled, Mode=TwoWay}" />
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,*"
+                                      ColumnSpacing="12"
+                                      IsVisible="{Binding IsRetentionEnabled}">
+                                    <StackPanel Spacing="5">
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="保留时间" />
+                                        <ComboBox Classes="settings-input"
+                                                  ItemsSource="{Binding RetentionPeriodOptions}"
+                                                  SelectedItem="{Binding SelectedRetentionPeriod, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding DisplayName}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="5"
+                                                IsVisible="{Binding IsCustomRetentionPeriod}">
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="自定义天数" />
+                                        <NumericUpDown Classes="settings-input"
+                                                       Minimum="1"
+                                                       Maximum="3650"
+                                                       Increment="1"
+                                                       Value="{Binding CustomRetentionDays, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                    <TextBlock VerticalAlignment="Center"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="{Binding HistorySettingsStatus}"
+                                               TextWrapping="Wrap" />
+                                    <Button Grid.Column="1"
+                                            Classes="secondary-command"
+                                            Command="{Binding ApplyRetentionNowCommand}"
+                                            IsVisible="{Binding IsRetentionEnabled}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <materialIcons:MaterialIcon Width="17" Height="17" Kind="Broom" />
+                                            <TextBlock VerticalAlignment="Center" Text="立即清理" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="SaveHistorySettingsButton"
+                                            Grid.Column="2"
+                                            Classes="primary-command"
+                                            Command="{Binding SaveHistorySettingsCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <materialIcons:MaterialIcon Width="17" Height="17" Kind="ContentSaveOutline" />
+                                            <TextBlock VerticalAlignment="Center" Text="保存设置" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Margin="0,12,0,0"
+                            Spacing="10"
+                            IsVisible="{Binding IsSyncSectionVisible}">
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="端到端加密同步" />
+                    <Border Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Grid RowDefinitions="Auto,1,Auto">
+                            <Grid Margin="20,17,20,15" ColumnDefinitions="Auto,*,Auto">
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="6"
+                                        Background="{DynamicResource SelectionSurfaceBrush}">
+                                    <materialIcons:MaterialIcon Width="20"
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                Kind="WebSync" />
+                                </Border>
+                                <StackPanel Grid.Column="1"
+                                            Margin="10,0,12,0"
+                                            Spacing="3">
+                                    <TextBlock FontWeight="SemiBold" Text="WebDAV 同步" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="{Binding SyncStatus}"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock FontSize="11"
+                                               Foreground="{DynamicResource TertiaryTextBrush}"
+                                               Text="{Binding SyncLastSuccessText}" />
+                                    <TextBlock FontSize="11"
+                                               Foreground="{DynamicResource TertiaryTextBrush}"
+                                               IsVisible="{Binding IsSyncConfigured}"
+                                               Text="{Binding SyncActiveSpaceId, StringFormat='空间 {0}'}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding SyncActiveSpaceId}" />
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Classes="primary-command"
+                                        Command="{Binding SynchronizeNowCommand}"
+                                        ToolTip.Tip="立即上传本地变更并接收远端事件">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="WebSync" />
+                                        <TextBlock VerticalAlignment="Center" Text="立即同步" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <Border Grid.Row="1" Background="{DynamicResource DividerBrush}" />
+
+                            <StackPanel Grid.Row="2" Margin="20,16,20,18" Spacing="12">
+                                <Border Padding="12,10"
+                                        Background="{DynamicResource SubtleSurfaceBrush}"
+                                        CornerRadius="6">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Text="内容会在本机加密，WebDAV 服务器只保存密文。" />
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="WebDAV 密码保存在 Windows 凭据管理器；恢复码不会保存，请自行妥善保管。"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid ColumnDefinitions="*,180,Auto" ColumnSpacing="12">
+                                    <StackPanel VerticalAlignment="Center" Spacing="3">
+                                        <TextBlock FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Text="后台检查频率" />
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="{Binding SyncFrequencyStatus}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="SyncFrequencyComboBox"
+                                              Grid.Column="1"
+                                              Classes="settings-input"
+                                              VerticalAlignment="Center"
+                                              ItemsSource="{Binding SyncFrequencyOptions}"
+                                              SelectedItem="{Binding SelectedSyncFrequency, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Button x:Name="SaveSyncFrequencyButton"
+                                            Grid.Column="2"
+                                            Classes="secondary-command"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding SaveSyncFrequencyCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <materialIcons:MaterialIcon Width="17"
+                                                                        Height="17"
+                                                                        Kind="ContentSaveOutline" />
+                                            <TextBlock VerticalAlignment="Center" Text="应用" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <RadioButton Classes="sync-mode"
+                                                 Content="创建新空间"
+                                                 GroupName="SyncMode"
+                                                 IsChecked="{Binding IsCreateSyncSpace}"
+                                                 Command="{Binding SelectCreateSyncModeCommand}" />
+                                    <RadioButton Classes="sync-mode"
+                                                 Content="加入现有空间"
+                                                 GroupName="SyncMode"
+                                                 IsChecked="{Binding IsJoinSyncSpace}"
+                                                 Command="{Binding SelectJoinSyncModeCommand}" />
+                                </StackPanel>
+
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           IsVisible="{Binding IsCreateSyncSpace}"
+                                           Text="首次创建会生成空间 ID、主密钥和加密恢复文件。另一台电脑加入时，需要此恢复文件和同一恢复码。"
+                                           TextWrapping="Wrap" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           IsVisible="{Binding IsJoinSyncSpace}"
+                                           Text="从已连接设备取得空间 ID、密钥版本和恢复文件，并输入创建时使用的恢复码。"
+                                           TextWrapping="Wrap" />
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="WebDAV 地址" />
+                                    <TextBlock Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="远端根目录" />
+                                    <TextBox x:Name="SyncEndpointTextBox"
+                                             Grid.Row="1"
+                                             Classes="settings-input"
+                                             Margin="0,5,0,0"
+                                             Text="{Binding SyncEndpoint, Mode=TwoWay}"
+                                             PlaceholderText="https://dav.example.com/user/" />
+                                    <TextBox Grid.Row="1"
+                                             Grid.Column="1"
+                                             Classes="settings-input"
+                                             Margin="0,5,0,0"
+                                             Text="{Binding SyncRemoteRoot, Mode=TwoWay}" />
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="用户名" />
+                                    <TextBlock Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="密码" />
+                                    <TextBox Grid.Row="1"
+                                             Classes="settings-input"
+                                             Margin="0,5,0,0"
+                                             Text="{Binding SyncUsername, Mode=TwoWay}" />
+                                    <TextBox Grid.Row="1"
+                                             Grid.Column="1"
+                                             Classes="settings-input"
+                                             Margin="0,5,0,0"
+                                             PasswordChar="*"
+                                             Text="{Binding SyncPassword, Mode=TwoWay}" />
+                                </Grid>
+
+                                <StackPanel Spacing="8">
+                                    <ToggleSwitch Classes="settings-toggle"
+                                                  Content="高级连接安全"
+                                                  OffContent="关闭"
+                                                  OnContent="开启"
+                                                  IsChecked="{Binding IsSyncAdvancedVisible, Mode=TwoWay}" />
+                                    <StackPanel Spacing="5" IsVisible="{Binding IsSyncAdvancedVisible}">
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="服务器证书 SHA-256 指纹" />
+                                        <TextBox Classes="settings-input"
+                                                 Text="{Binding SyncCertificatePin, Mode=TwoWay}"
+                                                 PlaceholderText="使用受信任 HTTPS 时留空" />
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{DynamicResource TertiaryTextBrush}"
+                                                   Text="仅自签名或内网证书需要；填写管理员提供的 64 位小写十六进制指纹。"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Spacing="5">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="恢复码" />
+                                    <TextBox Classes="settings-input"
+                                             PasswordChar="*"
+                                             PlaceholderText="至少 16 个字符"
+                                             Text="{Binding SyncRecoveryCode, Mode=TwoWay}" />
+                                    <TextBlock FontSize="11"
+                                               Foreground="{DynamicResource TertiaryTextBrush}"
+                                               Text="它用于解锁恢复文件，不是 WebDAV 密码；丢失后无法在新设备恢复同步主密钥。"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <Grid ColumnDefinitions="*,140"
+                                      ColumnSpacing="12"
+                                      RowDefinitions="Auto,Auto,Auto"
+                                      IsVisible="{Binding IsJoinSyncSpace}">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="空间 ID" />
+                                    <TextBlock Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="密钥版本" />
+                                    <TextBox Grid.Row="1"
+                                             Classes="settings-input"
+                                             Margin="0,5,0,0"
+                                             Text="{Binding SyncSpaceId, Mode=TwoWay}" />
+                                    <NumericUpDown Grid.Row="1"
+                                                   Grid.Column="1"
+                                                   Classes="settings-input"
+                                                   Margin="0,5,0,0"
+                                                   Minimum="1"
+                                                   Maximum="1000000"
+                                                   Increment="1"
+                                                   Value="{Binding SyncKeyVersion, Mode=TwoWay}" />
+                                    <TextBlock Grid.Row="2"
+                                               Grid.ColumnSpan="2"
+                                               Margin="0,5,0,0"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TertiaryTextBrush}"
+                                               Text="空间 ID 标识同一加密空间；密钥版本请填写创建设备显示的数值。"
+                                               TextWrapping="Wrap" />
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8"
+                                      RowDefinitions="Auto,Auto"
+                                      IsVisible="{Binding IsJoinSyncSpace}">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="恢复材料文件" />
+                                    <TextBox Grid.Row="1"
+                                             Classes="settings-input"
+                                             IsReadOnly="True"
+                                             Text="{Binding SyncRecoveryMaterialPath}"
+                                             ToolTip.Tip="{Binding SyncRecoveryMaterialPath}" />
+                                    <Button Grid.Row="1"
+                                            Grid.Column="1"
+                                            Classes="icon"
+                                            Width="40"
+                                            Height="40"
+                                            Click="OnChooseSyncRecoveryMaterialClicked"
+                                            ToolTip.Tip="选择恢复材料文件">
+                                        <materialIcons:MaterialIcon Width="18" Height="18" Kind="FolderOpenOutline" />
+                                    </Button>
+                                </Grid>
+
+                                <Border Padding="12,10"
+                                        Background="{DynamicResource SelectionSurfaceBrush}"
+                                        CornerRadius="6"
+                                        IsVisible="{Binding HasSyncRecoveryMaterial}">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Text="恢复材料已保存在本机" />
+                                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                                <TextBlock FontSize="11"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="{Binding SyncActiveSpaceId, StringFormat='空间 ID：{0}'}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock FontSize="11"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="{Binding SyncKeyVersion, StringFormat='密钥版本：{0}'}" />
+                                            </StackPanel>
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="{Binding SyncRecoveryMaterialPath}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding SyncRecoveryMaterialPath}" />
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource WarningBrush}"
+                                                       Text="请把此文件备份到受保护的位置；新设备加入时必须使用。"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Classes="icon"
+                                                Click="OnCopySyncSpaceIdClicked"
+                                                IsVisible="{Binding HasSyncActiveSpaceId}"
+                                                ToolTip.Tip="复制空间 ID">
+                                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="ContentCopy" />
+                                        </Button>
+                                        <Button Grid.Column="2"
+                                                Classes="icon"
+                                                Click="OnOpenSyncRecoveryFolderClicked"
+                                                ToolTip.Tip="打开恢复材料所在目录">
+                                            <materialIcons:MaterialIcon Width="18" Height="18" Kind="FolderOpenOutline" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="ConfigureSyncButton"
+                                            Classes="primary-command"
+                                            Command="{Binding ConfigureSyncCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <materialIcons:MaterialIcon Width="17" Height="17" Kind="ShieldKeyOutline" />
+                                            <TextBlock VerticalAlignment="Center"
+                                                       Text="保存并验证" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </StackPanel>
 
                 <StackPanel Margin="0,12,0,0"
                             Spacing="10"

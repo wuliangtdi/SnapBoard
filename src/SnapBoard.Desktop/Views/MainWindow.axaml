@@ -49,8 +49,6 @@
 
                 <Grid Grid.Column="1"
                       Margin="12,0,22,0"
-                      Width="660"
-                      HorizontalAlignment="Left"
                       VerticalAlignment="Center">
                     <TextBox x:Name="SearchBox"
                              Classes="search-box"

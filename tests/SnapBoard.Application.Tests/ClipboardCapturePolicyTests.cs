@@ -149,6 +149,20 @@ public sealed class ClipboardCapturePolicyTests
         Assert.False(tooLarge.ShouldCapture);
         Assert.Equal("payload-too-large", tooLarge.ReasonCode);
 
+        ClipboardCaptureOptions filteredPayload = new()
+        {
+            MaximumPayloadBytes = 4,
+            EnabledContentKinds = new HashSet<ClipboardContentKind>
+            {
+                ClipboardContentKind.Text,
+            },
+        };
+        ClipboardCapturePolicyDecision allowedText = await CreateChain(filteredPayload)
+            .EvaluateAsync(
+                CreateSnapshot(text: "1234", html: new byte[1024]),
+                CancellationToken.None);
+        Assert.True(allowedText.ShouldCapture);
+
         ClipboardCaptureOptions textOnly = new()
         {
             EnabledContentKinds = new HashSet<ClipboardContentKind>
@@ -171,6 +185,42 @@ public sealed class ClipboardCapturePolicyTests
     }
 
     [Fact]
+    public async Task DisabledContentKindsDoNotLeakIntoPreviewOrSearchIndex()
+    {
+        ClipboardCaptureOptions options = new()
+        {
+            EnabledContentKinds = new HashSet<ClipboardContentKind>
+            {
+                ClipboardContentKind.Image,
+            },
+        };
+        ClipboardContentSnapshot snapshot = CreateSnapshot(
+            text: "disabled plain text",
+            html: Encoding.UTF8.GetBytes("<b>disabled html text</b>"),
+            bitmap: new ClipboardBitmapData(
+                ClipboardBitmapEncoding.PortableNetworkGraphics,
+                new byte[] { 1, 2, 3 },
+                1,
+                1,
+                32));
+        ClipboardCapturePolicyDecision decision = await CreateChain(options).EvaluateAsync(
+            snapshot,
+            CancellationToken.None);
+
+        ClipboardCapturedItem? normalized = ClipboardContentNormalizer.Normalize(
+            snapshot,
+            decision,
+            options);
+
+        Assert.NotNull(normalized);
+        Assert.Equal("图片 1 x 1", normalized.PreviewText);
+        Assert.DoesNotContain("disabled", normalized.SearchableText, StringComparison.Ordinal);
+        Assert.Equal(
+            ClipboardContentKind.Image,
+            Assert.Single(normalized.Representations).Kind);
+    }
+
+    [Fact]
     public async Task ApplicationBlacklistTakesPrecedenceOverTextOnlyResult()
     {
         ClipboardCaptureOptions options = new()
@@ -190,10 +240,11 @@ public sealed class ClipboardCapturePolicyTests
     }
 
     [Fact]
-    public async Task CommittedCaptureRemainsSuccessfulWhenRetentionCleanupFails()
+    public async Task CommittedCaptureDoesNotRunFullRetentionSweepPerItem()
     {
         ClipboardCaptureOptions options = new();
         RetentionFailureStore store = new();
+        RetentionFailureSettingsService historySettings = new();
         ClipboardHistoryChangeNotifier notifier = new();
         ClipboardHistoryChangedEvent? published = null;
         notifier.Changed += (_, change) => published = change;
@@ -201,7 +252,7 @@ public sealed class ClipboardCapturePolicyTests
             CreateChain(options),
             store,
             options,
-            ClipboardRetentionPolicy.Default,
+            historySettings,
             notifier);
 
         ClipboardCaptureResult result = await service.ProcessAsync(
@@ -211,10 +262,10 @@ public sealed class ClipboardCapturePolicyTests
             CancellationToken.None);
 
         Assert.Equal(ClipboardCaptureStatus.Stored, result.Status);
-        Assert.Equal("stored-retention-pending", result.ReasonCode);
+        Assert.Equal("stored", result.ReasonCode);
         Assert.NotNull(result.SaveResult);
         Assert.Equal(1, store.SaveCount);
-        Assert.Equal(1, store.RetentionCount);
+        Assert.Equal(0, historySettings.RetentionCount);
         Assert.Equal(ClipboardHistoryChangeKind.Added, published?.Kind);
         Assert.Equal(result.SaveResult.ItemId, published?.ItemId);
     }
@@ -263,8 +314,6 @@ public sealed class ClipboardCapturePolicyTests
     {
         public int SaveCount { get; private set; }
 
-        public int RetentionCount { get; private set; }
-
         public ValueTask<ClipboardHistorySaveResult> SaveAsync(
             ClipboardCapturedItem item,
             CancellationToken cancellationToken)
@@ -280,8 +329,7 @@ public sealed class ClipboardCapturePolicyTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            RetentionCount++;
-            return ValueTask.FromException<int>(new IOException("synthetic retention failure"));
+            throw new NotSupportedException();
         }
 
         public ValueTask<ClipboardHistoryInitializationResult> InitializeAsync(
@@ -333,5 +381,44 @@ public sealed class ClipboardCapturePolicyTests
 
         public ValueTask<int> CleanupOrphanedBlobsAsync(
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class RetentionFailureSettingsService : IHistorySettingsService
+    {
+        public event EventHandler<HistorySettingsChangedEvent>? Changed
+        {
+            add { }
+            remove { }
+        }
+
+        public HistorySettingsSnapshot Current => HistorySettingsSnapshot.Default;
+
+        public int RetentionCount { get; private set; }
+
+        public ValueTask InitializeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask UpdateAsync(
+            HistoryCaptureSettings capture,
+            HistoryRetentionSettings retention,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask ApplyRemoteSettingAsync(
+            string key,
+            string value,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask PublishCurrentSettingsAsync(
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask<int> ApplyRetentionNowAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RetentionCount++;
+            return ValueTask.FromException<int>(new IOException("synthetic retention failure"));
+        }
     }
 }

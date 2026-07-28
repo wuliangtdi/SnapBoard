@@ -34,6 +34,68 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolverTests
     }
 
     [WindowsFact]
+    public async Task ResolvesWindowsExplorerRealShellIcon()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string executablePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "explorer.exe");
+        Assert.True(File.Exists(executablePath));
+        WindowsClipboardSourceApplicationMetadataResolver resolver = new();
+
+        ClipboardSourceApplicationMetadata metadata = await resolver.ResolveAsync(
+            new ClipboardSourceApplicationIdentity("explorer", executablePath),
+            CancellationToken.None);
+
+        Assert.Equal("文件资源管理器", metadata.DisplayName);
+        Assert.NotNull(metadata.Icon);
+        Assert.Contains(metadata.Icon.BgraPixels.ToArray(), value => value != 0);
+    }
+
+    [WindowsFact]
+    public async Task MissingIconResultDoesNotPoisonResolverCache()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string sourceExecutable = Assert.IsType<string>(Environment.ProcessPath);
+        string temporaryDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"SnapBoard-source-icon-{Guid.NewGuid():N}");
+        string temporaryExecutable = Path.Combine(temporaryDirectory, "delayed-app.exe");
+        Directory.CreateDirectory(temporaryDirectory);
+        try
+        {
+            WindowsClipboardSourceApplicationMetadataResolver resolver = new();
+            ClipboardSourceApplicationIdentity identity = new(
+                "delayed-app",
+                temporaryExecutable);
+
+            ClipboardSourceApplicationMetadata missing = await resolver.ResolveAsync(
+                identity,
+                CancellationToken.None);
+            File.Copy(sourceExecutable, temporaryExecutable);
+            ClipboardSourceApplicationMetadata available = await resolver.ResolveAsync(
+                identity,
+                CancellationToken.None);
+
+            Assert.Null(missing.Icon);
+            Assert.NotNull(available.Icon);
+            Assert.Contains(available.Icon.BgraPixels.ToArray(), value => value != 0);
+        }
+        finally
+        {
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [WindowsFact]
     public async Task UsesLocalizedKnownNamesWhenExecutablePathIsUnavailable()
     {
         if (!OperatingSystem.IsWindows())
