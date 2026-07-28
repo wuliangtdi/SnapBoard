@@ -86,16 +86,17 @@ internal static partial class MacOSNativeMethods
 {
     private const string LibProcess = "/usr/lib/libproc.dylib";
 
+    // x86_64 的无后缀符号使用旧 inode/statfs ABI；显式 64 位入口与两架构共享结构一致。
     [LibraryImport(
         LibSystem,
-        EntryPoint = "lstat",
+        EntryPoint = "lstat64",
         SetLastError = true,
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial int LStat(string path, out MacOSFileStatus status);
 
     [LibraryImport(
         LibSystem,
-        EntryPoint = "statfs",
+        EntryPoint = "statfs64",
         SetLastError = true,
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial int StatFs(string path, out MacOSFileSystemStatus status);
