@@ -151,7 +151,7 @@ Threads=18->20; FileDescriptors=50->52
 - Finder 文件复制已通过；其他只提供 file-reference URL 且不提供 legacy 文件列表的应用仍需扩充矩阵。
 - 当前只有一台 1920 x 1080 非 Retina 显示器；未执行睡眠唤醒、多 Space、多显示器、Retina、全屏应用、10 分钟常驻或 8 小时稳定性。
 - 未执行可见 Terminal UI、Office、远程桌面或任何真实用户文档场景。
-- `osx-x64`、通用应用和 Intel 未验证；GitHub Actions 的 macOS 构建/发布 Job 尚未实际运行。
+- `osx-x64` 已在后续 2026-07-29 验证中完成交叉 AOT 与 Rosetta 启动预检，但 Intel 匹配硬件/Runner 和通用应用仍未验证；GitHub Actions 的 macOS 构建/发布 Job 尚未实际运行。
 - 本地 ad-hoc Bundle 和未签名 PKG 不能替代 Developer ID 签名、公证、staple、Gatekeeper 和真实安装升级/卸载验证。
 - 10,000 次功能正确性和 Native AOT 平台探针 `< 8 MiB` 预算通过；首次开窗后的完整桌面后台 Physical Footprint 仍未稳定达到 `<= 80 MB` 目标，8 小时未执行，因此整体性能退出条件未完成。
 
@@ -266,3 +266,13 @@ Threads=17->21; FileDescriptors=49->51
 完整 AOT 桌面另做同 PID A/B：纯后台启动 Physical 为 41.4 MiB；首次显示主窗口为 165.0 MiB；关闭 3 秒后回落到约 94-96 MiB，主窗口 IOSurface 从约 14.1 MiB 降至约 0.1 MiB。10,000 次真实事件前后 Physical 为 99,009,688 -> 99,042,456 字节，仅增加 32 KiB。连续 100 轮快速窗口打开/关闭期间关窗样本在约 95.9-107.8 MiB 间波动但不随轮次单调增长，Lifetime Peak 保持 213.1 MiB、FD 始终 45；约 28 分钟混合压力后的低侵入样本为 95.1 MiB。受签名调试限制，`leaks` 只能读取受限内存范围，在该范围报告 0 leak。
 
 `vmmap` 显示首次 UI 使用后主要留下 Avalonia/AppKit、字体、托管堆和图形驱动的已提交/压缩缓存；窗口表面本身能够释放。这个结果解释了“纯后台很低、开窗后关窗仍接近 100 MiB”的差异，但不能据此把完整桌面判为通过：`<= 80 MB` 目标仍未达到，历史 3 秒和 12 分钟样本也确实曾超过 100 MB。当前结论是“平台事件资源预算通过，完整桌面 UI 后台基线仍未达目标且存在系统波动”；8 小时长稳仍明确未执行。
+
+## 10. 2026-07-29 双架构文件系统 ABI 补验
+
+在 macOS 26.2 (25C56)、Apple M4、16 GiB、.NET SDK 10.0.302 上，从提交 `0bbd9d4` 的干净 checkout 执行 locked restore，并分别发布 `osx-arm64` 与 `osx-x64` Native AOT。x64 首次预检暴露 Darwin 无后缀 `lstat`/`statfs` 在 Intel ABI 下仍使用旧结构布局，导致真实目录被误判；改为两架构共享的 `lstat64`/`statfs64` 后，macOS 平台原生测试 49/49 通过。
+
+`osx-x64` 主程序 35,727,960 字节，SHA-256 `8ebb4ad0080dbcd42549de1b7d89f66aaf579883a8a52d722150b63239acd41b`；迁移器 8,554,488 字节，SHA-256 `3660b83538bda663a20a771f48c59eefdae7a78b41bbf1c41216cdd7d394b780`。两者均为 x86_64 Mach-O，无 CoreCLR 或 helper 托管配置，helper 无参数退出码为 4；Rosetta 下的隔离 bootstrap 冷启动、根/bootstrap/data `0700` 权限、第二实例 `--exit` 和主实例退出均返回 0。该结果是 x64 预检，不能替代 Intel 匹配硬件/Runner。
+
+最终 `osx-arm64` 开发包主程序 34,573,888 字节，SHA-256 `cbe826b2a850625c8d03829aa283f0d19a345150ea5a80a2566fd366e8c70186`；迁移器 8,326,528 字节，SHA-256 `cf330df4d0e2ed72ca5499707f160a29a86d78d4f292e64c698213f158a84c94`。DMG 30,290,823 字节，SHA-256 `01a98c67867594ef7b7b0ce2618851f605ffcd9f60698c328c964ff98e7d2c19`；PKG 27,020,393 字节，SHA-256 `30e6b1cf37cc7a0842e0f74575288aedb9abc2355ffb7ac4214490c181b35f67`。DMG CRC、挂载后启动、`codesign --deep --strict`、PKG 17 项 payload、Bundle ID 与 `/Applications` 安装位置通过；Bundle 仍为 Hardened Runtime ad-hoc，PKG 无签名，公证跳过。
+
+Release build 为 0 警告/0 错误，format 检查 342 个文件且无改动；启用两个 Apache 2.4.62 loopback WebDAV 端点后，全量 307 项中 287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败。CI Build/Test 矩阵已加入 `macos-15-intel`，但远程工作流尚未运行；Developer ID、公证、Gatekeeper、Intel 实机、8 小时和多显示器等限制不变。

@@ -3,7 +3,7 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：`codex/webdav-provider-migration` 已完成共享 WebDAV 服务商迁移状态机、SQLite v8、双平台设置流程、真实 Apache WebDAV 双设备迁移和 `osx-arm64` Native AOT 本机验证；正式 Windows <-> macOS 双机、Nextcloud/Synology、Intel 与正式发布继续收口
+> 当前阶段：`codex/webdav-provider-migration` 已完成共享 WebDAV 服务商迁移状态机、SQLite v8、双平台设置流程、真实 Apache WebDAV 双设备迁移、`osx-arm64` 本机包及 `osx-x64` Rosetta 启动预检；正式 Windows <-> macOS 双机、Nextcloud/Synology、Intel Runner 与正式发布继续收口
 > 实现状态：Windows 与 macOS 已共用安全数据目录迁移、加密同步、历史策略、真实同步 UI 和可恢复的 WebDAV 服务商迁移；设备撤销/密钥轮换、远端回收、长期资源验证及正式发布尚未完成
 > 总体顺序：Windows -> macOS -> Linux
 
@@ -664,13 +664,13 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复和单显示器窗口重开已实测；多 Space、多显示器、Retina 和全屏应用待验收。
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写，macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
-- [ ] 验证 Intel 与 Apple Silicon。
-- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：包含系统恢复监听、扩展 ACL 与 Checkpoint 恢复修复的新 `osx-arm64` 主程序、独立迁移器均为 arm64 Mach-O，架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储后台启动/第二实例退出均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
+- [~] 验证 Intel 与 Apple Silicon：Apple M4 上的 `osx-arm64` 原生测试、AOT 与开发包通过；同机交叉发布的 `osx-x64` 已在 Rosetta 下完成私有存储冷启动和单实例退出，但匹配 Intel 硬件/Runner 测试仍未执行，不能标记完成。
+- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：两个 RID 的主程序与独立迁移器架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储启动/第二实例退出均通过；`osx-arm64` App/DMG/PKG 已本机复验，`osx-x64` 为 Rosetta 预检，仍待 Intel Runner 打包。0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。
 
 #### 2.3 发布
 
 - [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、嵌套迁移器先签名、Hardened Runtime、DMG `/Applications` 链接、PKG `/Applications` 安装位置、payload 与校验和均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，`spctl` 按预期拒绝，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
-- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、主程序与迁移器 Mach-O/架构/退出码、签名层级和公证步骤已配置，远程 Runner 尚未实际执行。
+- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、主程序与迁移器 Mach-O/架构/退出码、签名层级和公证步骤已配置，Build/Test 矩阵已加入 `macos-15-intel` 以实际执行 Intel 原生测试；远程 Runner 尚未实际执行。
 - [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：Native AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB，排除按事件线性泄漏；系统唤醒与网络变化的原生注册、回调和 AOT 初始化已自动验证。完整桌面纯后台为 41.4 MiB，首次开窗后关窗约 94-96 MiB，100 轮快速窗口无单调增长，但历史三次 3 秒样本和 12 分 23 秒样本仍曾超过 100 MB，尚未达到 `<= 80 MB` 目标。8 小时、真实睡眠唤醒/断网恢复、多 Space、多显示器、Retina 和全屏待验证。
 - [x] 更新平台支持矩阵和已知限制。
 

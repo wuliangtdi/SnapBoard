@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-29
-> 当前阶段：共享 WebDAV 服务商迁移、缺失 Checkpoint 安全恢复、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测及本机 `osx-arm64` AOT 已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel 与正式发布继续收口
+> 当前阶段：共享 WebDAV 服务商迁移、缺失 Checkpoint 安全恢复、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测、`osx-arm64` 本机包及 `osx-x64` Rosetta 启动预检已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel Runner 与正式发布继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -17,7 +17,7 @@
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI、共享 WebDAV 服务商迁移及 macOS 恢复触发已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期及 Native AOT 已验证；内存、物理睡眠/断网、8 小时、Intel、Developer ID、公证和正式跨系统设备矩阵待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期和开发包已验证，x64 AOT 已通过 Rosetta 启动预检；内存、物理睡眠/断网、8 小时、Intel Runner、Developer ID、公证和正式跨系统设备矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -59,7 +59,8 @@
 | Release build | 通过 | 本机 0 警告、0 错误 |
 | 全量自动测试 | 通过 | macOS arm64 共 307 项：287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 95/95、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
 | macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/POSIX mode/真实扩展 ACL/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
-| `osx-arm64` Native AOT | 本机通过 | Checkpoint 恢复修复后主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
+| `osx-arm64` Native AOT | 本机通过 | 64 位文件系统 ABI 修复后的主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，挂载 DMG 后隔离 bootstrap 启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
+| `osx-x64` Native AOT | Rosetta 预检通过 | 干净 checkout 交叉发布的主程序 35,727,960 字节、迁移器 8,554,488 字节，均为 x86_64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，Rosetta 下隔离 bootstrap 启动、`0700` 权限及 `--exit` 通过。匹配 Intel Runner 的测试、发布和打包仍待执行 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -114,6 +115,8 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 稳定 Bundle ID 为 `com.wuliangtdi.snapboard`，标准 `.icns` 和浅色/深色 Template 状态图标已接入。最终 `osx-arm64` DMG 校验通过，挂载后的 App Bundle 实际后台启动并显示状态项，PKG 可展开；应用使用 Hardened Runtime ad-hoc 签名，PKG 未签名。当前钥匙串没有 Developer ID Application/Installer 身份，也未配置公证凭据，因此正式签名、Gatekeeper 接受和公证均未执行，不能标记完成。
 
 macOS 现已在 Avalonia 和 SQLite 初始化前解析固定 bootstrap 与活动数据根，保留 `~/Library/Application Support/SnapBoard` legacy 数据，locator 损坏恢复与缺失自定义根均明确失败。平台存储服务使用原生文件身份、实际卷大小写语义、卷 UUID、POSIX mode 与扩展 ACL 检查 APFS 目录；Darwin `acl_get_entry` 的成功返回值和 `EINVAL` 遍历终止语义已由真实 ACL 验证，带其他主体 allow 条目的目录不会误报为私有。平台保守拒绝网络/移动/只读/未知卷和 iCloud/File Provider 根；进程启动、等待与停止使用 PID、启动时间、可执行路径和 UID 的完整身份。共享组合根在 macOS 注册真实同步、历史设置和存储迁移服务，设置窗口的存储、历史、同步与辅助功能区域全部可见并遵循 owner modal 及失败恢复顺序。
+
+Darwin 的 x86_64 无后缀 `lstat`/`statfs` 使用旧 inode/statfs ABI，而托管结构对应现代 64 位布局；这会让 x64 AOT 把真实目录误判为非目录。平台互操作现显式调用两架构都导出的 `lstat64`/`statfs64`，arm64 原生测试与 x64 Rosetta 冷启动均通过。CI Build/Test 矩阵同时加入 `macos-15-intel`，使该存储原生测试在 Intel Runner 上执行，而不是只校验 x64 Mach-O。
 
 Keychain 原生测试已覆盖 32 字节空间主密钥和包含 endpoint/root/user/password/certificate pin/loopback 的凭据包新增、读取、覆盖、删除、不存在与拒绝状态。已有空间重新配置改为先临时恢复并恒定时间比较主密钥，再用候选凭据验证远端，成功后才覆盖安全存储；错误恢复码、有效但不匹配的恢复材料及证书失败均逐字节保持既有主密钥、凭据和 SQLite 配置，后续同步仍可用。
 
@@ -603,7 +606,45 @@ osx-arm64 开发包：
   - osx-x64/Intel、正式 Windows <-> macOS App 双机、两台正式 macOS App、Nextcloud/Synology、真实 TLS/配额、物理睡眠与网络恢复、Retina/多显示器、8 小时长稳和既有内存目标仍未完成。
 ```
 
-## 21. 更新规则
+## 21. 2026-07-29 执行记录：Intel 文件系统 ABI 与双架构 AOT 预检
+
+```text
+日期：2026-07-29
+阶段/任务：补齐 macOS x86_64 文件系统 ABI，执行 arm64 原生包与 x64 Rosetta 启动预检
+状态：[x] ABI 修复、本机双架构 AOT 预检、真实 Apache 全解及 arm64 开发包通过；[~] Intel Runner 与正式发布门槛保持未完成
+开发基线：开发前 main 与 origin/main 均为 f6c1ffaa88f33d2b452f3707729f42388f6bb5f6
+Commit SHA: 0bbd9d4（fix(macos): use 64-bit filesystem ABI on Intel）
+环境：macOS 26.2 (25C56)，Apple M4 arm64，16 GiB，.NET SDK 10.0.302
+发现与修复：
+  - 干净 checkout 的 osx-x64 AOT 可生成正确 Mach-O，但 Rosetta 冷启动把已存在目录误判为非目录。
+  - 托管 MacOSFileStatus/MacOSFileSystemStatus 使用现代 64 位 Darwin 布局；x86_64 的无后缀 lstat/statfs 符号仍使用旧 inode/statfs ABI，Mode 等字段偏移不一致。
+  - LibraryImport 现显式调用 lstat64/statfs64；这两个入口在 arm64/x86_64 都导出且与托管结构一致。arm64 原生目录/卷测试与 x64 Rosetta 冷启动均通过。
+  - CI Build/Test 矩阵加入 macos-15-intel，使 49 项 macOS 平台测试在 Intel Runner 上实际执行；既有 x64 Native AOT job 继续校验主程序与 helper。
+自动验证：
+  - 全新 checkout locked restore 通过；Release build 0 警告、0 错误；dotnet format 检查 342 个文件、0 个改动；macOS 原生项目 49/49。
+  - 未注入外部服务时全量 307 项：286 项通过、20 项 Windows 原生测试和 1 项真实 WebDAV 测试跳过、0 项失败。
+  - 启用 Apache 2.4.62 双 loopback 端点和双账号后，全量 307 项：287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Infrastructure 95/95。
+  - 临时 Apache、账号、锁、日志、远端数据、DMG 挂载点和 bootstrap 已删除，18731/18732 无监听。
+osx-x64 Rosetta 预检：
+  - 输出目录 artifacts/osx-x64-rosetta-abi64-20260729 受 .gitignore 排除，不进入仓库。
+  - 主程序 35,727,960 字节，SHA-256 8EBB4AD0080DBCD42549DE1B7D89F66AAF579883A8A52D722150B63239ACD41B；迁移器 8,554,488 字节，SHA-256 3660B83538BDA663A20A771F48C59EEFDAE7A78B41BBF1C41216CDD7D394B780。
+  - 两者均为 x86_64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4。
+  - Rosetta 下私有 bootstrap 后台启动成功，根/bootstrap/data 均为 0700；第二实例 --exit 和主实例退出均返回 0。
+  - 这是同机 Rosetta 预检，不等价于 Intel 匹配硬件/Runner 测试或打包结果。
+osx-arm64 最终开发包：
+  - 输出目录 artifacts/macos-abi64-final-20260729 受 .gitignore 排除，不进入仓库。
+  - 主程序 34,573,888 字节，SHA-256 CBE826B2A850625C8D03829AA283F0D19A345150EA5A80A2566FD366E8C70186；迁移器 8,326,528 字节，SHA-256 CF330DF4D0E2ED72CA5499707F160A29A86D78D4F292E64C698213F158A84C94。
+  - 两者均为 arm64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4，codesign strict/deep 通过。
+  - DMG 30,290,823 字节，SHA-256 01A98C67867594EF7B7B0CE2618851F605FFCD9F60698C328C964FF98E7D2C19，CRC 有效，根目录仅含 SnapBoard.app 与 Applications -> /Applications；从挂载镜像隔离启动及退出通过。
+  - PKG 27,020,393 字节，SHA-256 30E6B1CF37CC7A0842E0F74575288AEDB9ABC2355FFB7AC4214490C181B35F67；PackageInfo 为 17 项 payload、com.wuliangtdi.snapboard、/Applications 和 root 授权。
+  - 0 个 trim/AOT 分析告警；2 个已解释 clang module-cache 调试信息告警仍来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，未 suppression。
+限制：
+  - App 仍为 Hardened Runtime ad-hoc 签名，PKG 未签名，notary skipped；本机无 Developer ID Application/Installer 或公证凭据，Gatekeeper 正式接受未执行。
+  - 分支尚未推送，新增的 macos-15-intel CI 与既有 arm64/x64 发布 Job 未远程运行，因此不记录虚构的 Runner 链接或结果。
+  - 正式 Windows <-> macOS App 双机、两台正式 macOS App、Nextcloud/Synology、真实 TLS/配额、物理睡眠与网络恢复、Retina/多显示器、8 小时长稳和既有内存目标仍未完成。
+```
+
+## 22. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

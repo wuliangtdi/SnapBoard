@@ -43,7 +43,7 @@
 - [~] ServiceManagement 登录启动与 App Bundle 能力检测已实现，当前状态为未启用；真实启用/禁用及重新登录待用户确认后验收。
 - [x] Keychain 临时密钥新增、读取和删除通过原生验证，平台抽象可供后续同步复用。
 - [ ] 睡眠唤醒、多 Space、多显示器、Retina 和全屏应用；当前主机仅一台 1920 x 1080 非 Retina 显示器，未从该环境外推。
-- [~] `osx-arm64` Native AOT 0 告警并实际启动；AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB。完整桌面首次开窗后关窗约 94-96 MiB，未达到 80 MiB 目标且历史三轮样本为 100.05/100.19/100.19 MiB。DMG 校验通过，但 Bundle 仅 ad-hoc、PKG 未签名且 `spctl` 拒绝；Developer ID、公证、staple、安装升级/卸载、GitHub Runner、`osx-x64` 和 8 小时长稳待验证。
+- [~] `osx-arm64` Native AOT、DMG/PKG 和实际启动通过；`osx-x64` 主程序与 helper 已交叉发布并在 Rosetta 下完成隔离存储启动和退出，匹配 Intel Runner 仍待验证。AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB。完整桌面首次开窗后关窗约 94-96 MiB，未达到 80 MiB 目标且历史三轮样本为 100.05/100.19/100.19 MiB。Bundle 仅 ad-hoc、PKG 未签名且 `spctl` 拒绝；Developer ID、公证、staple、安装升级/卸载、远程 Runner 和 8 小时长稳待验证。
 
 详细证据、性能样本和未验证项见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 
