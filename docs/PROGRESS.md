@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
-> 最后更新：2026-07-28
-> 当前阶段：共享 WebDAV 服务商迁移、SQLite v8、双平台设置流程、Apache 实测及本机 `osx-arm64` AOT 已落地；正式跨系统 App、Nextcloud/Synology、Intel 与正式发布继续收口
+> 最后更新：2026-07-29
+> 当前阶段：共享 WebDAV 服务商迁移、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测及本机 `osx-arm64` AOT 已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel 与正式发布继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -16,8 +16,8 @@
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
-| Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI 和共享 WebDAV 服务商迁移已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、生命周期及 Native AOT 已验证；内存、8 小时、Intel、Developer ID、公证和正式跨系统设备矩阵待完成 |
+| Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI、共享 WebDAV 服务商迁移及 macOS 恢复触发已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期及 Native AOT 已验证；内存、物理睡眠/断网、8 小时、Intel、Developer ID、公证和正式跨系统设备矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | macOS arm64 共 303 项：283 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 92/92、WebDAV 38/38、macOS 48/48、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
-| macOS 存储与同步测试 | 通过 | macOS 原生项目 48/48 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
-| `osx-arm64` Native AOT | 本机通过 | 服务商迁移构建主程序 34,740,768 字节，迁移器 8,356,952 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
+| 全量自动测试 | 通过 | macOS arm64 共 304 项：284 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 92/92、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
+| macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
+| `osx-arm64` Native AOT | 本机通过 | 系统恢复监听构建主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -107,6 +107,8 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
 
 macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道、带确认的第二实例命令、Carbon 全局快捷键、ServiceManagement 登录启动、AppKit Template 状态项、Accessibility 权限服务、Security.framework Keychain 服务和窗口原生定位。Desktop 生命周期协调器只依赖平台抽象，主窗口、快速窗口和设置窗口按需创建、关闭释放并可重复打开；最后窗口关闭不退出应用，状态菜单可暂停/恢复记录并明确退出。AppKit 调用统一切入 Avalonia UI 线程，状态项及窗口原生对象使用成对 retain/release。
 
+系统恢复监听通过 `IDesktopSystemEventService` 隔离平台代码：`NSWorkspaceDidWakeNotification` 报告系统唤醒，SystemConfiguration dynamic store 监听 `State:/Network/Global/.*`。两类信号只调用线程安全且会自动合并的 `SyncService.RequestSync()`，初始化失败时仍由周期检查兜底。原生 observer、dispatch queue、`UnmanagedCallersOnly` 回调、重复启动、释放后解绑和 Desktop 同步请求均有自动测试；真实合盖/唤醒及网络接口断开恢复尚未执行，不能由模拟通知外推。
+
 实机已验证关闭全部窗口后进程和状态项继续存在、第二实例复用原进程并打开主窗口、三类窗口重复关闭/重建、菜单打开主/快速/设置窗口、暂停/恢复记录和菜单退出。默认 `Command+Shift+V` 及自定义 `Option+Control+A` 均由系统真实按键事件打开快速窗口；自定义配置重启后仍注册，最后恢复默认。快速窗口打开前保存目标应用，既有 TextEdit 恢复与自动粘贴结果继续有效。设置页仅显示 Command/Option/Control/Shift、登录启动、辅助功能和 Bundle 能力，不显示 Windows 术语。
 
 稳定 Bundle ID 为 `com.wuliangtdi.snapboard`，标准 `.icns` 和浅色/深色 Template 状态图标已接入。最终 `osx-arm64` DMG 校验通过，挂载后的 App Bundle 实际后台启动并显示状态项，PKG 可展开；应用使用 Hardened Runtime ad-hoc 签名，PKG 未签名。当前钥匙串没有 Developer ID Application/Installer 身份，也未配置公证凭据，因此正式签名、Gatekeeper 接受和公证均未执行，不能标记完成。
@@ -133,7 +135,7 @@ SQLite v8 只保存计划 ID、epoch、远端指纹、阶段、水位和进度�
 
 1. 使用正式 Windows 与 macOS App 执行双向发起、离线恢复、部分提交恢复及回滚矩阵；共享状态机测试不能替代该双机门槛。
 2. 使用 Nextcloud 与 Synology 执行认证、路径、ETag、配额、限流、重试和损坏响应矩阵；Apache 标准 WebDAV 已通过。
-3. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，以及系统唤醒和网络恢复触发。
+3. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，并在真实合盖/唤醒及网络接口断开恢复场景验收已实现的立即同步触发。
 4. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力、三次资源采样和 8 小时长稳。
 5. 在对应硬件补齐 Windows ARM64、macOS 同协议/Keychain、macOS Intel 和 Linux 验证；不得从当前 Windows x64 结果外推。
 6. 上述发布门槛完成后再进入 Windows 签名、安装包、自动更新和正式发布。
@@ -507,7 +509,42 @@ osx-arm64 开发包：
   - Retina、睡眠唤醒、网络恢复、多 Space/多显示器、完整手工迁移和 8 小时长稳仍按既有未完成项保留。
 ```
 
-## 18. 更新规则
+## 18. 2026-07-29 执行记录：macOS 系统恢复触发与最终本机包验证
+
+```text
+日期：2026-07-29
+阶段/任务：补齐 macOS 系统唤醒/网络变化立即同步触发，并复核当前代码的并行测试与 AOT 包结构
+状态：[x] 原生事件源、同步接线、本机自动化、Apache 与 osx-arm64 开发包通过；[~] 物理恢复场景及外部发布门槛仍未完成
+主分支复核：开发前已 fetch；main 与 origin/main 一致为 f6c1ffaa88f33d2b452f3707729f42388f6bb5f6
+分支：codex/webdav-provider-migration
+系统事件 Commit SHA: 78ba456f7747df97f1b914b3f5c594a3b6ead22d（feat(macos): sync after wake and network changes）
+连接池修复 Commit SHA: cced21540f8af7355ea0cc379221bdb7b0dffdbe（fix(sqlite): isolate connection pool cleanup）
+完成内容：
+  - Platform.Abstractions 新增 IDesktopSystemEventService；macOS 使用 NSWorkspaceDidWakeNotification 与 SystemConfiguration State:/Network/Global/.*，Desktop 将两类信号合并为 SyncService.RequestSync()。
+  - NSWorkspace observer 与 dynamic store/dispatch queue 均有显式启动、重复启动保护、回调异常边界和释放路径；初始化失败不阻断应用，周期同步继续兜底。
+  - 原生测试真实注册两个事件源，投递进程内 NSWorkspace 通知，并通过同一 UnmanagedCallersOnly ABI 探针验证 dynamic store 句柄到托管事件的路由；释放后两条路径均不再发布。Headless 测试验证每个事件各触发一次同步请求并在协调器释放后解绑。
+  - 离线双设备新增、冲突更新、删除和保留策略的最终收敛用例通过；恢复网络时的系统事件只加速触发，不改变 Outbox、幂等或周期兜底语义。
+  - 并行全解最初暴露安全扫描读取活动 SQLite 文件及全局 ClearAllPools 关闭其他测试连接的竞态；扫描改为先停止 SyncService/写队列形成稳定落盘快照，生产恢复/迁移与测试上下文改为仅清理当前连接字符串对应的池。
+自动验证：
+  - Release build 0 警告、0 错误；format、git diff 检查通过。安全落盘扫描连续 5/5 通过，修复后的本地并行全解连续 2/2 通过。
+  - 启用 Apache 2.4.62 双 loopback 端点和双账号后，Infrastructure 92/92；最终全量 304 项：284 项通过、20 项 Windows 原生测试按 macOS 平台跳过、0 项失败。
+  - macOS 平台 49/49、Desktop Headless 51/51、WebDAV 38/38、Application 10/10、Architecture 2/2；临时 Apache、账号、远端数据均已删除，18731/18732 无监听。
+osx-arm64 开发包：
+  - 输出目录 artifacts/macos-system-events-final-20260729 受 .gitignore 排除，不进入仓库。
+  - 主程序 34,573,888 字节，SHA-256 31E3D8CAB43F3323C5EB1E7E9B2A68D42656767CE4FD769CC4BE05E473500CF5；迁移器 8,326,528 字节，SHA-256 A341EF11EE2BEF223175AF6C112C2AF5B2B2A3C479E6C17605A9377F9B0DED2F。
+  - 两者均为 arm64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4。App 及嵌套原生文件 codesign strict/deep 通过。
+  - DMG 30,289,627 字节，SHA-256 E348080A32BF00A03D935A1B90D2C76E5BCB226B3C008B1C89930A8A58294B71，CRC 有效，挂载根含 SnapBoard.app 与 Applications -> /Applications。
+  - PKG 27,019,279 字节，SHA-256 B4FF7F59049628372C8226F66A70978F69A822E0001E5BA48781B467D18C0DF0；payload 含主程序、helper、Info.plist、icns/Template 资源，PackageInfo identifier 为 com.wuliangtdi.snapboard，install-location 为 /Applications。
+  - 私有 /private/tmp 隔离 bootstrap 下，当前 AOT App 后台启动、第二实例 --exit 和主实例退出均返回 0，证明系统事件原生初始化可在 AOT 桌面进程运行；临时数据已删除。
+  - 0 个 trim/AOT 分析告警；2 个已解释 clang module-cache 调试信息告警仍来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，未 suppression。
+限制：
+  - 本轮自动化没有执行真实合盖/系统睡眠，也没有切断 Wi-Fi、以太网或其他实际网络接口；只能确认原生注册、回调、同步请求与 AOT 初始化，物理恢复时序仍须手工验收。
+  - 当前 App 为 ad-hoc Hardened Runtime 签名，PKG 无签名，notary skipped；Developer ID Application/Installer、notary/staple 与 Gatekeeper 接受未执行。
+  - osx-x64/Intel、正式 Windows <-> macOS 双向发起/离线恢复/回滚、两台正式 macOS App、Nextcloud、Synology、真实 TLS 固定与真实配额服务矩阵仍未执行。
+  - Retina、多 Space/多显示器、完整手工迁移、8 小时长稳及既有内存目标仍未完成。
+```
+
+## 19. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。
