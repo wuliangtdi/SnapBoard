@@ -86,8 +86,8 @@ public sealed class SnapBoardDatabaseInitializer(
         string diagnosticCode,
         CancellationToken cancellationToken)
     {
-        // 先清空连接池再移动 db/wal/shm，避免 Windows 上仍有 Provider 句柄占用。
-        SqliteConnection.ClearAllPools();
+        // 先清空当前数据库连接池再移动 db/wal/shm，避免 Windows 上仍有 Provider 句柄占用。
+        connectionFactory.ClearPool();
         string directoryName = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}";
         string recoveryDirectory = Path.Combine(paths.RecoveryDirectory, directoryName);
         Directory.CreateDirectory(recoveryDirectory);

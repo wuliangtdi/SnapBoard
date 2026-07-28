@@ -65,7 +65,7 @@ internal static class StorageDatabaseVerifier
                 .ConfigureAwait(false);
         }
 
-        SqliteConnection.ClearAllPools();
+        factory.ClearPool();
         DeleteRuntimeFiles(paths.DatabasePath);
         return snapshot;
     }
@@ -94,7 +94,7 @@ internal static class StorageDatabaseVerifier
                 .ConfigureAwait(false);
         }
 
-        SqliteConnection.ClearAllPools();
+        factory.ClearPool();
         DeleteRuntimeFiles(paths.DatabasePath);
         return snapshot;
     }

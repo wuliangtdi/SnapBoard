@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Domain.Clipboard;
@@ -226,7 +225,6 @@ public sealed class StorageMigrationExecutorTests
         public async ValueTask DisposeAsync()
         {
             await LocationStore.DisposeAsync();
-            SqliteConnection.ClearAllPools();
             try
             {
                 Directory.Delete(Root, recursive: true);

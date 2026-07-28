@@ -83,6 +83,11 @@ public sealed class SyncServiceEndToEndTests
             ];
             try
             {
+                // 安全扫描必须基于稳定的落盘快照；否则并行测试负载下 SQLite 连接池
+                // 仍可能持有数据库文件，既造成共享冲突，也可能漏扫尚未 checkpoint 的 WAL。
+                await service.DisposeAsync();
+                await context.Store.DisposeAsync();
+                context.ClearConnectionPool();
                 foreach (string file in Directory.EnumerateFiles(
                     context.RootDirectory,
                     "*",

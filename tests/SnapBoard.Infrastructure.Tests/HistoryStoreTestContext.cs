@@ -30,6 +30,8 @@ internal sealed class HistoryStoreTestContext : IAsyncDisposable
 
     public SqliteClipboardHistoryStore Store { get; }
 
+    public void ClearConnectionPool() => ConnectionFactory.ClearPool();
+
     private bool DeleteOnDispose { get; }
 
     public static async Task<HistoryStoreTestContext> CreateAsync(
@@ -63,7 +65,7 @@ internal sealed class HistoryStoreTestContext : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await Store.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        ClearConnectionPool();
         if (!DeleteOnDispose)
         {
             return;

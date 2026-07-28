@@ -37,6 +37,16 @@ public sealed class SnapBoardDatabaseConnectionFactory
 
     public SqliteConnection CreateConnection() => new(_connectionString);
 
+    /// <summary>
+    /// 仅清理当前数据库连接字符串对应的池，避免迁移或恢复一个存储位置时
+    /// 关闭进程内其他独立数据库仍在使用的连接。
+    /// </summary>
+    public void ClearPool()
+    {
+        using SqliteConnection connection = CreateConnection();
+        SqliteConnection.ClearPool(connection);
+    }
+
     public async ValueTask<SqliteConnection> OpenConnectionAsync(
         CancellationToken cancellationToken)
     {
