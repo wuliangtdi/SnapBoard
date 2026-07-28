@@ -46,13 +46,14 @@ public sealed class SecondaryWindowHeadlessTests
     [AvaloniaFact]
     public async Task SettingsWindowRendersTheBrandedLayout()
     {
+        FakeSyncService syncService = new(configured: true);
         SettingsViewModel viewModel = new(
             new FakeGlobalHotKeyService(),
             new FakeAutoStartService(),
             storageManagementService: new FakeStorageManagementService(),
             storagePlatformService: new FakeStoragePlatformService(),
             requestStorageMigration: static (_, _) => ValueTask.CompletedTask,
-            syncService: new FakeSyncService(),
+            syncService: syncService,
             historySettingsService: new FakeHistorySettingsService());
         await viewModel.InitializeStorageAsync();
         viewModel.SyncActiveSpaceId = "11111111-1111-1111-1111-111111111111";
@@ -79,6 +80,14 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<Button>("SaveHistorySettingsButton"));
             Assert.IsType<ComboBox>(window.FindControl<ComboBox>("SyncFrequencyComboBox"));
             Assert.IsType<Button>(window.FindControl<Button>("SaveSyncFrequencyButton"));
+            TextBox providerEndpoint = Assert.IsType<TextBox>(
+                window.FindControl<TextBox>("ProviderMigrationTargetEndpointTextBox"));
+            StackPanel providerSection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("ProviderMigrationSection"));
+            Button startProviderMigration = Assert.IsType<Button>(
+                window.FindControl<Button>("StartOrProvideProviderMigrationButton"));
+            Assert.IsType<ItemsControl>(
+                window.FindControl<ItemsControl>("ProviderMigrationDevicesItems"));
             Assert.Equal(@"C:\SnapBoardData", viewModel.CurrentStorageDirectory);
             Assert.Contains("1 MiB", viewModel.StorageUsageText, StringComparison.Ordinal);
             using var frame = window.CaptureRenderedFrame();
@@ -120,6 +129,45 @@ public sealed class SecondaryWindowHeadlessTests
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(syncCapturePath)!);
                 syncFrame.Save(syncCapturePath, PngBitmapEncoderOptions.Default);
+            }
+
+            providerSection.BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(providerEndpoint.IsVisible);
+            Assert.True(startProviderMigration.IsVisible);
+            providerEndpoint.BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            using var providerMigrationInputFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(providerMigrationInputFrame);
+            string? providerMigrationInputCapturePath = Environment.GetEnvironmentVariable(
+                "SNAPBOARD_SETTINGS_PROVIDER_MIGRATION_INPUT_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(providerMigrationInputCapturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(
+                    providerMigrationInputCapturePath)!);
+                providerMigrationInputFrame.Save(
+                    providerMigrationInputCapturePath,
+                    PngBitmapEncoderOptions.Default);
+            }
+
+            viewModel.ProviderMigrationTargetEndpoint = "https://new.example.test/dav/";
+            viewModel.ProviderMigrationTargetRoot = "SnapBoard/v2";
+            viewModel.ProviderMigrationTargetUsername = "target-user";
+            viewModel.ProviderMigrationTargetPassword = "target-secret";
+            await viewModel.StartOrProvideProviderMigrationCommand.ExecuteAsync(null);
+            providerSection.BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(2, viewModel.ProviderMigrationDevices.Count);
+            using var providerMigrationFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(providerMigrationFrame);
+            string? providerMigrationCapturePath = Environment.GetEnvironmentVariable(
+                "SNAPBOARD_SETTINGS_PROVIDER_MIGRATION_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(providerMigrationCapturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(providerMigrationCapturePath)!);
+                providerMigrationFrame.Save(
+                    providerMigrationCapturePath,
+                    PngBitmapEncoderOptions.Default);
             }
         }
         finally
@@ -500,6 +548,103 @@ public sealed class SecondaryWindowHeadlessTests
         Assert.Contains("15 分钟", viewModel.SyncFrequencyStatus, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ProviderMigrationUsesLocalCredentialsAndClearsPassword()
+    {
+        FakeSyncService syncService = new(configured: true);
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            syncService: syncService);
+        await viewModel.InitializeSyncAsync();
+        viewModel.ProviderMigrationTargetEndpoint = "https://new.example.test/dav/";
+        viewModel.ProviderMigrationTargetRoot = "SnapBoard/v2";
+        viewModel.ProviderMigrationTargetUsername = "target-user";
+        viewModel.ProviderMigrationTargetPassword = "target-secret";
+
+        await viewModel.StartOrProvideProviderMigrationCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, syncService.ProviderMigrationStartCount);
+        Assert.Equal(
+            new Uri("https://new.example.test/dav/"),
+            syncService.ProviderMigrationRequest?.TargetConfiguration.Endpoint);
+        Assert.Equal("target-user", syncService.ProviderMigrationRequest?
+            .TargetConfiguration.Username);
+        Assert.Equal("target-secret"u8.ToArray(), syncService.ProviderMigrationPassword);
+        Assert.Empty(viewModel.ProviderMigrationTargetPassword);
+        Assert.True(viewModel.IsProviderMigrationContinueVisible);
+        Assert.True(viewModel.IsProviderMigrationCancelVisible);
+        Assert.Equal(2, viewModel.ProviderMigrationDevices.Count);
+
+        await viewModel.ContinueProviderMigrationCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, syncService.ProviderMigrationContinueCount);
+        Assert.Equal("https://new.example.test/dav/", viewModel.ProviderMigrationCurrentEndpoint);
+        Assert.Contains("旧服务数据仍保留", viewModel.ProviderMigrationStatus,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProviderMigrationParticipantProvidesItsOwnCredentials()
+    {
+        FakeSyncService syncService = new(configured: true);
+        Guid planId = Guid.NewGuid();
+        syncService.SetProviderMigration(new SyncProviderMigrationSnapshot(
+            SyncProviderMigrationState.TargetCredentialsRequired,
+            planId,
+            syncService.SpaceId,
+            Epoch: 1,
+            SourceEndpoint: "https://old.example.test/dav/",
+            SourceRemoteRoot: "SnapBoard/v1",
+            TargetEndpoint: "https://new.example.test/dav/",
+            TargetRemoteRoot: "SnapBoard/v2"));
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            syncService: syncService);
+        viewModel.ProviderMigrationTargetUsername = "device-two";
+        viewModel.ProviderMigrationTargetPassword = "device-two-secret";
+
+        await viewModel.StartOrProvideProviderMigrationCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, syncService.ProviderMigrationProvideCount);
+        Assert.Equal(planId, syncService.LastProviderMigrationPlanId);
+        Assert.Equal("device-two-secret"u8.ToArray(), syncService.ProviderMigrationPassword);
+        Assert.Empty(viewModel.ProviderMigrationTargetPassword);
+    }
+
+    [AvaloniaFact]
+    public async Task ProviderMigrationConfirmationIsOwnedAndCancelReturnsFalse()
+    {
+        Window owner = new() { Width = 700, Height = 720 };
+        ProviderMigrationConfirmationWindow dialog = new(
+            ProviderMigrationConfirmationAction.FreezeAndContinue);
+        try
+        {
+            owner.Show();
+            Task<bool> result = dialog.ShowDialog<bool>(owner);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Contains(dialog, owner.OwnedWindows);
+            Assert.Equal(new Avalonia.Size(520, 330), dialog.ClientSize);
+            Button cancel = Assert.IsType<Button>(dialog.FindControl<Button>("CancelButton"));
+            cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(await result);
+            Assert.Empty(owner.OwnedWindows);
+        }
+        finally
+        {
+            if (dialog.IsVisible)
+            {
+                dialog.Close();
+            }
+
+            owner.Close();
+        }
+    }
+
     private static SettingsWindow CreateSettingsWindow(
         IGlobalHotKeyService hotKeyService,
         IAutoStartService autoStartService) => new()
@@ -754,13 +899,27 @@ public sealed class SecondaryWindowHeadlessTests
         public bool OpenDirectory(string path) => true;
     }
 
-    private sealed class FakeSyncService : ISyncService
+    private sealed class FakeSyncService : ISyncService, ISyncProviderMigrationService
     {
-        private SyncStatusSnapshot _status = new(SyncServiceState.NotConfigured);
+        private SyncStatusSnapshot _status;
+
+        public FakeSyncService(bool configured = false)
+        {
+            _status = configured
+                ? new SyncStatusSnapshot(SyncServiceState.Idle, SpaceId)
+                : new SyncStatusSnapshot(SyncServiceState.NotConfigured);
+            ProviderMigration = new SyncProviderMigrationSnapshot(
+                SyncProviderMigrationState.None,
+                SpaceId: configured ? SpaceId : null,
+                SourceEndpoint: configured ? "https://old.example.test/dav/" : null,
+                SourceRemoteRoot: configured ? "SnapBoard/v1" : null);
+        }
 
         public event EventHandler<SyncStatusSnapshot>? StatusChanged;
 
         public event EventHandler<SyncPollingSettingsChangedEvent>? PollingSettingsChanged;
+
+        public event EventHandler<SyncProviderMigrationSnapshot>? ProviderMigrationChanged;
 
         public Guid SpaceId { get; } = Guid.NewGuid();
 
@@ -778,6 +937,20 @@ public sealed class SecondaryWindowHeadlessTests
         public byte[] Password { get; private set; } = [];
 
         public byte[] RecoveryCode { get; private set; } = [];
+
+        public SyncProviderMigrationSnapshot ProviderMigration { get; private set; }
+
+        public int ProviderMigrationStartCount { get; private set; }
+
+        public int ProviderMigrationProvideCount { get; private set; }
+
+        public int ProviderMigrationContinueCount { get; private set; }
+
+        public SyncProviderMigrationRequest? ProviderMigrationRequest { get; private set; }
+
+        public byte[] ProviderMigrationPassword { get; private set; } = [];
+
+        public Guid? LastProviderMigrationPlanId { get; private set; }
 
         public void Start()
         {
@@ -846,5 +1019,112 @@ public sealed class SecondaryWindowHeadlessTests
         public void ResumeAfterPause()
         {
         }
+
+        public ValueTask<SyncProviderMigrationSnapshot> RefreshProviderMigrationAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(ProviderMigration);
+        }
+
+        public ValueTask<SyncProviderMigrationResult> StartProviderMigrationAsync(
+            SyncProviderMigrationRequest request,
+            ReadOnlyMemory<byte> targetPassword,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProviderMigrationStartCount++;
+            ProviderMigrationRequest = request;
+            ProviderMigrationPassword = targetPassword.ToArray();
+            Guid planId = Guid.NewGuid();
+            SetProviderMigration(CreateWaitingSnapshot(planId, request));
+            return ValueTask.FromResult(new SyncProviderMigrationResult(
+                SyncProviderMigrationStatus.WaitingForDevices,
+                ProviderMigration));
+        }
+
+        public ValueTask<SyncProviderMigrationResult> ProvideProviderMigrationCredentialsAsync(
+            Guid planId,
+            SyncProviderMigrationRequest request,
+            ReadOnlyMemory<byte> targetPassword,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProviderMigrationProvideCount++;
+            LastProviderMigrationPlanId = planId;
+            ProviderMigrationRequest = request;
+            ProviderMigrationPassword = targetPassword.ToArray();
+            SetProviderMigration(CreateWaitingSnapshot(planId, request));
+            return ValueTask.FromResult(new SyncProviderMigrationResult(
+                SyncProviderMigrationStatus.WaitingForDevices,
+                ProviderMigration));
+        }
+
+        public ValueTask<SyncProviderMigrationResult> ContinueProviderMigrationAsync(
+            Guid planId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProviderMigrationContinueCount++;
+            LastProviderMigrationPlanId = planId;
+            SetProviderMigration(ProviderMigration with
+            {
+                State = SyncProviderMigrationState.Completed,
+                CompletedObjects = ProviderMigration.TotalObjects,
+                CompletedBytes = ProviderMigration.TotalBytes,
+                OldRemoteRetained = true,
+            });
+            return ValueTask.FromResult(new SyncProviderMigrationResult(
+                SyncProviderMigrationStatus.Success,
+                ProviderMigration));
+        }
+
+        public ValueTask<SyncProviderMigrationResult> CancelOrRollbackProviderMigrationAsync(
+            Guid planId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastProviderMigrationPlanId = planId;
+            SetProviderMigration(ProviderMigration with
+            {
+                State = SyncProviderMigrationState.RolledBack,
+            });
+            return ValueTask.FromResult(new SyncProviderMigrationResult(
+                SyncProviderMigrationStatus.Success,
+                ProviderMigration));
+        }
+
+        public void SetProviderMigration(SyncProviderMigrationSnapshot snapshot)
+        {
+            ProviderMigration = snapshot;
+            ProviderMigrationChanged?.Invoke(this, snapshot);
+        }
+
+        private SyncProviderMigrationSnapshot CreateWaitingSnapshot(
+            Guid planId,
+            SyncProviderMigrationRequest request) => new(
+                SyncProviderMigrationState.WaitingForDeviceAcks,
+                planId,
+                SpaceId,
+                Epoch: 1,
+                SourceEndpoint: "https://old.example.test/dav/",
+                SourceRemoteRoot: "SnapBoard/v1",
+                TargetEndpoint: request.TargetConfiguration.Endpoint.AbsoluteUri,
+                TargetRemoteRoot: request.TargetConfiguration.RemoteRoot,
+                Devices:
+                [
+                    new SyncProviderMigrationDeviceSnapshot(
+                        Guid.NewGuid(),
+                        SyncProviderMigrationDeviceState.Ready,
+                        4,
+                        4),
+                    new SyncProviderMigrationDeviceSnapshot(
+                        Guid.NewGuid(),
+                        SyncProviderMigrationDeviceState.Pending,
+                        2,
+                        2),
+                ],
+                TotalObjects: 8,
+                TotalBytes: 4096);
     }
 }

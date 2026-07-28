@@ -93,31 +93,37 @@ public sealed partial class SyncService
             int downloaded;
             using (keyResult.Key)
             using (credentialResult.Credential)
-            await using (ISyncRemoteSession session = _remoteSessionFactory.Create(
-                credentialResult.Credential.RemoteConfiguration,
-                credentialResult.Credential.Password))
             {
+                await EnsureProviderMigrationAllowsUploadAsync(
+                        configuration,
+                        keyResult.Key.Key,
+                        credentialResult.Credential,
+                        token)
+                    .ConfigureAwait(false);
+                await using ISyncRemoteSession session = _remoteSessionFactory.Create(
+                    credentialResult.Credential.RemoteConfiguration,
+                    credentialResult.Credential.Password);
                 await EnsureAndValidateMetadataAsync(
-                        session,
-                        configuration.SpaceId,
-                        configuration.DeviceId,
-                        configuration.KeyVersion,
-                        keyResult.Key.Key,
-                        createIfMissing: false,
-                        token)
-                    .ConfigureAwait(false);
+                            session,
+                            configuration.SpaceId,
+                            configuration.DeviceId,
+                            configuration.KeyVersion,
+                            keyResult.Key.Key,
+                            createIfMissing: false,
+                            token)
+                        .ConfigureAwait(false);
                 uploaded = await UploadAsync(
-                        session,
-                        configuration,
-                        keyResult.Key.Key,
-                        token)
-                    .ConfigureAwait(false);
+                            session,
+                            configuration,
+                            keyResult.Key.Key,
+                            token)
+                        .ConfigureAwait(false);
                 downloaded = await DownloadAsync(
-                        session,
-                        configuration,
-                        keyResult.Key.Key,
-                        token)
-                    .ConfigureAwait(false);
+                            session,
+                            configuration,
+                            keyResult.Key.Key,
+                            token)
+                        .ConfigureAwait(false);
             }
 
             SyncStatusSnapshot success = new(

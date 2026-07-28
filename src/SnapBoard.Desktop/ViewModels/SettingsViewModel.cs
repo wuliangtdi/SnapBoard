@@ -16,6 +16,11 @@ public sealed record RetentionPeriodOption(string DisplayName, int Days, bool Is
 
 public sealed record SyncFrequencyOption(string DisplayName, int IntervalSeconds);
 
+public sealed record ProviderMigrationDeviceViewItem(
+    string DeviceId,
+    string Status,
+    string Watermark);
+
 public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 {
     private static readonly RetentionPeriodOption ThirtyDays = new("30 天", 30);
@@ -48,6 +53,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private readonly IStorageManagementService? _storageManagementService;
     private readonly IStoragePlatformService? _storagePlatformService;
     private readonly ISyncService? _syncService;
+    private readonly ISyncProviderMigrationService? _providerMigrationService;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
     private GlobalHotKeyGesture _pendingHotKey;
@@ -74,6 +80,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         _storagePlatformService = storagePlatformService;
         _requestStorageMigration = requestStorageMigration;
         _syncService = syncService;
+        _providerMigrationService = syncService as ISyncProviderMigrationService;
         _historySettingsService = historySettingsService;
         _uiContext = SynchronizationContext.Current;
         _pendingHotKey = hotKeyService.ConfiguredGesture;
@@ -86,6 +93,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             storagePlatformService is not null &&
             requestStorageMigration is not null;
         IsSyncSectionVisible = syncService is not null;
+        IsProviderMigrationSectionVisible = _providerMigrationService is not null;
         IsHistorySettingsSectionVisible = historySettingsService is not null;
         if (_historySettingsService is not null)
         {
@@ -98,6 +106,12 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             _syncService.PollingSettingsChanged += OnSyncPollingSettingsChanged;
             ApplySyncStatus(_syncService.Status);
             ApplySyncPollingSettings(_syncService.PollingSettings);
+        }
+
+        if (_providerMigrationService is not null)
+        {
+            _providerMigrationService.ProviderMigrationChanged += OnProviderMigrationChanged;
+            ApplyProviderMigration(_providerMigrationService.ProviderMigration);
         }
 
         _initializing = true;
@@ -283,6 +297,70 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     public bool HasSyncActiveSpaceId => !string.IsNullOrWhiteSpace(SyncActiveSpaceId);
 
+    [ObservableProperty]
+    public partial bool IsProviderMigrationSectionVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsProviderMigrationBusy { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsProviderMigrationInputVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsProviderMigrationProgressVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsProviderMigrationContinueVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsProviderMigrationCancelVisible { get; set; }
+
+    [ObservableProperty]
+    public partial string ProviderMigrationCurrentEndpoint { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderMigrationCurrentRoot { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderMigrationTargetEndpoint { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderMigrationTargetRoot { get; set; } =
+        $"{SyncProtocol.ProductDirectoryName}/{SyncProtocol.VersionDirectoryName}";
+
+    [ObservableProperty]
+    public partial string ProviderMigrationTargetUsername { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderMigrationTargetPassword { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderMigrationTargetCertificatePin { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial bool ProviderMigrationAllowInsecureLoopback { get; set; }
+
+    [ObservableProperty]
+    public partial string ProviderMigrationStatus { get; set; } = "尚未开始迁移";
+
+    [ObservableProperty]
+    public partial string ProviderMigrationProgress { get; set; } = "对象 0 / 0，0 B / 0 B";
+
+    [ObservableProperty]
+    public partial double ProviderMigrationProgressValue { get; set; }
+
+    [ObservableProperty]
+    public partial string ProviderMigrationCredentialActionText { get; set; } = "验证并开始";
+
+    [ObservableProperty]
+    public partial IReadOnlyList<ProviderMigrationDeviceViewItem> ProviderMigrationDevices
+    {
+        get;
+        set;
+    } = [];
+
+    private Guid? ProviderMigrationPlanId { get; set; }
+
     public string DefaultHotKeyToolTip { get; }
 
     public string SettingsScopeDescription { get; }
@@ -335,6 +413,11 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         {
             await _syncService.InitializePollingSettingsAsync(_lifetime.Token);
             ApplySyncPollingSettings(_syncService.PollingSettings);
+            if (_providerMigrationService is not null)
+            {
+                ApplyProviderMigration(await _providerMigrationService
+                    .RefreshProviderMigrationAsync(_lifetime.Token));
+            }
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
@@ -959,14 +1042,160 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanStartOrProvideProviderMigration))]
+    private async Task StartOrProvideProviderMigrationAsync()
+    {
+        if (_providerMigrationService is null || IsProviderMigrationBusy)
+        {
+            return;
+        }
+
+        IsProviderMigrationBusy = true;
+        byte[] password = [];
+        try
+        {
+            if (!TryCreateProviderMigrationRequest(
+                    out SyncProviderMigrationRequest? request,
+                    out string? validationError))
+            {
+                ProviderMigrationStatus = validationError!;
+                return;
+            }
+
+            password = Encoding.UTF8.GetBytes(ProviderMigrationTargetPassword);
+            if (password.Length > 2048)
+            {
+                ProviderMigrationStatus = "目标 WebDAV 密码过长";
+                return;
+            }
+
+            SyncProviderMigrationResult result;
+            if (_providerMigrationService.ProviderMigration.State ==
+                    SyncProviderMigrationState.TargetCredentialsRequired &&
+                ProviderMigrationPlanId is Guid planId)
+            {
+                result = await _providerMigrationService
+                    .ProvideProviderMigrationCredentialsAsync(
+                        planId,
+                        request!,
+                        password,
+                        _lifetime.Token);
+            }
+            else
+            {
+                result = await _providerMigrationService.StartProviderMigrationAsync(
+                    request!,
+                    password,
+                    _lifetime.Token);
+            }
+
+            ApplyProviderMigrationResult(result);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (ArgumentException)
+        {
+            ProviderMigrationStatus = "目标 WebDAV 配置包含无效字段";
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(password);
+            ProviderMigrationTargetPassword = string.Empty;
+            IsProviderMigrationBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanContinueProviderMigration))]
+    private async Task ContinueProviderMigrationAsync()
+    {
+        if (_providerMigrationService is null ||
+            ProviderMigrationPlanId is not Guid planId || IsProviderMigrationBusy)
+        {
+            return;
+        }
+
+        IsProviderMigrationBusy = true;
+        try
+        {
+            ApplyProviderMigrationResult(await _providerMigrationService
+                .ContinueProviderMigrationAsync(planId, _lifetime.Token));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            IsProviderMigrationBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelProviderMigration))]
+    private async Task CancelProviderMigrationAsync()
+    {
+        if (_providerMigrationService is null ||
+            ProviderMigrationPlanId is not Guid planId || IsProviderMigrationBusy)
+        {
+            return;
+        }
+
+        IsProviderMigrationBusy = true;
+        try
+        {
+            ApplyProviderMigrationResult(await _providerMigrationService
+                .CancelOrRollbackProviderMigrationAsync(planId, _lifetime.Token));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            IsProviderMigrationBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshProviderMigrationAsync()
+    {
+        if (_providerMigrationService is null || IsProviderMigrationBusy)
+        {
+            return;
+        }
+
+        IsProviderMigrationBusy = true;
+        try
+        {
+            ApplyProviderMigration(await _providerMigrationService
+                .RefreshProviderMigrationAsync(_lifetime.Token));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            IsProviderMigrationBusy = false;
+        }
+    }
+
     partial void OnIsSyncBusyChanged(bool value)
     {
         ConfigureSyncCommand.NotifyCanExecuteChanged();
         SynchronizeNowCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnIsSyncConfiguredChanged(bool value) =>
+    partial void OnIsProviderMigrationBusyChanged(bool value)
+    {
+        StartOrProvideProviderMigrationCommand.NotifyCanExecuteChanged();
+        ContinueProviderMigrationCommand.NotifyCanExecuteChanged();
+        CancelProviderMigrationCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsSyncConfiguredChanged(bool value)
+    {
         SynchronizeNowCommand.NotifyCanExecuteChanged();
+        IsProviderMigrationSectionVisible = value && _providerMigrationService is not null;
+        StartOrProvideProviderMigrationCommand.NotifyCanExecuteChanged();
+    }
 
     partial void OnIsSyncFrequencyBusyChanged(bool value) =>
         SaveSyncFrequencyCommand.NotifyCanExecuteChanged();
@@ -976,6 +1205,18 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private bool CanRunSync() => IsSyncSectionVisible && IsSyncConfigured && !IsSyncBusy;
 
     private bool CanSaveSyncFrequency() => IsSyncSectionVisible && !IsSyncFrequencyBusy;
+
+    private bool CanStartOrProvideProviderMigration() =>
+        IsProviderMigrationSectionVisible && IsProviderMigrationInputVisible &&
+        !IsProviderMigrationBusy;
+
+    private bool CanContinueProviderMigration() =>
+        IsProviderMigrationSectionVisible && IsProviderMigrationContinueVisible &&
+        !IsProviderMigrationBusy;
+
+    private bool CanCancelProviderMigration() =>
+        IsProviderMigrationSectionVisible && IsProviderMigrationCancelVisible &&
+        !IsProviderMigrationBusy;
 
     private void OnHistorySettingsChanged(object? sender, HistorySettingsChangedEvent change) =>
         PostToUi(() =>
@@ -1012,6 +1253,182 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             ApplySyncPollingSettings(change.Settings);
             SyncFrequencyStatus = "同步频率已从加密空间更新";
         });
+
+    private void OnProviderMigrationChanged(
+        object? sender,
+        SyncProviderMigrationSnapshot snapshot) =>
+        PostToUi(() => ApplyProviderMigration(snapshot));
+
+    private void ApplyProviderMigrationResult(SyncProviderMigrationResult result)
+    {
+        ApplyProviderMigration(result.Snapshot);
+        if (result.Status is SyncProviderMigrationStatus.Success or
+            SyncProviderMigrationStatus.WaitingForDevices)
+        {
+            return;
+        }
+
+        ProviderMigrationStatus = result.Status switch
+        {
+            SyncProviderMigrationStatus.NotConfigured => "请先配置同步空间",
+            SyncProviderMigrationStatus.NotSupported => "当前版本不支持服务迁移",
+            SyncProviderMigrationStatus.InvalidState => "当前迁移状态不允许此操作",
+            SyncProviderMigrationStatus.CredentialStoreFailed =>
+                "目标凭据无法验证或写入系统安全存储",
+            SyncProviderMigrationStatus.PermissionDenied => "WebDAV 或安全存储权限不足",
+            SyncProviderMigrationStatus.RemoteUnavailable => "WebDAV 暂时不可用，可稍后继续",
+            SyncProviderMigrationStatus.RemoteProtocolError =>
+                "目标内容或 WebDAV 响应冲突，尚未切换服务",
+            SyncProviderMigrationStatus.CryptographicFailure =>
+                "迁移标记无法通过空间密钥验证",
+            _ => "本机迁移状态无法保存",
+        };
+    }
+
+    private void ApplyProviderMigration(SyncProviderMigrationSnapshot snapshot)
+    {
+        ProviderMigrationPlanId = snapshot.PlanId;
+        bool terminal = snapshot.State is SyncProviderMigrationState.None or
+            SyncProviderMigrationState.Completed or SyncProviderMigrationState.RolledBack or
+            SyncProviderMigrationState.Failed;
+        bool credentialsRequired = snapshot.State ==
+            SyncProviderMigrationState.TargetCredentialsRequired;
+        IsProviderMigrationInputVisible = terminal || credentialsRequired;
+        IsProviderMigrationProgressVisible = snapshot.State != SyncProviderMigrationState.None;
+        IsProviderMigrationContinueVisible = snapshot.State is
+            SyncProviderMigrationState.PreflightTarget or
+            SyncProviderMigrationState.PreparingDevices or
+            SyncProviderMigrationState.WaitingForDeviceAcks or
+            SyncProviderMigrationState.Frozen or
+            SyncProviderMigrationState.MirroringCiphertext or
+            SyncProviderMigrationState.VerifyingTarget or
+            SyncProviderMigrationState.Committing or
+            SyncProviderMigrationState.WaitingForDeviceCommits;
+        IsProviderMigrationCancelVisible = snapshot.State is not
+            SyncProviderMigrationState.None and not SyncProviderMigrationState.Completed and not
+            SyncProviderMigrationState.RolledBack;
+        ProviderMigrationCredentialActionText = credentialsRequired
+            ? "验证并参与"
+            : "验证并开始";
+        bool targetIsCurrent = snapshot.State == SyncProviderMigrationState.Completed;
+        string? currentEndpoint = targetIsCurrent
+            ? snapshot.TargetEndpoint
+            : snapshot.SourceEndpoint;
+        string? currentRoot = targetIsCurrent
+            ? snapshot.TargetRemoteRoot
+            : snapshot.SourceRemoteRoot;
+        if (currentEndpoint is not null)
+        {
+            ProviderMigrationCurrentEndpoint = currentEndpoint;
+        }
+
+        if (currentRoot is not null)
+        {
+            ProviderMigrationCurrentRoot = currentRoot;
+        }
+        if (credentialsRequired)
+        {
+            ProviderMigrationTargetEndpoint = snapshot.TargetEndpoint ??
+                ProviderMigrationTargetEndpoint;
+            ProviderMigrationTargetRoot = snapshot.TargetRemoteRoot ??
+                ProviderMigrationTargetRoot;
+            ProviderMigrationTargetCertificatePin = snapshot.TargetCertificateSha256Pin ??
+                string.Empty;
+            ProviderMigrationAllowInsecureLoopback = snapshot.TargetAllowInsecureLoopback;
+        }
+
+        ProviderMigrationDevices = snapshot.DeviceStates.Select(static device =>
+            new ProviderMigrationDeviceViewItem(
+                device.DeviceId.ToString("D"),
+                FormatProviderMigrationDeviceState(device.State),
+                $"本地 {device.HighestLocalSequence} / 已上传 {device.HighestUploadedSequence}"))
+            .ToArray();
+        ProviderMigrationProgress =
+            $"对象 {snapshot.CompletedObjects} / {snapshot.TotalObjects}，" +
+            $"{FormatByteCount(snapshot.CompletedBytes)} / {FormatByteCount(snapshot.TotalBytes)}";
+        ProviderMigrationProgressValue = snapshot.TotalObjects == 0
+            ? snapshot.State == SyncProviderMigrationState.Completed ? 100d : 0d
+            : Math.Clamp(snapshot.CompletedObjects * 100d / snapshot.TotalObjects, 0d, 100d);
+        ProviderMigrationStatus = FormatProviderMigrationState(snapshot);
+        StartOrProvideProviderMigrationCommand.NotifyCanExecuteChanged();
+        ContinueProviderMigrationCommand.NotifyCanExecuteChanged();
+        CancelProviderMigrationCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool TryCreateProviderMigrationRequest(
+        out SyncProviderMigrationRequest? request,
+        out string? validationError)
+    {
+        request = null;
+        validationError = null;
+        if (!Uri.TryCreate(
+                ProviderMigrationTargetEndpoint.Trim(),
+                UriKind.Absolute,
+                out Uri? endpoint))
+        {
+            validationError = "目标 WebDAV 地址格式无效";
+            return false;
+        }
+
+        string? certificatePin = string.IsNullOrWhiteSpace(
+            ProviderMigrationTargetCertificatePin)
+            ? null
+            : ProviderMigrationTargetCertificatePin.Trim().ToLowerInvariant();
+        request = new SyncProviderMigrationRequest(new SyncRemoteConfiguration(
+            endpoint,
+            ProviderMigrationTargetRoot.Trim(),
+            ProviderMigrationTargetUsername,
+            certificatePin,
+            ProviderMigrationAllowInsecureLoopback));
+        return true;
+    }
+
+    private static string FormatProviderMigrationState(
+        SyncProviderMigrationSnapshot snapshot) => snapshot.State switch
+        {
+            SyncProviderMigrationState.None => "尚未开始迁移",
+            SyncProviderMigrationState.Draft or SyncProviderMigrationState.PreflightTarget =>
+                "正在验证目标服务",
+            SyncProviderMigrationState.PreparingDevices => "正在准备参与设备",
+            SyncProviderMigrationState.TargetCredentialsRequired =>
+                "旧服务已发布迁移计划，请输入此设备的新服务凭据",
+            SyncProviderMigrationState.WaitingForDeviceAcks =>
+                "等待所有设备就绪；离线设备会阻止安全迁移",
+            SyncProviderMigrationState.Frozen => "所有设备已冻结旧端写入",
+            SyncProviderMigrationState.MirroringCiphertext => "正在复制加密对象",
+            SyncProviderMigrationState.VerifyingTarget => "正在逐项验证目标密文",
+            SyncProviderMigrationState.Committing => "正在切换本机安全凭据",
+            SyncProviderMigrationState.WaitingForDeviceCommits => "等待其他设备提交新服务",
+            SyncProviderMigrationState.Completed =>
+                "新服务已生效；旧服务数据仍保留，未自动删除",
+            SyncProviderMigrationState.RollingBack => "正在恢复旧服务",
+            SyncProviderMigrationState.RolledBack => "已恢复旧服务，目标凭据已清理",
+            _ => "迁移失败；旧服务保持权威，请检查后回滚",
+        };
+
+    private static string FormatProviderMigrationDeviceState(
+        SyncProviderMigrationDeviceState state) => state switch
+        {
+            SyncProviderMigrationDeviceState.Pending => "离线或等待响应",
+            SyncProviderMigrationDeviceState.TargetCredentialsRequired => "待配置目标凭据",
+            SyncProviderMigrationDeviceState.Ready => "已就绪",
+            SyncProviderMigrationDeviceState.Committed => "已提交",
+            SyncProviderMigrationDeviceState.RolledBack => "已回滚",
+            _ => "需要处理",
+        };
+
+    private static string FormatByteCount(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        double kib = bytes / 1024d;
+        return kib < 1024
+            ? $"{kib:F1} KiB"
+            : $"{kib / 1024d:F1} MiB";
+    }
 
     private void ApplySyncPollingSettings(SyncPollingSettings settings)
     {
@@ -1165,6 +1582,11 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         {
             _syncService.StatusChanged -= OnSyncStatusChanged;
             _syncService.PollingSettingsChanged -= OnSyncPollingSettingsChanged;
+        }
+
+        if (_providerMigrationService is not null)
+        {
+            _providerMigrationService.ProviderMigrationChanged -= OnProviderMigrationChanged;
         }
 
         if (_historySettingsService is not null)

@@ -350,6 +350,8 @@ public static class SyncObjectEncryptor
             SyncObjectType.Blob =>
                 descriptor.Sequence == 0 && SyncRemoteLayout.IsLowerHex(descriptor.ObjectId, 64),
             SyncObjectType.Checkpoint => IsCanonicalGuid(descriptor.ObjectId),
+            SyncObjectType.ProviderMigration =>
+                descriptor.Sequence > 0 && IsCanonicalGuid(descriptor.ObjectId),
             _ => false,
         };
         if (!validObjectId)
@@ -367,7 +369,8 @@ public static class SyncObjectEncryptor
     private static int GetMaximumPlaintextBytes(SyncObjectType objectType) => objectType switch
     {
         SyncObjectType.Blob => SyncProtocol.MaximumBlobPlaintextBytes,
-        SyncObjectType.Metadata or SyncObjectType.Event or SyncObjectType.Checkpoint =>
+        SyncObjectType.Metadata or SyncObjectType.Event or SyncObjectType.Checkpoint or
+            SyncObjectType.ProviderMigration =>
             SyncProtocol.MaximumEventPlaintextBytes,
         _ => throw new ArgumentOutOfRangeException(nameof(objectType)),
     };

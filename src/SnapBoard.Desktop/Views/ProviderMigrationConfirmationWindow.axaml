@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="SnapBoard.Desktop.Views.ProviderMigrationConfirmationWindow"
+        Width="520"
+        Height="330"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Icon="/Assets/snapboard-app-icon.png"
+        WindowStartupLocation="CenterOwner"
+        Title="确认 WebDAV 服务迁移">
+    <Grid RowDefinitions="64,*,72">
+        <Border Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="22,0" ColumnDefinitions="Auto,*" ColumnSpacing="11">
+                <Border Width="36"
+                        Height="36"
+                        VerticalAlignment="Center"
+                        CornerRadius="6"
+                        Background="{DynamicResource SelectionSurfaceBrush}">
+                    <materialIcons:MaterialIcon x:Name="HeaderIcon"
+                                                Width="20"
+                                                Height="20"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource AccentBrush}"
+                                                Kind="CloudSyncOutline" />
+                </Border>
+                <StackPanel Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Spacing="2">
+                    <TextBlock x:Name="HeaderText"
+                               FontSize="16"
+                               FontWeight="SemiBold" />
+                    <TextBlock x:Name="SubtitleText"
+                               FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="1"
+                    Margin="24,20,24,18"
+                    Spacing="14">
+            <TextBlock x:Name="MessageText"
+                       TextWrapping="Wrap" />
+            <Border Padding="12,10"
+                    Background="{DynamicResource SubtleSurfaceBrush}"
+                    BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="安全边界" />
+                    <TextBlock x:Name="SafetyText"
+                               FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,1,0,0">
+            <StackPanel Margin="22,0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <Button x:Name="CancelButton"
+                        Classes="secondary-command"
+                        Click="OnCancelClicked"
+                        Content="取消" />
+                <Button x:Name="ConfirmButton"
+                        Classes="primary-command"
+                        Click="OnConfirmClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon x:Name="ConfirmIcon"
+                                                    Width="17"
+                                                    Height="17"
+                                                    Kind="ArrowRightBold" />
+                        <TextBlock x:Name="ConfirmText"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

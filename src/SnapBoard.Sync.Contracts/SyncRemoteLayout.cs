@@ -29,6 +29,47 @@ public static class SyncRemoteLayout
     public static string GetCheckpointsCollection(Guid spaceId, Guid deviceId) =>
         $"{GetDeviceRoot(spaceId, deviceId)}/checkpoints";
 
+    public static string GetProviderMigrationsCollection(Guid spaceId) =>
+        $"{GetSpaceRoot(spaceId)}/migrations";
+
+    public static string GetProviderMigrationRoot(Guid spaceId, Guid planId) =>
+        $"{GetProviderMigrationsCollection(spaceId)}/{FormatId(planId)}";
+
+    public static string GetProviderMigrationIntentPath(Guid spaceId, Guid planId) =>
+        $"{GetProviderMigrationRoot(spaceId, planId)}/intent.enc";
+
+    public static string GetProviderMigrationDeviceMarkerPath(
+        Guid spaceId,
+        Guid planId,
+        SyncProviderMigrationMarkerKind kind,
+        Guid deviceId)
+    {
+        string collection = kind switch
+        {
+            SyncProviderMigrationMarkerKind.Ready => "ready",
+            SyncProviderMigrationMarkerKind.Committed => "committed",
+            SyncProviderMigrationMarkerKind.RolledBack => "rolled-back",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        return $"{GetProviderMigrationRoot(spaceId, planId)}/{collection}/{FormatId(deviceId)}.enc";
+    }
+
+    public static string GetProviderMigrationDecisionPath(
+        Guid spaceId,
+        Guid planId,
+        SyncProviderMigrationMarkerKind kind)
+    {
+        string objectName = kind switch
+        {
+            SyncProviderMigrationMarkerKind.Freeze => "freeze.enc",
+            SyncProviderMigrationMarkerKind.Commit => "commit.enc",
+            SyncProviderMigrationMarkerKind.Rollback => "rollback.enc",
+            SyncProviderMigrationMarkerKind.Completed => "completed.enc",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        return $"{GetProviderMigrationRoot(spaceId, planId)}/{objectName}";
+    }
+
     public static string GetBlobPath(Guid spaceId, string keyedBlobId)
     {
         if (!IsLowerHex(keyedBlobId, 64))
@@ -65,6 +106,22 @@ public static class SyncRemoteLayout
         return FormatId(eventId).AsSpan().Equals(
             objectName.AsSpan(21, 32),
             StringComparison.Ordinal);
+    }
+
+    public static bool TryParseBlobObjectName(
+        string? objectName,
+        out string keyedBlobId)
+    {
+        keyedBlobId = string.Empty;
+        if (objectName is null || objectName.Length != 68 ||
+            !objectName.EndsWith(".enc", StringComparison.Ordinal) ||
+            !IsLowerHex(objectName[..64], 64))
+        {
+            return false;
+        }
+
+        keyedBlobId = objectName[..64];
+        return true;
     }
 
     public static string FormatId(Guid value)

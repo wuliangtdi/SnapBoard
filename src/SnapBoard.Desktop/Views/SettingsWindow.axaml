@@ -509,6 +509,213 @@
                                     </Button>
                                 </Grid>
 
+                                <Border Height="1"
+                                        Background="{DynamicResource DividerBrush}"
+                                        IsVisible="{Binding IsProviderMigrationSectionVisible}" />
+
+                                <StackPanel x:Name="ProviderMigrationSection"
+                                            Spacing="12"
+                                            IsVisible="{Binding IsProviderMigrationSectionVisible}">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Text="迁移 WebDAV 服务" />
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="{Binding ProviderMigrationStatus}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Classes="icon"
+                                                Width="40"
+                                                Height="40"
+                                                Command="{Binding RefreshProviderMigrationCommand}"
+                                                ToolTip.Tip="刷新迁移状态">
+                                            <materialIcons:MaterialIcon Width="18"
+                                                                        Height="18"
+                                                                        Kind="Refresh" />
+                                        </Button>
+                                    </Grid>
+
+                                    <Grid ColumnDefinitions="*,*"
+                                          ColumnSpacing="12"
+                                          RowDefinitions="Auto,Auto">
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{DynamicResource TertiaryTextBrush}"
+                                                   Text="当前服务" />
+                                        <TextBlock Grid.Column="1"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TertiaryTextBrush}"
+                                                   Text="远端根目录" />
+                                        <TextBlock Grid.Row="1"
+                                                   Margin="0,4,0,0"
+                                                   FontSize="12"
+                                                   Text="{Binding ProviderMigrationCurrentEndpoint}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding ProviderMigrationCurrentEndpoint}" />
+                                        <TextBlock Grid.Row="1"
+                                                   Grid.Column="1"
+                                                   Margin="0,4,0,0"
+                                                   FontSize="12"
+                                                   Text="{Binding ProviderMigrationCurrentRoot}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding ProviderMigrationCurrentRoot}" />
+                                    </Grid>
+
+                                    <StackPanel Spacing="9"
+                                                IsVisible="{Binding IsProviderMigrationProgressVisible}">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="迁移进度" />
+                                            <TextBlock Grid.Column="1"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="{Binding ProviderMigrationProgress}" />
+                                        </Grid>
+                                        <ProgressBar Height="5"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="{Binding ProviderMigrationProgressValue}" />
+                                        <ItemsControl x:Name="ProviderMigrationDevicesItems"
+                                                      ItemsSource="{Binding ProviderMigrationDevices}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2"
+                                                          ColumnDefinitions="*,Auto"
+                                                          ColumnSpacing="12">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock FontSize="11"
+                                                                       Text="{Binding DeviceId}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding DeviceId}" />
+                                                            <TextBlock FontSize="10"
+                                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                                       Text="{Binding Watermark}" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="1"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                                   Text="{Binding Status}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="10"
+                                                IsVisible="{Binding IsProviderMigrationInputVisible}">
+                                        <TextBlock FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="目标服务凭据" />
+                                        <Grid ColumnDefinitions="*,*"
+                                              ColumnSpacing="12"
+                                              RowDefinitions="Auto,Auto">
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                       Text="WebDAV 地址" />
+                                            <TextBlock Grid.Column="1"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                       Text="远端根目录" />
+                                            <TextBox x:Name="ProviderMigrationTargetEndpointTextBox"
+                                                     Grid.Row="1"
+                                                     Classes="settings-input"
+                                                     Margin="0,5,0,0"
+                                                     Text="{Binding ProviderMigrationTargetEndpoint, Mode=TwoWay}"
+                                                     PlaceholderText="https://dav.example.com/user/" />
+                                            <TextBox Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Classes="settings-input"
+                                                     Margin="0,5,0,0"
+                                                     Text="{Binding ProviderMigrationTargetRoot, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*"
+                                              ColumnSpacing="12"
+                                              RowDefinitions="Auto,Auto">
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                       Text="用户名" />
+                                            <TextBlock Grid.Column="1"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                       Text="密码" />
+                                            <TextBox Grid.Row="1"
+                                                     Classes="settings-input"
+                                                     Margin="0,5,0,0"
+                                                     Text="{Binding ProviderMigrationTargetUsername, Mode=TwoWay}" />
+                                            <TextBox Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Classes="settings-input"
+                                                     Margin="0,5,0,0"
+                                                     PasswordChar="*"
+                                                     Text="{Binding ProviderMigrationTargetPassword, Mode=TwoWay}" />
+                                        </Grid>
+                                        <StackPanel Spacing="5">
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                       Text="服务器证书 SHA-256 指纹" />
+                                            <TextBox Classes="settings-input"
+                                                     Text="{Binding ProviderMigrationTargetCertificatePin, Mode=TwoWay}"
+                                                     PlaceholderText="使用受信任 HTTPS 时留空" />
+                                        </StackPanel>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                            <TextBlock VerticalAlignment="Center"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                                       Text="凭据只写入本机系统安全存储，不会进入同步协议。"
+                                                       TextWrapping="Wrap" />
+                                            <ToggleSwitch Grid.Column="1"
+                                                          Classes="settings-toggle"
+                                                          Content="仅开发环回 HTTP"
+                                                          IsChecked="{Binding ProviderMigrationAllowInsecureLoopback, Mode=TwoWay}" />
+                                        </Grid>
+                                        <Button x:Name="StartOrProvideProviderMigrationButton"
+                                                Classes="secondary-command"
+                                                HorizontalAlignment="Right"
+                                                Command="{Binding StartOrProvideProviderMigrationCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <materialIcons:MaterialIcon Width="17"
+                                                                            Height="17"
+                                                                            Kind="ShieldCheckOutline" />
+                                                <TextBlock VerticalAlignment="Center"
+                                                           Text="{Binding ProviderMigrationCredentialActionText}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <StackPanel HorizontalAlignment="Right"
+                                                Orientation="Horizontal"
+                                                Spacing="8">
+                                        <Button x:Name="CancelProviderMigrationButton"
+                                                Classes="secondary-command"
+                                                IsVisible="{Binding IsProviderMigrationCancelVisible}"
+                                                Click="OnRollbackProviderMigrationClicked">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <materialIcons:MaterialIcon Width="17"
+                                                                            Height="17"
+                                                                            Kind="Restore" />
+                                                <TextBlock VerticalAlignment="Center" Text="回滚" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="ContinueProviderMigrationButton"
+                                                Classes="primary-command"
+                                                IsVisible="{Binding IsProviderMigrationContinueVisible}"
+                                                Click="OnContinueProviderMigrationClicked">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <materialIcons:MaterialIcon Width="17"
+                                                                            Height="17"
+                                                                            Kind="ArrowRightBold" />
+                                                <TextBlock VerticalAlignment="Center" Text="冻结并继续" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <RadioButton Classes="sync-mode"
                                                  Content="创建新空间"

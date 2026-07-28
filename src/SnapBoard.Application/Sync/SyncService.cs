@@ -31,7 +31,11 @@ public sealed class SyncServiceOptions
     public int MaximumDownloadBatchPerDevice { get; }
 }
 
-public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDisposable
+public sealed partial class SyncService :
+    ISyncService,
+    ISyncProviderMigrationService,
+    IDisposable,
+    IAsyncDisposable
 {
     private readonly ISyncCredentialService _credentialService;
     private readonly ClipboardHistoryChangeNotifier? _historyChangeNotifier;
@@ -46,6 +50,8 @@ public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDispo
     private readonly ISyncObjectProtector _protector;
     private readonly ISyncRecoveryMaterialStore _recoveryMaterialStore;
     private readonly ISyncRemoteSessionFactory _remoteSessionFactory;
+    private readonly ISyncRemoteProviderMigrationSessionFactory?
+        _providerMigrationSessionFactory;
     private readonly SemaphoreSlim _singleFlight = new(1, 1);
     private readonly ISyncStore _store;
     private readonly Channel<bool> _triggers = Channel.CreateBounded<bool>(
@@ -59,6 +65,8 @@ public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDispo
     private CancellationTokenSource? _currentFlightCancellation;
     private Task? _periodicTask;
     private SyncPollingSettings _pollingSettings;
+    private SyncProviderMigrationSnapshot _providerMigration = new(
+        SyncProviderMigrationState.None);
     private Task? _workerTask;
     private SyncStatusSnapshot _status = new(SyncServiceState.NotConfigured);
     private int _disposed;
@@ -76,7 +84,8 @@ public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDispo
         IClipboardHistoryService historyService,
         SyncServiceOptions? options = null,
         IHistorySettingsService? historySettingsService = null,
-        ClipboardHistoryChangeNotifier? historyChangeNotifier = null)
+        ClipboardHistoryChangeNotifier? historyChangeNotifier = null,
+        ISyncRemoteProviderMigrationSessionFactory? providerMigrationSessionFactory = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _keyService = keyService ?? throw new ArgumentNullException(nameof(keyService));
@@ -87,6 +96,7 @@ public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDispo
         _protector = protector ?? throw new ArgumentNullException(nameof(protector));
         _remoteSessionFactory = remoteSessionFactory ??
             throw new ArgumentNullException(nameof(remoteSessionFactory));
+        _providerMigrationSessionFactory = providerMigrationSessionFactory;
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _options = options ?? new SyncServiceOptions();
         _pollingSettings = SyncPollingSettings.FromTimeSpan(_options.PollInterval);

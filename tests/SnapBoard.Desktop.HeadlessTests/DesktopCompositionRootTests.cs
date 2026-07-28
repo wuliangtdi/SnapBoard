@@ -30,6 +30,7 @@ public sealed class DesktopCompositionRootTests
                 provider.GetRequiredService<IPlatformSecretStore>());
             Assert.IsType<SyncService>(provider.GetRequiredService<ISyncService>());
             Assert.True(provider.GetRequiredService<MainViewModel>().HasSyncService);
+            AssertSyncMigrationServices(provider);
         }
         else if (OperatingSystem.IsWindows())
         {
@@ -40,10 +41,21 @@ public sealed class DesktopCompositionRootTests
             Assert.IsType<WindowsClipboardSourceApplicationMetadataResolver>(
                 provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
             Assert.IsType<SyncService>(provider.GetRequiredService<ISyncService>());
+            AssertSyncMigrationServices(provider);
         }
         else
         {
             Assert.Null(monitor);
         }
+    }
+
+    private static void AssertSyncMigrationServices(ServiceProvider provider)
+    {
+        Assert.Same(
+            provider.GetRequiredService<ISyncService>(),
+            provider.GetRequiredService<ISyncProviderMigrationService>());
+        Assert.Same(
+            provider.GetRequiredService<ISyncRemoteSessionFactory>(),
+            provider.GetRequiredService<ISyncRemoteProviderMigrationSessionFactory>());
     }
 }

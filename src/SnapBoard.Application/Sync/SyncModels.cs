@@ -47,6 +47,37 @@ public sealed record SyncEventApplyResult(
     SyncEventApplyStatus Status,
     long ExpectedSequence);
 
+public sealed record SyncProviderMigrationRecord(
+    Guid PlanId,
+    Guid SpaceId,
+    long Epoch,
+    Guid InitiatorDeviceId,
+    string SourceRemoteFingerprint,
+    string TargetRemoteFingerprint,
+    SyncProviderMigrationState State,
+    int TotalObjects,
+    long TotalBytes,
+    int CompletedObjects,
+    long CompletedBytes,
+    string? InventorySha256,
+    string? DiagnosticCode,
+    long CreatedAtUnixMilliseconds,
+    long UpdatedAtUnixMilliseconds);
+
+public sealed record SyncProviderMigrationDeviceRecord(
+    Guid PlanId,
+    Guid DeviceId,
+    SyncProviderMigrationDeviceState State,
+    long HighestLocalSequence,
+    long HighestUploadedSequence,
+    string? DiagnosticCode,
+    long UpdatedAtUnixMilliseconds);
+
+public sealed record SyncProviderMigrationWatermark(
+    long HighestLocalSequence,
+    long HighestUploadedSequence,
+    IReadOnlyList<SyncCheckpointState> Checkpoints);
+
 public sealed class SyncBlobLease : IDisposable
 {
     private byte[]? _content;
@@ -139,5 +170,32 @@ public interface ISyncStore
         string plaintextHash,
         string mediaType,
         ReadOnlyMemory<byte> content,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncProviderMigrationRecord?> GetProviderMigrationAsync(
+        Guid spaceId,
+        CancellationToken cancellationToken);
+
+    ValueTask<IReadOnlyList<SyncProviderMigrationDeviceRecord>>
+        GetProviderMigrationDevicesAsync(
+            Guid planId,
+            CancellationToken cancellationToken);
+
+    ValueTask CreateProviderMigrationAsync(
+        SyncProviderMigrationRecord migration,
+        IReadOnlyList<Guid> requiredDeviceIds,
+        CancellationToken cancellationToken);
+
+    ValueTask SaveProviderMigrationAsync(
+        SyncProviderMigrationRecord migration,
+        CancellationToken cancellationToken);
+
+    ValueTask SaveProviderMigrationDeviceAsync(
+        SyncProviderMigrationDeviceRecord device,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncProviderMigrationWatermark> CaptureProviderMigrationWatermarkAsync(
+        Guid spaceId,
+        Guid localDeviceId,
         CancellationToken cancellationToken);
 }

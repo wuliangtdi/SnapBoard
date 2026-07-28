@@ -157,7 +157,15 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<ISyncCredentialService, PlatformSyncCredentialService>();
         services.AddSingleton<ISyncRecoveryMaterialStore, FileSyncRecoveryMaterialStore>();
         services.AddSingleton<ISyncObjectProtector, SyncObjectProtector>();
-        services.AddSingleton<ISyncRemoteSessionFactory, WebDavSyncRemoteSessionFactory>();
-        services.AddSingleton<ISyncService, SyncService>();
+        services.AddSingleton<WebDavSyncRemoteSessionFactory>();
+        services.AddSingleton<ISyncRemoteSessionFactory>(provider =>
+            provider.GetRequiredService<WebDavSyncRemoteSessionFactory>());
+        services.AddSingleton<ISyncRemoteProviderMigrationSessionFactory>(provider =>
+            provider.GetRequiredService<WebDavSyncRemoteSessionFactory>());
+        services.AddSingleton<SyncService>();
+        services.AddSingleton<ISyncService>(provider =>
+            provider.GetRequiredService<SyncService>());
+        services.AddSingleton<ISyncProviderMigrationService>(provider =>
+            provider.GetRequiredService<SyncService>());
     }
 }

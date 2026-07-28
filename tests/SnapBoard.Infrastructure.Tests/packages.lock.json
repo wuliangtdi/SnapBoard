@@ -168,6 +168,13 @@
       "snapboard.sync.contracts": {
         "type": "Project"
       },
+      "snapboard.sync.webdav": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Application": "[1.0.0, )",
+          "SnapBoard.Sync.Contracts": "[1.0.0, )"
+        }
+      },
       "BitMiracle.LibTiff.NET": {
         "type": "CentralTransitive",
         "requested": "[2.4.660, )",

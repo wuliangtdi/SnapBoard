@@ -6,4 +6,5 @@ public enum SyncObjectType
     Event = 2,
     Blob = 3,
     Checkpoint = 4,
+    ProviderMigration = 5,
 }

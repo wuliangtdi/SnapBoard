@@ -141,6 +141,38 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private async void OnContinueProviderMigrationClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel ||
+            !viewModel.ContinueProviderMigrationCommand.CanExecute(null))
+        {
+            return;
+        }
+
+        ProviderMigrationConfirmationWindow confirmation = new(
+            ProviderMigrationConfirmationAction.FreezeAndContinue);
+        if (await confirmation.ShowDialog<bool>(this))
+        {
+            await viewModel.ContinueProviderMigrationCommand.ExecuteAsync(null);
+        }
+    }
+
+    private async void OnRollbackProviderMigrationClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel ||
+            !viewModel.CancelProviderMigrationCommand.CanExecute(null))
+        {
+            return;
+        }
+
+        ProviderMigrationConfirmationWindow confirmation = new(
+            ProviderMigrationConfirmationAction.Rollback);
+        if (await confirmation.ShowDialog<bool>(this))
+        {
+            await viewModel.CancelProviderMigrationCommand.ExecuteAsync(null);
+        }
+    }
+
     private async void OnChooseStorageFolderClicked(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SettingsViewModel viewModel)

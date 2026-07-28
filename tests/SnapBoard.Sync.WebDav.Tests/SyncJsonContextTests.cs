@@ -64,6 +64,42 @@ public sealed class SyncJsonContextTests
     }
 
     [Fact]
+    public void SourceGeneratedContextRoundTripsProviderMigrationIntent()
+    {
+        Guid firstDeviceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        Guid secondDeviceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        SyncProviderMigrationIntent expected = new(
+            SyncProviderMigrationProtocol.CurrentVersion,
+            Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Epoch: 7,
+            firstDeviceId,
+            "https://source.example.test/dav/",
+            "SourceRoot",
+            new string('a', 64),
+            SourceAllowInsecureLoopback: false,
+            new string('b', 64),
+            "https://target.example.test/dav/",
+            "TargetRoot",
+            new string('c', 64),
+            TargetAllowInsecureLoopback: false,
+            new string('d', 64),
+            [firstDeviceId, secondDeviceId],
+            CreatedAtUnixMilliseconds: 123456789);
+
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            expected,
+            SyncJsonContext.Default.SyncProviderMigrationIntent);
+        SyncProviderMigrationIntent actual = Assert.IsType<SyncProviderMigrationIntent>(
+            JsonSerializer.Deserialize(
+                json,
+                SyncJsonContext.Default.SyncProviderMigrationIntent));
+
+        Assert.Equal(expected with { RequiredDeviceIds = actual.RequiredDeviceIds }, actual);
+        Assert.Equal(expected.RequiredDeviceIds, actual.RequiredDeviceIds);
+    }
+
+    [Fact]
     public void RemoteLayoutUsesOnlyCanonicalProtocolIdentifiers()
     {
         Guid spaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -85,5 +121,16 @@ public sealed class SyncJsonContextTests
             "../../00000000000000000042-33333333333333333333333333333333.enc",
             out _,
             out _));
+
+        Guid planId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        Assert.Equal(
+            "SnapBoard/v1/spaces/11111111111111111111111111111111/migrations/" +
+            "44444444444444444444444444444444/ready/" +
+            "22222222222222222222222222222222.enc",
+            SyncRemoteLayout.GetProviderMigrationDeviceMarkerPath(
+                spaceId,
+                planId,
+                SyncProviderMigrationMarkerKind.Ready,
+                deviceId));
     }
 }

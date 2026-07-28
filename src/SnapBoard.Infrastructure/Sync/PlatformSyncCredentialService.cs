@@ -7,7 +7,7 @@ using SnapBoard.Platform.Abstractions.Security;
 
 namespace SnapBoard.Infrastructure.Sync;
 
-public sealed class PlatformSyncCredentialService : ISyncCredentialService
+public sealed class PlatformSyncCredentialService : ISyncCredentialService, IDisposable
 {
     private const byte BundleVersion = 1;
     private const byte InsecureLoopbackFlag = 1;
@@ -17,7 +17,9 @@ public sealed class PlatformSyncCredentialService : ISyncCredentialService
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly IPlatformSecretStore _secretStore;
+    private int _disposed;
 
     public PlatformSyncCredentialService(IPlatformSecretStore secretStore)
     {
@@ -38,10 +40,11 @@ public sealed class PlatformSyncCredentialService : ISyncCredentialService
         }
 
         byte[] bundle = Serialize(remoteConfiguration, password.Span);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             PlatformSecretWriteResult result = await _secretStore.WriteAsync(
-                    GetSecretName(spaceId),
+                    GetActiveSecretName(spaceId),
                     bundle,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -49,6 +52,7 @@ public sealed class PlatformSyncCredentialService : ISyncCredentialService
         }
         finally
         {
+            _operationGate.Release();
             CryptographicOperations.ZeroMemory(bundle);
         }
     }
@@ -58,8 +62,193 @@ public sealed class PlatformSyncCredentialService : ISyncCredentialService
         CancellationToken cancellationToken)
     {
         ValidateSpaceId(spaceId);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await OpenCoreAsync(GetActiveSecretName(spaceId), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async ValueTask<SyncCredentialOperationStatus> DeleteAsync(
+        Guid spaceId,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            PlatformSecretWriteResult result = await _secretStore.DeleteAsync(
+                    GetActiveSecretName(spaceId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return MapStatus(result.Status);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async ValueTask<SyncCredentialOperationStatus> StageCurrentForMigrationAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        ValidatePlanId(planId);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await CopyToEmptyOrEqualSlotAsync(
+                    GetActiveSecretName(spaceId),
+                    GetMigrationSecretName(spaceId, planId, SyncMigrationCredentialSlot.Source),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async ValueTask<SyncCredentialOperationStatus> StageMigrationTargetAsync(
+        Guid spaceId,
+        Guid planId,
+        SyncRemoteConfiguration remoteConfiguration,
+        ReadOnlyMemory<byte> password,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        ValidatePlanId(planId);
+        ArgumentNullException.ThrowIfNull(remoteConfiguration);
+        if (password.Length > MaximumPasswordBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(password));
+        }
+
+        byte[] bundle = Serialize(remoteConfiguration, password.Span);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await WriteEmptyOrEqualSlotAsync(
+                    GetMigrationSecretName(spaceId, planId, SyncMigrationCredentialSlot.Target),
+                    bundle,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+            CryptographicOperations.ZeroMemory(bundle);
+        }
+    }
+
+    public async ValueTask<SyncCredentialOpenResult> OpenMigrationAsync(
+        Guid spaceId,
+        Guid planId,
+        SyncMigrationCredentialSlot slot,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        ValidatePlanId(planId);
+        ValidateSlot(slot);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await OpenCoreAsync(
+                    GetMigrationSecretName(spaceId, planId, slot),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async ValueTask<SyncCredentialOperationStatus> CommitMigrationTargetAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        ValidatePlanId(planId);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await CommitMigrationTargetCoreAsync(spaceId, planId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async ValueTask<SyncCredentialOperationStatus> RollbackMigrationSourceAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        ValidatePlanId(planId);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await RestoreSourceCoreAsync(spaceId, planId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async ValueTask<SyncCredentialOperationStatus> DeleteMigrationSlotAsync(
+        Guid spaceId,
+        Guid planId,
+        SyncMigrationCredentialSlot slot,
+        CancellationToken cancellationToken)
+    {
+        ValidateSpaceId(spaceId);
+        ValidatePlanId(planId);
+        ValidateSlot(slot);
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            PlatformSecretWriteResult result = await _secretStore.DeleteAsync(
+                    GetMigrationSecretName(spaceId, planId, slot),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return MapStatus(result.Status);
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _operationGate.Dispose();
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    private async ValueTask<SyncCredentialOpenResult> OpenCoreAsync(
+        string secretName,
+        CancellationToken cancellationToken)
+    {
         PlatformSecretReadResult result = await _secretStore.ReadAsync(
-                GetSecretName(spaceId),
+                secretName,
                 cancellationToken)
             .ConfigureAwait(false);
         SyncCredentialOperationStatus status = MapStatus(result.Status);
@@ -89,19 +278,264 @@ public sealed class PlatformSyncCredentialService : ISyncCredentialService
         }
     }
 
-    public async ValueTask<SyncCredentialOperationStatus> DeleteAsync(
-        Guid spaceId,
+    private async ValueTask<SyncCredentialOperationStatus> CopyToEmptyOrEqualSlotAsync(
+        string sourceName,
+        string destinationName,
         CancellationToken cancellationToken)
     {
-        ValidateSpaceId(spaceId);
-        PlatformSecretWriteResult result = await _secretStore.DeleteAsync(
-                GetSecretName(spaceId),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return MapStatus(result.Status);
+        (SyncCredentialOperationStatus sourceStatus, byte[]? source) =
+            await ReadOwnedSecretAsync(sourceName, cancellationToken).ConfigureAwait(false);
+        if (sourceStatus != SyncCredentialOperationStatus.Success || source is null)
+        {
+            return sourceStatus;
+        }
+
+        try
+        {
+            return await WriteEmptyOrEqualSlotAsync(
+                    destinationName,
+                    source,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(source);
+        }
     }
 
-    private static string GetSecretName(Guid spaceId) => $"sync/webdav/{spaceId:N}";
+    private async ValueTask<SyncCredentialOperationStatus> WriteEmptyOrEqualSlotAsync(
+        string destinationName,
+        ReadOnlyMemory<byte> bundle,
+        CancellationToken cancellationToken)
+    {
+        (SyncCredentialOperationStatus existingStatus, byte[]? existing) =
+            await ReadOwnedSecretAsync(destinationName, cancellationToken).ConfigureAwait(false);
+        if (existingStatus == SyncCredentialOperationStatus.Success && existing is not null)
+        {
+            try
+            {
+                return CryptographicOperations.FixedTimeEquals(existing, bundle.Span)
+                    ? SyncCredentialOperationStatus.Success
+                    : SyncCredentialOperationStatus.Conflict;
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(existing);
+            }
+        }
+
+        if (existingStatus != SyncCredentialOperationStatus.NotFound)
+        {
+            return existingStatus;
+        }
+
+        PlatformSecretWriteResult write = await _secretStore.WriteAsync(
+                destinationName,
+                bundle,
+                cancellationToken)
+            .ConfigureAwait(false);
+        SyncCredentialOperationStatus writeStatus = MapStatus(write.Status);
+        if (writeStatus != SyncCredentialOperationStatus.Success)
+        {
+            return writeStatus;
+        }
+
+        return await VerifySecretAsync(destinationName, bundle, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<SyncCredentialOperationStatus> CommitMigrationTargetCoreAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken)
+    {
+        string sourceName = GetMigrationSecretName(
+            spaceId,
+            planId,
+            SyncMigrationCredentialSlot.Source);
+        string targetName = GetMigrationSecretName(
+            spaceId,
+            planId,
+            SyncMigrationCredentialSlot.Target);
+        string activeName = GetActiveSecretName(spaceId);
+        (SyncCredentialOperationStatus sourceStatus, byte[]? source) =
+            await ReadOwnedSecretAsync(sourceName, cancellationToken).ConfigureAwait(false);
+        if (sourceStatus != SyncCredentialOperationStatus.Success || source is null)
+        {
+            return sourceStatus;
+        }
+
+        (SyncCredentialOperationStatus targetStatus, byte[]? target) =
+            await ReadOwnedSecretAsync(targetName, cancellationToken).ConfigureAwait(false);
+        if (targetStatus != SyncCredentialOperationStatus.Success || target is null)
+        {
+            CryptographicOperations.ZeroMemory(source);
+            return targetStatus;
+        }
+
+        try
+        {
+            (SyncCredentialOperationStatus activeStatus, byte[]? active) =
+                await ReadOwnedSecretAsync(activeName, cancellationToken).ConfigureAwait(false);
+            if (activeStatus != SyncCredentialOperationStatus.Success || active is null)
+            {
+                return activeStatus;
+            }
+
+            try
+            {
+                if (CryptographicOperations.FixedTimeEquals(active, target))
+                {
+                    return SyncCredentialOperationStatus.Success;
+                }
+
+                if (!CryptographicOperations.FixedTimeEquals(active, source))
+                {
+                    return SyncCredentialOperationStatus.Conflict;
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(active);
+            }
+
+            PlatformSecretWriteResult write = await _secretStore.WriteAsync(
+                    activeName,
+                    target,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            SyncCredentialOperationStatus writeStatus = MapStatus(write.Status);
+            if (writeStatus != SyncCredentialOperationStatus.Success)
+            {
+                return writeStatus;
+            }
+
+            SyncCredentialOperationStatus verified = await VerifySecretAsync(
+                    activeName,
+                    target,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (verified == SyncCredentialOperationStatus.Success)
+            {
+                return verified;
+            }
+
+            _ = await RestoreRawAsync(activeName, source, CancellationToken.None)
+                .ConfigureAwait(false);
+            return SyncCredentialOperationStatus.Failed;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(source);
+            CryptographicOperations.ZeroMemory(target);
+        }
+    }
+
+    private async ValueTask<SyncCredentialOperationStatus> RestoreSourceCoreAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken)
+    {
+        (SyncCredentialOperationStatus status, byte[]? source) =
+            await ReadOwnedSecretAsync(
+                    GetMigrationSecretName(
+                        spaceId,
+                        planId,
+                        SyncMigrationCredentialSlot.Source),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (status != SyncCredentialOperationStatus.Success || source is null)
+        {
+            return status;
+        }
+
+        try
+        {
+            return await RestoreRawAsync(
+                    GetActiveSecretName(spaceId),
+                    source,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(source);
+        }
+    }
+
+    private async ValueTask<SyncCredentialOperationStatus> RestoreRawAsync(
+        string activeName,
+        ReadOnlyMemory<byte> source,
+        CancellationToken cancellationToken)
+    {
+        PlatformSecretWriteResult write = await _secretStore.WriteAsync(
+                activeName,
+                source,
+                cancellationToken)
+            .ConfigureAwait(false);
+        SyncCredentialOperationStatus status = MapStatus(write.Status);
+        return status == SyncCredentialOperationStatus.Success
+            ? await VerifySecretAsync(activeName, source, CancellationToken.None)
+                .ConfigureAwait(false)
+            : status;
+    }
+
+    private async ValueTask<SyncCredentialOperationStatus> VerifySecretAsync(
+        string name,
+        ReadOnlyMemory<byte> expected,
+        CancellationToken cancellationToken)
+    {
+        (SyncCredentialOperationStatus status, byte[]? actual) =
+            await ReadOwnedSecretAsync(name, cancellationToken).ConfigureAwait(false);
+        if (status != SyncCredentialOperationStatus.Success || actual is null)
+        {
+            return status;
+        }
+
+        try
+        {
+            return CryptographicOperations.FixedTimeEquals(actual, expected.Span)
+                ? SyncCredentialOperationStatus.Success
+                : SyncCredentialOperationStatus.Failed;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(actual);
+        }
+    }
+
+    private async ValueTask<(SyncCredentialOperationStatus Status, byte[]? Secret)>
+        ReadOwnedSecretAsync(
+            string name,
+            CancellationToken cancellationToken)
+    {
+        PlatformSecretReadResult result = await _secretStore.ReadAsync(name, cancellationToken)
+            .ConfigureAwait(false);
+        SyncCredentialOperationStatus status = MapStatus(result.Status);
+        try
+        {
+            return status == SyncCredentialOperationStatus.Success
+                ? (status, result.Secret.ToArray())
+                : (status, null);
+        }
+        finally
+        {
+            ZeroOwnedSecret(result.Secret);
+        }
+    }
+
+    private static string GetActiveSecretName(Guid spaceId) => $"sync/webdav/{spaceId:N}";
+
+    private static string GetMigrationSecretName(
+        Guid spaceId,
+        Guid planId,
+        SyncMigrationCredentialSlot slot)
+    {
+        ValidateSlot(slot);
+        string role = slot == SyncMigrationCredentialSlot.Source ? "source" : "target";
+        return $"sync/webdav/{spaceId:N}/migration/{planId:N}/{role}";
+    }
 
     private static byte[] Serialize(
         SyncRemoteConfiguration remoteConfiguration,
@@ -248,6 +682,17 @@ public sealed class PlatformSyncCredentialService : ISyncCredentialService
 
     private static void ValidateSpaceId(Guid spaceId) =>
         ArgumentOutOfRangeException.ThrowIfEqual(spaceId, Guid.Empty);
+
+    private static void ValidatePlanId(Guid planId) =>
+        ArgumentOutOfRangeException.ThrowIfEqual(planId, Guid.Empty);
+
+    private static void ValidateSlot(SyncMigrationCredentialSlot slot)
+    {
+        if (!Enum.IsDefined(slot))
+        {
+            throw new ArgumentOutOfRangeException(nameof(slot));
+        }
+    }
 
     private static SyncCredentialOperationStatus MapStatus(
         PlatformSecretStoreStatus status) => status switch

@@ -40,6 +40,7 @@ public sealed class SqliteClipboardHistoryStoreTests
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
+    [InlineData(8)]
     public async Task EverySchemaVersionCanBeCreatedAndRepeatedMigrationIsIdempotent(
         int targetVersion)
     {

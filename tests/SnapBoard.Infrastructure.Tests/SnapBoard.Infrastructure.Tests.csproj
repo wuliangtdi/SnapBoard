@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\SnapBoard.Application\SnapBoard.Application.csproj" />
     <ProjectReference Include="..\..\src\SnapBoard.Domain\SnapBoard.Domain.csproj" />
     <ProjectReference Include="..\..\src\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Sync.WebDav\SnapBoard.Sync.WebDav.csproj" />
   </ItemGroup>
 
 </Project>

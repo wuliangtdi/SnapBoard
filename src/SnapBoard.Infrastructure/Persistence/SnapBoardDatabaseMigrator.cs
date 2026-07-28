@@ -340,9 +340,63 @@ public sealed class SnapBoardDatabaseMigrator
             );
             """,
         ]),
+        new(8, "webdav-provider-migration-v8",
+        [
+            """
+            CREATE TABLE sync_provider_migrations (
+                plan_id TEXT NOT NULL PRIMARY KEY,
+                space_id TEXT NOT NULL REFERENCES sync_spaces(space_id) ON DELETE CASCADE,
+                epoch INTEGER NOT NULL CHECK (epoch > 0),
+                initiator_device_id TEXT NOT NULL,
+                source_remote_fingerprint TEXT NOT NULL,
+                target_remote_fingerprint TEXT NOT NULL,
+                state INTEGER NOT NULL CHECK (state BETWEEN 1 AND 14),
+                total_objects INTEGER NOT NULL DEFAULT 0 CHECK (total_objects >= 0),
+                total_bytes INTEGER NOT NULL DEFAULT 0 CHECK (total_bytes >= 0),
+                completed_objects INTEGER NOT NULL DEFAULT 0 CHECK (
+                    completed_objects >= 0 AND completed_objects <= total_objects
+                ),
+                completed_bytes INTEGER NOT NULL DEFAULT 0 CHECK (
+                    completed_bytes >= 0 AND completed_bytes <= total_bytes
+                ),
+                inventory_sha256 TEXT NULL,
+                diagnostic_code TEXT NULL,
+                created_at_utc INTEGER NOT NULL,
+                updated_at_utc INTEGER NOT NULL,
+                UNIQUE (space_id, epoch),
+                CHECK (length(plan_id) = 32),
+                CHECK (length(initiator_device_id) = 32),
+                CHECK (length(source_remote_fingerprint) = 64),
+                CHECK (length(target_remote_fingerprint) = 64),
+                CHECK (inventory_sha256 IS NULL OR length(inventory_sha256) = 64),
+                CHECK (diagnostic_code IS NULL OR length(diagnostic_code) BETWEEN 1 AND 128),
+                CHECK (updated_at_utc >= created_at_utc)
+            );
+            """,
+            """
+            CREATE TABLE sync_provider_migration_devices (
+                plan_id TEXT NOT NULL REFERENCES sync_provider_migrations(plan_id) ON DELETE CASCADE,
+                device_id TEXT NOT NULL,
+                state INTEGER NOT NULL CHECK (state BETWEEN 0 AND 5),
+                highest_local_sequence INTEGER NOT NULL DEFAULT 0
+                    CHECK (highest_local_sequence >= 0),
+                highest_uploaded_sequence INTEGER NOT NULL DEFAULT 0 CHECK (
+                    highest_uploaded_sequence >= 0 AND
+                    highest_uploaded_sequence <= highest_local_sequence
+                ),
+                diagnostic_code TEXT NULL,
+                updated_at_utc INTEGER NOT NULL,
+                PRIMARY KEY (plan_id, device_id),
+                CHECK (length(device_id) = 32),
+                CHECK (diagnostic_code IS NULL OR length(diagnostic_code) BETWEEN 1 AND 128)
+            );
+            """,
+            "CREATE INDEX ix_sync_provider_migrations_space_epoch ON sync_provider_migrations(space_id, epoch DESC);",
+            "CREATE INDEX ix_sync_provider_migrations_state ON sync_provider_migrations(state, updated_at_utc);",
+        ]),
     ];
 
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     public async ValueTask<int> MigrateAsync(
         SqliteConnection connection,

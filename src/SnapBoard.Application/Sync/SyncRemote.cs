@@ -104,6 +104,13 @@ public enum SyncCredentialOperationStatus
     NotFound = 1,
     AccessDenied = 2,
     Failed = 3,
+    Conflict = 4,
+}
+
+public enum SyncMigrationCredentialSlot
+{
+    Source = 1,
+    Target = 2,
 }
 
 public sealed class SyncCredentialLease : IDisposable
@@ -157,6 +164,40 @@ public interface ISyncCredentialService
 
     ValueTask<SyncCredentialOperationStatus> DeleteAsync(
         Guid spaceId,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncCredentialOperationStatus> StageCurrentForMigrationAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncCredentialOperationStatus> StageMigrationTargetAsync(
+        Guid spaceId,
+        Guid planId,
+        SyncRemoteConfiguration remoteConfiguration,
+        ReadOnlyMemory<byte> password,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncCredentialOpenResult> OpenMigrationAsync(
+        Guid spaceId,
+        Guid planId,
+        SyncMigrationCredentialSlot slot,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncCredentialOperationStatus> CommitMigrationTargetAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncCredentialOperationStatus> RollbackMigrationSourceAsync(
+        Guid spaceId,
+        Guid planId,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncCredentialOperationStatus> DeleteMigrationSlotAsync(
+        Guid spaceId,
+        Guid planId,
+        SyncMigrationCredentialSlot slot,
         CancellationToken cancellationToken);
 }
 
@@ -259,6 +300,32 @@ public sealed record SyncRemoteEventListResult(
     SyncRemoteResult Result,
     IReadOnlyList<SyncRemoteEventReference> Events);
 
+public sealed record SyncRemoteCiphertextObjectReference(
+    SyncObjectType ObjectType,
+    Guid? DeviceId,
+    long Sequence,
+    Guid? EventId,
+    string? KeyedBlobId,
+    string? ETag,
+    long? ContentLength);
+
+public sealed record SyncRemoteCiphertextObjectListResult(
+    SyncRemoteResult Result,
+    IReadOnlyList<SyncRemoteCiphertextObjectReference> Objects);
+
+public sealed record SyncRemoteProviderMigrationPlanReference(
+    Guid PlanId,
+    string? ETag);
+
+public sealed record SyncRemoteProviderMigrationPlanListResult(
+    SyncRemoteResult Result,
+    IReadOnlyList<SyncRemoteProviderMigrationPlanReference> Plans);
+
+public sealed record SyncProviderMigrationMarkerAddress(
+    Guid PlanId,
+    SyncProviderMigrationMarkerKind Kind,
+    Guid? DeviceId = null);
+
 public interface ISyncRemoteSession : IAsyncDisposable
 {
     ValueTask<SyncRemoteResult> EnsureHierarchyAsync(
@@ -312,6 +379,52 @@ public interface ISyncRemoteSession : IAsyncDisposable
 public interface ISyncRemoteSessionFactory
 {
     ISyncRemoteSession Create(
+        SyncRemoteConfiguration configuration,
+        ReadOnlyMemory<byte> password);
+}
+
+public interface ISyncRemoteProviderMigrationSession : IAsyncDisposable
+{
+    ValueTask<SyncRemoteResult> EnsureMigrationHierarchyAsync(
+        Guid spaceId,
+        Guid planId,
+        IReadOnlyList<Guid> requiredDeviceIds,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncRemoteCiphertextObjectListResult> ListCiphertextObjectsAsync(
+        Guid spaceId,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncRemoteContentResult> GetCiphertextObjectAsync(
+        Guid spaceId,
+        SyncRemoteCiphertextObjectReference reference,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncRemoteResult> PutCiphertextObjectAsync(
+        Guid spaceId,
+        SyncRemoteCiphertextObjectReference reference,
+        ReadOnlyMemory<byte> encryptedContent,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncRemoteProviderMigrationPlanListResult> ListProviderMigrationPlansAsync(
+        Guid spaceId,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncRemoteContentResult> GetProviderMigrationMarkerAsync(
+        Guid spaceId,
+        SyncProviderMigrationMarkerAddress address,
+        CancellationToken cancellationToken);
+
+    ValueTask<SyncRemoteResult> PutProviderMigrationMarkerAsync(
+        Guid spaceId,
+        SyncProviderMigrationMarkerAddress address,
+        ReadOnlyMemory<byte> encryptedMarker,
+        CancellationToken cancellationToken);
+}
+
+public interface ISyncRemoteProviderMigrationSessionFactory
+{
+    ISyncRemoteProviderMigrationSession CreateProviderMigrationSession(
         SyncRemoteConfiguration configuration,
         ReadOnlyMemory<byte> password);
 }
