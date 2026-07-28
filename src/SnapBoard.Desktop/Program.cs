@@ -12,6 +12,8 @@ internal static class Program
 
     internal static MacOSSingleInstanceCoordinator? MacSingleInstanceCoordinator { get; private set; }
 
+    internal static WindowsStorageStartupContext? WindowsStorageStartup { get; private set; }
+
     // Avalonia 启动前不能访问 UI、第三方组件或依赖 SynchronizationContext 的代码。
     // AOT、数据库和平台服务初始化统一放在 App 创建后的组合根中。
     [STAThread]
@@ -38,6 +40,17 @@ internal static class Program
             }
 
             coordinator?.StartListening();
+            try
+            {
+                WindowsStorageStartup = WindowsStorageStartupContext.Create(
+                    GetOptionValue(args, "--storage-bootstrap-root"),
+                    GetOptionValue(args, "--migration-id"));
+            }
+            catch
+            {
+                DisposeSingleInstanceCoordinator();
+                throw;
+            }
         }
         else if (OperatingSystem.IsMacOS())
         {
@@ -71,6 +84,7 @@ internal static class Program
             if (OperatingSystem.IsWindows())
             {
                 DisposeSingleInstanceCoordinator();
+                DisposeWindowsStorageStartup();
             }
             else if (OperatingSystem.IsMacOS())
             {
@@ -147,11 +161,45 @@ internal static class Program
         return SingleInstanceCommand.ActivateMainWindow;
     }
 
+    internal static string? GetOptionValue(
+        IReadOnlyList<string> args,
+        string optionName)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        ArgumentException.ThrowIfNullOrWhiteSpace(optionName);
+        string? value = null;
+        for (int index = 0; index < args.Count; index++)
+        {
+            if (!string.Equals(args[index], optionName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (value is not null || index + 1 >= args.Count ||
+                string.IsNullOrWhiteSpace(args[index + 1]) ||
+                args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                throw new ArgumentException($"Invalid or duplicate option: {optionName}.", nameof(args));
+            }
+
+            value = args[++index];
+        }
+
+        return value;
+    }
+
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void DisposeSingleInstanceCoordinator()
     {
         SingleInstanceCoordinator?.Dispose();
         SingleInstanceCoordinator = null;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void DisposeWindowsStorageStartup()
+    {
+        WindowsStorageStartup?.Dispose();
+        WindowsStorageStartup = null;
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("macos")]

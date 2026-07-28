@@ -9,4 +9,5 @@ public enum SyncPayloadKind
     Html = 2,
     RichText = 3,
     Image = 4,
+    FileReference = 5,
 }

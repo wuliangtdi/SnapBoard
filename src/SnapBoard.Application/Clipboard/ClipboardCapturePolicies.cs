@@ -13,6 +13,8 @@ public enum ClipboardApplicationRuleMode
 
 public sealed class ClipboardCaptureOptions
 {
+    private IReadOnlySet<ClipboardContentKind> _enabledContentKinds =
+        new HashSet<ClipboardContentKind>(Enum.GetValues<ClipboardContentKind>());
     private static readonly IReadOnlySet<string> DefaultPasswordManagers =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -47,8 +49,11 @@ public sealed class ClipboardCaptureOptions
 
     public int MaximumSearchableCharacters { get; init; } = 1_000_000;
 
-    public IReadOnlySet<ClipboardContentKind> EnabledContentKinds { get; init; } =
-        new HashSet<ClipboardContentKind>(Enum.GetValues<ClipboardContentKind>());
+    public IReadOnlySet<ClipboardContentKind> EnabledContentKinds
+    {
+        get => Volatile.Read(ref _enabledContentKinds);
+        init => _enabledContentKinds = CopyEnabledContentKinds(value);
+    }
 
     public IReadOnlyDictionary<string, ClipboardApplicationRuleMode> ApplicationRules { get; init; } =
         new Dictionary<string, ClipboardApplicationRuleMode>(StringComparer.OrdinalIgnoreCase);
@@ -56,6 +61,21 @@ public sealed class ClipboardCaptureOptions
     public IReadOnlySet<string> PasswordManagerProcessNames { get; init; } = DefaultPasswordManagers;
 
     public IReadOnlySet<string> SensitiveFormatTokens { get; init; } = DefaultSensitiveFormatTokens;
+
+    internal void UpdateEnabledContentKinds(IReadOnlySet<ClipboardContentKind> value) =>
+        Volatile.Write(ref _enabledContentKinds, CopyEnabledContentKinds(value));
+
+    private static HashSet<ClipboardContentKind> CopyEnabledContentKinds(
+        IReadOnlySet<ClipboardContentKind> value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Any(kind => !Enum.IsDefined(kind)))
+        {
+            throw new ArgumentException("An enabled content kind is invalid.", nameof(value));
+        }
+
+        return new HashSet<ClipboardContentKind>(value);
+    }
 }
 
 public sealed record ClipboardCapturePolicyContext(ClipboardContentSnapshot Snapshot);
@@ -230,7 +250,10 @@ public sealed class PayloadSizeClipboardPolicy(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        long size = CalculatePayloadSize(context.Snapshot, options.MaximumPayloadBytes);
+        long size = CalculatePayloadSize(
+            context.Snapshot,
+            options.EnabledContentKinds,
+            options.MaximumPayloadBytes);
         return ValueTask.FromResult(size > options.MaximumPayloadBytes
             ? new ClipboardCapturePolicyResult(
                 ClipboardCapturePolicyAction.Ignore,
@@ -240,22 +263,41 @@ public sealed class PayloadSizeClipboardPolicy(
 
     private static long CalculatePayloadSize(
         ClipboardContentSnapshot snapshot,
+        IReadOnlySet<ClipboardContentKind> enabled,
         long stopAfter)
     {
-        long total = AddSaturated(0, snapshot.Html.Length);
-        total = AddSaturated(total, snapshot.RichText.Length);
-        total = AddSaturated(total, snapshot.Bitmap?.Data.Length ?? 0);
-        if (snapshot.Text is not null)
+        long total = enabled.Contains(ClipboardContentKind.Html)
+            ? snapshot.Html.Length
+            : 0;
+        if (enabled.Contains(ClipboardContentKind.RichText))
+        {
+            total = AddSaturated(total, snapshot.RichText.Length);
+        }
+
+        if (enabled.Contains(ClipboardContentKind.Image))
+        {
+            total = AddSaturated(total, snapshot.Bitmap?.Data.Length ?? 0);
+        }
+
+        if (enabled.Contains(ClipboardContentKind.Text) && snapshot.Text is not null)
         {
             total = AddSaturated(total, Encoding.UTF8.GetByteCount(snapshot.Text));
         }
-
-        foreach (string path in snapshot.FilePaths)
+        else if (enabled.Contains(ClipboardContentKind.Text) && !snapshot.Html.IsEmpty)
         {
-            total = AddSaturated(total, Encoding.UTF8.GetByteCount(path));
-            if (total > stopAfter)
+            // HTML-only 来源会在规范化阶段派生纯文本；以源字节数作保守上限。
+            total = AddSaturated(total, snapshot.Html.Length);
+        }
+
+        if (enabled.Contains(ClipboardContentKind.FileReference))
+        {
+            foreach (string path in snapshot.FilePaths)
             {
-                break;
+                total = AddSaturated(total, Encoding.UTF8.GetByteCount(path));
+                if (total > stopAfter)
+                {
+                    break;
+                }
             }
         }
 
@@ -275,12 +317,14 @@ public sealed class SupportedContentClipboardPolicy(
     {
         cancellationToken.ThrowIfCancellationRequested();
         ClipboardContentSnapshot snapshot = context.Snapshot;
+        IReadOnlySet<ClipboardContentKind> enabled = options.EnabledContentKinds;
         bool hasSupportedContent =
-            (options.EnabledContentKinds.Contains(ClipboardContentKind.Text) && snapshot.Text is not null) ||
-            (options.EnabledContentKinds.Contains(ClipboardContentKind.Html) && !snapshot.Html.IsEmpty) ||
-            (options.EnabledContentKinds.Contains(ClipboardContentKind.RichText) && !snapshot.RichText.IsEmpty) ||
-            (options.EnabledContentKinds.Contains(ClipboardContentKind.Image) && snapshot.Bitmap is not null) ||
-            (options.EnabledContentKinds.Contains(ClipboardContentKind.FileReference) && snapshot.FilePaths.Count > 0);
+            (enabled.Contains(ClipboardContentKind.Text) &&
+             (snapshot.Text is not null || !snapshot.Html.IsEmpty)) ||
+            (enabled.Contains(ClipboardContentKind.Html) && !snapshot.Html.IsEmpty) ||
+            (enabled.Contains(ClipboardContentKind.RichText) && !snapshot.RichText.IsEmpty) ||
+            (enabled.Contains(ClipboardContentKind.Image) && snapshot.Bitmap is not null) ||
+            (enabled.Contains(ClipboardContentKind.FileReference) && snapshot.FilePaths.Count > 0);
 
         return ValueTask.FromResult(hasSupportedContent
             ? ClipboardCapturePolicyResult.Continue

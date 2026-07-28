@@ -1,11 +1,15 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Storage;
+using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
+using SnapBoard.Platform.Abstractions.Storage;
 using AvaloniaApplication = Avalonia.Application;
 
 namespace SnapBoard.Desktop;
@@ -29,7 +33,7 @@ public partial class App : AvaloniaApplication, IDisposable
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _services = DesktopCompositionRoot.Build();
+            _services = DesktopCompositionRoot.Build(Program.WindowsStorageStartup);
             if (OperatingSystem.IsWindows() && EnableNativeWindowsLifecycle)
             {
                 DesktopStartupMode startupMode = Program.GetStartupMode(desktop.Args);
@@ -43,12 +47,18 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetRequiredService<IAutoStartService>(),
                     _services.GetRequiredService<IPlatformWindowPlacementService>(),
                     _services.GetRequiredService<ClipboardCaptureCoordinator>(),
-                    Program.SingleInstanceCoordinator);
+                    Program.SingleInstanceCoordinator,
+                    _services.GetService<IStorageManagementService>(),
+                    _services.GetService<IStorageMigrationBarrier>(),
+                    _services.GetService<IStoragePlatformService>(),
+                    _services.GetService<ISyncService>(),
+                    _services.GetService<IHistorySettingsService>());
                 _windowsLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 
                 base.OnFrameworkInitializationCompleted();
                 _windowsLifecycle.CompleteStartup(startupMode);
+                _services.GetService<StorageStartupAcknowledgementCoordinator>()?.Start();
                 return;
             }
 

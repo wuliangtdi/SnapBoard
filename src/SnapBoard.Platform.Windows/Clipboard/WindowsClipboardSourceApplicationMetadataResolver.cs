@@ -92,7 +92,19 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
 
         try
         {
-            return await lazy.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+            ClipboardSourceApplicationMetadata metadata = await lazy.Value
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (metadata.Icon is null)
+            {
+                // Shell/GDI 在桌面启动和图标缓存刷新期间可能暂时取不到 HICON；
+                // 空结果不能污染进程级缓存，否则同一应用在本次运行中永远只显示占位符。
+                _cache.TryRemove(new KeyValuePair<
+                    string,
+                    Lazy<Task<ClipboardSourceApplicationMetadata>>>(cacheKey, lazy));
+            }
+
+            return metadata;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

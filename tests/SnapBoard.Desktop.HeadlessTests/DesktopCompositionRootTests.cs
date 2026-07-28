@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.MacOS;
@@ -31,6 +32,7 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
             Assert.IsType<WindowsClipboardSourceApplicationMetadataResolver>(
                 provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
+            Assert.IsType<SyncService>(provider.GetRequiredService<ISyncService>());
         }
         else
         {

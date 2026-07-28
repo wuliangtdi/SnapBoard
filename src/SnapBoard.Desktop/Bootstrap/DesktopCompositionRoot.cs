@@ -1,12 +1,15 @@
 using System.Runtime.Versioning;
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Storage;
+using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.ViewModels;
-using SnapBoard.Domain.Clipboard;
 using SnapBoard.Infrastructure.Persistence;
+using SnapBoard.Infrastructure.Sync;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Security;
+using SnapBoard.Platform.Abstractions.Storage;
 using SnapBoard.Platform.MacOS;
 using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
@@ -14,6 +17,7 @@ using SnapBoard.Platform.Windows;
 using SnapBoard.Platform.Windows.Clipboard;
 using SnapBoard.Platform.Windows.Desktop;
 using SnapBoard.Platform.Windows.Security;
+using SnapBoard.Sync.WebDav;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
@@ -23,10 +27,10 @@ namespace SnapBoard.Desktop.Bootstrap;
 /// </summary>
 internal static class DesktopCompositionRoot
 {
-    public static ServiceProvider Build()
+    public static ServiceProvider Build(WindowsStorageStartupContext? storageStartup = null)
     {
         ServiceCollection services = new();
-        AddClipboardHistoryServices(services);
+        AddClipboardHistoryServices(services, storageStartup);
         services.AddSingleton<MainViewModel>();
 
         if (OperatingSystem.IsWindows())
@@ -45,20 +49,47 @@ internal static class DesktopCompositionRoot
         });
     }
 
-    private static void AddClipboardHistoryServices(IServiceCollection services)
+    private static void AddClipboardHistoryServices(
+        IServiceCollection services,
+        WindowsStorageStartupContext? storageStartup)
     {
-        services.AddSingleton(SnapBoardStoragePaths.CreateDefault());
+        if (storageStartup is null)
+        {
+            services.AddSingleton(SnapBoardStoragePaths.CreateDefault());
+        }
+        else
+        {
+            services.AddSingleton(storageStartup.BootstrapPaths);
+            services.AddSingleton(storageStartup.LocationStore);
+            services.AddSingleton(storageStartup.ActiveLocation);
+            services.AddSingleton(storageStartup.ActiveLocation.Paths);
+            services.AddSingleton<IStoragePlatformService>(storageStartup.PlatformService);
+            services.AddSingleton<IStorageManagementService>(storageStartup.ManagementService);
+            if (storageStartup.MigrationId is not null)
+            {
+                services.AddSingleton(provider => new StorageStartupAcknowledgementCoordinator(
+                    storageStartup.MigrationId,
+                    provider.GetRequiredService<IClipboardHistoryService>(),
+                    provider.GetRequiredService<IStorageManagementService>(),
+                    provider.GetRequiredService<IStoragePlatformService>()));
+            }
+        }
+
         services.AddSingleton(provider => new SnapBoardDatabaseConnectionFactory(
             provider.GetRequiredService<SnapBoardStoragePaths>().DatabasePath));
         services.AddSingleton<SnapBoardDatabaseMigrator>();
         services.AddSingleton<SqliteClipboardHistoryStore>();
         services.AddSingleton<IClipboardHistoryStore>(provider =>
             provider.GetRequiredService<SqliteClipboardHistoryStore>());
+        services.AddSingleton<ISyncStore>(provider =>
+            provider.GetRequiredService<SqliteClipboardHistoryStore>());
+        services.AddSingleton<IStorageMigrationBarrier>(provider =>
+            provider.GetRequiredService<SqliteClipboardHistoryStore>());
         services.AddSingleton<ClipboardHistoryChangeNotifier>();
         services.AddSingleton<IClipboardHistoryService, ClipboardHistoryService>();
 
         services.AddSingleton(new ClipboardCaptureOptions());
-        services.AddSingleton(ClipboardRetentionPolicy.Default);
+        services.AddSingleton<IHistorySettingsService, HistorySettingsService>();
         // 责任链顺序是安全边界：先阻断自身反馈和敏感来源，再执行应用规则与容量判断。
         services.AddSingleton<IClipboardCapturePolicy, CurrentApplicationClipboardPolicy>();
         services.AddSingleton<IClipboardCapturePolicy, SensitiveClipboardPolicy>();
@@ -85,6 +116,12 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IAutoStartService, WindowsAutoStartService>();
         services.AddSingleton<IPlatformWindowPlacementService, WindowsWindowPlacementService>();
         services.AddSingleton<IPlatformSecretStore, WindowsCredentialSecretStore>();
+        services.AddSingleton<ISyncKeyService, PlatformSyncKeyService>();
+        services.AddSingleton<ISyncCredentialService, PlatformSyncCredentialService>();
+        services.AddSingleton<ISyncRecoveryMaterialStore, FileSyncRecoveryMaterialStore>();
+        services.AddSingleton<ISyncObjectProtector, SyncObjectProtector>();
+        services.AddSingleton<ISyncRemoteSessionFactory, WebDavSyncRemoteSessionFactory>();
+        services.AddSingleton<ISyncService, SyncService>();
         services.AddSingleton<
             IClipboardSourceApplicationMetadataResolver,
             WindowsClipboardSourceApplicationMetadataResolver>();

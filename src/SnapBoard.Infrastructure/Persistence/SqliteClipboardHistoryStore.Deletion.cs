@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Sync.Contracts;
 
 namespace SnapBoard.Infrastructure.Persistence;
 
@@ -141,6 +142,20 @@ public sealed partial class SqliteClipboardHistoryStore
                 return 0;
             }
 
+            List<string> deletedIdentifiers = [];
+            await using (SqliteCommand selected = connection.CreateCommand())
+            {
+                selected.Transaction = transaction;
+                selected.CommandText = "SELECT id FROM pending_clipboard_deletes ORDER BY id;";
+                await using SqliteDataReader reader = await selected
+                    .ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    deletedIdentifiers.Add(reader.GetString(0));
+                }
+            }
+
             IReadOnlyList<BlobReferenceRemoval> blobReferences =
                 await ReadBlobReferenceRemovalsAsync(
                         connection,
@@ -262,6 +277,19 @@ public sealed partial class SqliteClipboardHistoryStore
                     """,
                     cancellationToken)
                 .ConfigureAwait(false);
+            foreach (string identifier in deletedIdentifiers)
+            {
+                await AppendLocalSyncEventAsync(
+                        connection,
+                        transaction,
+                        SyncChangeKind.Delete,
+                        ParseItemId(identifier),
+                        tags: null,
+                        isPinned: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch

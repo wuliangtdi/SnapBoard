@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\SnapBoard.Application\SnapBoard.Application.csproj" />
     <ProjectReference Include="..\SnapBoard.Sync.Contracts\SnapBoard.Sync.Contracts.csproj" />
   </ItemGroup>
 

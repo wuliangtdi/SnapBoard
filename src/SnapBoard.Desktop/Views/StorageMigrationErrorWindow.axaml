@@ -1,0 +1,87 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="SnapBoard.Desktop.Views.StorageMigrationErrorWindow"
+        Width="500"
+        Height="350"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Icon="/Assets/snapboard-app-icon.png"
+        WindowStartupLocation="CenterOwner"
+        Title="无法开始迁移">
+    <Grid RowDefinitions="64,*,72">
+        <Border Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="22,0" ColumnDefinitions="Auto,*" ColumnSpacing="11">
+                <Border Width="36"
+                        Height="36"
+                        VerticalAlignment="Center"
+                        CornerRadius="6"
+                        Background="#FFF1F2">
+                    <materialIcons:MaterialIcon Width="20"
+                                                Height="20"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource DangerBrush}"
+                                                Kind="CloseCircleOutline" />
+                </Border>
+                <StackPanel Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Spacing="2">
+                    <TextBlock FontSize="16"
+                               FontWeight="SemiBold"
+                               Text="无法开始迁移" />
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="目标目录未通过最终安全检查" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="24,19,24,18"
+              RowDefinitions="Auto,Auto,Auto">
+            <TextBlock x:Name="ErrorMessageText"
+                       TextWrapping="Wrap" />
+
+            <Border Grid.Row="1"
+                    Margin="0,14,0,0"
+                    Padding="12,10"
+                    Background="{DynamicResource SubtleSurfaceBrush}"
+                    BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="目标目录" />
+                    <TextBlock x:Name="TargetDirectoryText"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Grid.Row="2"
+                       Margin="0,11,0,0"
+                       FontSize="12"
+                       Foreground="{DynamicResource SecondaryTextBrush}"
+                       Text="SnapBoard 仍在使用原数据目录，程序没有关闭，也没有修改目标目录中的已有内容。"
+                       TextWrapping="Wrap" />
+        </Grid>
+
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,1,0,0">
+            <Button x:Name="DismissButton"
+                    Margin="22,0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Classes="primary-command"
+                    Click="OnDismissClicked"
+                    Content="我知道了" />
+        </Border>
+    </Grid>
+</Window>

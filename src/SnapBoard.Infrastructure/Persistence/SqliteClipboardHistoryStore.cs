@@ -1,12 +1,18 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Storage;
+using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Domain.Sync;
 
 namespace SnapBoard.Infrastructure.Persistence;
 
 public sealed partial class SqliteClipboardHistoryStore :
     IClipboardHistoryStore,
+    IStorageMigrationBarrier,
+    ISyncStore,
     IAsyncDisposable,
     IDisposable
 {
@@ -21,11 +27,13 @@ public sealed partial class SqliteClipboardHistoryStore :
     private readonly SnapBoardDatabaseConnectionFactory _connectionFactory;
     private readonly SnapBoardDatabaseInitializer _initializer;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly CancellationTokenSource _maintenance;
     private readonly object _initializationGate = new();
     private readonly SqliteWriteQueue _writeQueue;
     private Task<ClipboardHistoryInitializationResult>? _initializationTask;
     private Task? _orphanCleanupTask;
     private int _disposed;
+    private int _migrationPrepared;
 
     public SqliteClipboardHistoryStore(
         SnapBoardStoragePaths paths,
@@ -37,11 +45,35 @@ public sealed partial class SqliteClipboardHistoryStore :
         _initializer = new SnapBoardDatabaseInitializer(paths, connectionFactory, migrator);
         _blobStore = new ContentAddressedBlobStore(paths);
         _writeQueue = new SqliteWriteQueue(connectionFactory);
+        _maintenance = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
     }
 
     public ValueTask<ClipboardHistoryInitializationResult> InitializeAsync(
         CancellationToken cancellationToken) => new(
             EnsureInitializedAsync(cancellationToken));
+
+    public async ValueTask PrepareForMigrationAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.Exchange(ref _migrationPrepared, 1) != 0)
+        {
+            throw new InvalidOperationException("Storage migration is already prepared.");
+        }
+
+        try
+        {
+            await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+            _maintenance.Cancel();
+            await _writeQueue.PauseAndDrainAsync(
+                    CheckpointAndVerifyAsync,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _migrationPrepared, 0);
+            throw;
+        }
+    }
 
     public async ValueTask<ClipboardHistorySaveResult> SaveAsync(
         ClipboardCapturedItem item,
@@ -168,9 +200,32 @@ public sealed partial class SqliteClipboardHistoryStore :
         await _writeQueue.EnqueueAsync(
                 async (connection, token) =>
                 {
-                    await SetSettingCoreAsync(connection, key, value, token)
-                        .ConfigureAwait(false);
-                    return true;
+                    await using SqliteTransaction transaction =
+                        (SqliteTransaction)await connection.BeginTransactionAsync(token)
+                            .ConfigureAwait(false);
+                    try
+                    {
+                        await SetSettingCoreAsync(connection, transaction, key, value, token)
+                            .ConfigureAwait(false);
+                        if (SynchronizedSettingRegistry.IsSynchronized(key))
+                        {
+                            await AppendLocalSettingSyncEventAsync(
+                                    connection,
+                                    transaction,
+                                    key,
+                                    value,
+                                    token)
+                                .ConfigureAwait(false);
+                        }
+
+                        await transaction.CommitAsync(token).ConfigureAwait(false);
+                        return true;
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        throw;
+                    }
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -239,6 +294,7 @@ public sealed partial class SqliteClipboardHistoryStore :
         }
 
         _lifetime.Cancel();
+        _maintenance.Cancel();
         if (_initializationTask is not null)
         {
             try
@@ -274,6 +330,7 @@ public sealed partial class SqliteClipboardHistoryStore :
         }
 
         await _writeQueue.DisposeAsync().ConfigureAwait(false);
+        _maintenance.Dispose();
         _lifetime.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -293,6 +350,44 @@ public sealed partial class SqliteClipboardHistoryStore :
         return task.WaitAsync(cancellationToken);
     }
 
+    private static async ValueTask<bool> CheckpointAndVerifyAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using (SqliteCommand checkpoint = connection.CreateCommand())
+        {
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await using SqliteDataReader reader = await checkpoint
+                .ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("SQLite checkpoint returned no status.");
+            }
+
+            long busy = reader.GetInt64(0);
+            long logFrames = reader.GetInt64(1);
+            long checkpointedFrames = reader.GetInt64(2);
+            if (busy != 0 || logFrames != checkpointedFrames)
+            {
+                throw new InvalidOperationException("SQLite WAL could not be fully checkpointed.");
+            }
+        }
+
+        await using SqliteCommand integrity = connection.CreateCommand();
+        integrity.CommandText = "PRAGMA quick_check;";
+        object? result = await integrity.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(
+                Convert.ToString(result, CultureInfo.InvariantCulture),
+                "ok",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("SQLite quick_check failed before migration.");
+        }
+
+        return true;
+    }
+
     private async Task<ClipboardHistoryInitializationResult> InitializeCoreAsync()
     {
         ClipboardHistoryInitializationResult result = await _initializer
@@ -307,10 +402,10 @@ public sealed partial class SqliteClipboardHistoryStore :
     {
         try
         {
-            await Task.Delay(OrphanCleanupDelay, _lifetime.Token).ConfigureAwait(false);
-            await CleanupOrphanedBlobsAsync(_lifetime.Token).ConfigureAwait(false);
+            await Task.Delay(OrphanCleanupDelay, _maintenance.Token).ConfigureAwait(false);
+            await CleanupOrphanedBlobsAsync(_maintenance.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        catch (OperationCanceledException) when (_maintenance.IsCancellationRequested)
         {
         }
         catch (Exception exception)
@@ -365,6 +460,11 @@ public sealed partial class SqliteClipboardHistoryStore :
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (Volatile.Read(ref _migrationPrepared) != 0)
+        {
+            throw new InvalidOperationException("SQLite reads are paused for storage migration.");
+        }
+
         return new ValueTask<T>(Task.Run(async () =>
         {
             await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
@@ -376,27 +476,6 @@ public sealed partial class SqliteClipboardHistoryStore :
 
     private static List<string> ValidateTags(IReadOnlyCollection<string> tags)
     {
-        if (tags.Count > 32)
-        {
-            throw new ArgumentOutOfRangeException(nameof(tags), "At most 32 tags can be assigned.");
-        }
-
-        List<string> result = [];
-        HashSet<string> normalized = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string tag in tags)
-        {
-            string value = tag.Trim();
-            if (value.Length is 0 or > 64 || value.Any(char.IsControl))
-            {
-                throw new ArgumentException("Tag is invalid.", nameof(tags));
-            }
-
-            if (normalized.Add(value))
-            {
-                result.Add(value);
-            }
-        }
-
-        return result;
+        return SyncConflictRules.NormalizeTags(tags).ToList();
     }
 }

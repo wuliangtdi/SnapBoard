@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-28
-> 当前阶段：共享本地历史与检索已在 Windows 和 macOS arm64 验证；Windows 同步与两平台发布/环境矩阵继续收口
+> 当前阶段：Windows 安全存储迁移和端到端加密 WebDAV 同步已完成本机实现、自动测试及 `win-x64` AOT；真实服务与跨平台矩阵继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -16,7 +16,7 @@
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
-| Phase 1.6-1.8 | 未开始 | 下一阶段为 Windows 端到端加密 WebDAV 同步，之后才进入签名、安装包、自动更新和正式发布 |
+| Phase 1.6-1.8 | 进行中 | Windows 安全存储迁移、加密同步引擎、SQLite v7、同步历史策略和真实 UI 已落地；真实 WebDAV 兼容矩阵、设备撤销/密钥轮换、长期资源验证及正式发布待完成 |
 | Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 持久历史/检索、生命周期、Keychain 与本地 DMG/PKG 已验证；内存、8 小时、Intel、Developer ID、公证和环境矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
@@ -57,10 +57,10 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | Windows 11 x64 共 150 项：142 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Application 8/8、Infrastructure 19/19、Windows 52/52、Desktop Headless 28/28 |
+| 全量自动测试 | 通过 | Windows 11 x64 共 244 项：236 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 63/63、WebDAV 29/29、Windows 57/57、Desktop Headless 42/42 |
 | macOS 历史全量测试 | 通过 | macOS arm64 共 159 项：144 项通过、15 项 Windows 原生测试按平台跳过、0 项失败；Application 9/9、Infrastructure 26/26、macOS 36/36、Desktop Headless 29/29 |
 | `osx-arm64` Native AOT | 通过 | 当前 App Bundle arm64 Mach-O 为 26,606,368 字节；0 个 AOT/裁剪警告并已实际启动；正式签名/公证未完成 |
-| `win-x64` Native AOT | 本机通过 | 当前 Windows 11 x64 原生 EXE 29,531,648 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、明确退出；Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
 | macOS 窗口/后台内存 | 未达标 | AOT 平台探针 10,000 次增长 5.09 MiB、100,000 次增长 0.45 MiB，事件路径通过；完整桌面纯后台 41.4 MiB，首次开窗后关窗约 94-96 MiB，仍高于 80 MB 目标且有超过 100 MB 的历史波动；8 小时未执行 |
@@ -89,7 +89,7 @@ Microsoft.Data.Sqlite 10.0.10 传递请求 `SQLitePCLRaw.bundle_e_sqlite3 2.1.11
 
 Windows 原生适配器使用独立 STA 线程、message-only window、`AddClipboardFormatListener`、`GetClipboardSequenceNumber`、有界 Channel 和有限退避。`WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读取相同序列时再解析 EXE、AUMID、Package Family 和归属依据；AppsFolder 为 Microsoft Store/MSIX 应用提供本地化名称和图标。真实 Windows 剪贴板集成测试覆盖 Unicode/ANSI Text、HTML、RTF、DIB/DIBV5、注册 PNG、File List、格式清单、自定义来源标记和反馈抑制；自动粘贴覆盖 UIPI 结构化降级、目标 HWND/PID 与发送前前台窗口二次校验，并校验 x64 `INPUT` ABI 为 40 字节。
 
-真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 完成按需渲染。Windows 11 打包版 Notepad 的交互式复制已由探针捕获，来源识别为 `Notepad`；同一应用已确认加载 `Microsoft.UI.Xaml.dll`，并通过指定 HWND 的纯文本写回、目标恢复和 `SendInput` 自动粘贴。最新隔离平台压力观察到 10,000/10,000 个自写事件，反馈和 Channel 丢弃均为 0，Private Bytes 增长 7.38 MiB。完整桌面曾因每个事件排队一次历史刷新出现严重内存放大，当前已合并为静默期单次刷新并通过 10,000 次 Headless 回归，但修复后的完整 AOT 压力尚未重跑。Codex/截图工具真实包身份和图标已自动验证，实际复制/截图仍待手动复核；Explorer、浏览器、管理员窗口、Office 和远程桌面未完成。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
+真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 完成按需渲染。Windows 11 打包版 Notepad 的交互式复制已由探针捕获，来源识别为 `Notepad`；同一应用已确认加载 `Microsoft.UI.Xaml.dll`，并通过指定 HWND 的纯文本写回、目标恢复和 `SendInput` 自动粘贴。最新隔离平台压力观察到 10,000/10,000 个自写事件，反馈和 Channel 丢弃均为 0，Private Bytes 增长 7.38 MiB。完整桌面曾因每个事件排队一次历史刷新出现严重内存放大，当前已合并为静默期单次刷新并通过 10,000 次 Headless 回归，但修复后的完整 AOT 压力尚未重跑。Explorer 真实复制来源和黄色文件夹 Shell 图标已在最终 AOT 主窗口复核；Codex/截图工具真实包身份和图标已自动验证，实际复制/截图仍待手动复核；浏览器、管理员窗口、Office 和远程桌面未完成。完整记录见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
 ### 4.6 macOS 剪贴板与权限基线
 
@@ -101,7 +101,7 @@ macOS 平台层使用 `NSPasteboard.generalPasteboard.changeCount`、可取消�
 
 设置页不再使用四项预设下拉框，改为点击后直接按组合键录入。Avalonia UI 只提交平台无关的修饰键和按键名称，Windows 平台层显式映射为原生虚拟键并补充 `MOD_NOREPEAT`；字母、数字、数字键盘、F1-F24、导航、浏览器、媒体和常用 OEM 标点已由确定性测试覆盖。无修饰键和不支持的主键会保留录入状态并给出提示，原生注册冲突会回滚并恢复界面显示。
 
-设置窗口已复用主窗口的品牌图、白色表面、浅灰背景、蓝色主命令、图标和 6 px 圆角体系。Release XAML 构建、640 x 520 Headless/Skia 真实帧、创建/重建、自定义快捷键录入与应用均通过；JIT 和 Native AOT 设置窗口已实际启动。Windows 桌面截图组件因本机 D3D11 设备暂停错误 `0x887A0005` 未取得桌面合成截图，但 Headless PNG 已完成视觉复核；物理按键仍保留为交互验收项。
+设置窗口已复用主窗口的品牌图、白色表面、浅灰背景、蓝色主命令、图标和 6 px 圆角体系。Windows 主窗口通过 owned modal 打开设置，设置期间主窗口不接收输入；存储迁移确认和最终校验错误继续作为设置窗口的嵌套模态窗口，不使用跨应用全局置顶。Release XAML 构建、Headless/Skia 真实帧、窗口创建/重建、模态返回、自定义快捷键录入与应用均通过；JIT 和 Native AOT 设置窗口已实际启动。Windows 桌面截图组件因本机 D3D11 设备暂停错误 `0x887A0005` 未取得桌面合成截图，但 Headless PNG 已完成视觉复核；物理按键仍保留为交互验收项。
 
 ### 4.8 macOS 桌面生命周期、权限与发布
 
@@ -111,12 +111,22 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 
 稳定 Bundle ID 为 `com.wuliangtdi.snapboard`，标准 `.icns` 和浅色/深色 Template 状态图标已接入。最终 `osx-arm64` DMG 校验通过，挂载后的 App Bundle 实际后台启动并显示状态项，PKG 可展开；应用使用 Hardened Runtime ad-hoc 签名，PKG 未签名。当前钥匙串没有 Developer ID Application/Installer 身份，也未配置公证凭据，因此正式签名、Gatekeeper 接受和公证均未执行，不能标记完成。
 
+### 4.9 Windows 安全存储迁移与加密同步
+
+Windows 启动阶段现由 bootstrap 定位器解析活动数据根，SQLite 与 Blob 只使用当前解析结果。迁移由独立 Native AOT 迁移器执行，主程序先暂停并排空同步与剪贴板持久化，再建立数据库屏障；清单、卷身份、重解析点、空间、哈希、Schema、`quick_check`、启动确认和回滚均有边界检查。目标目录分别在选择时、用户确认后的 `PrepareMigrationAsync`、主程序退出后的迁移器复制前检查为空；最终准备校验失败时不生成迁移状态、不启动迁移器、不关闭主程序，并显示模态错误窗口，迁移器侧竞态兜底会保留后来出现的文件、回滚并重启原应用。Desktop 发布通过 `$(MSBuildProjectDirectory)` 与 `$(IntermediateOutputPath)` 计算迁移器中间目录，因此没有写死本机盘符或用户名。
+
+SQLite Schema v7 新增同步空间、Outbox、Inbox、逐设备 Checkpoint、Blob staging 和逐设置键逻辑版本。历史新增、置顶、删除及 `history.capture`/`history.retention`/`sync.pollInterval` 设置与 Outbox 在同一写事务提交；`SyncService` 使用 single-flight、有界批次、动态轮询和暂停排空，远端只写加密元数据、不可变事件及 keyed Blob。Windows Credential Manager 分离保存内容主密钥与版本化、长度受限的完整 WebDAV 连接配置；SQLite 表结构不包含 URL、用户名或密码字段，恢复材料落盘前加密。设置页接入创建/加入、连接验证、证书指纹、恢复材料、记录类型、默认关闭的自动清理、后台检查频率和真实同步状态，密码及恢复码提交后清空。
+
+WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源同根重定向、条件写入、ETag、取消、有限重试、响应上限和严格 PROPFIND。精确 SHA-256 指纹允许自签名链错误，但证书缺失或主机名不匹配仍拒绝；DTD、外部实体、跨源 href、编码分隔符和路径逃逸也会被拒绝。当前自动化假远端已验证双设备创建/加入、加密事件与 Blob、重复收发、墓碑、序号缺口和迁移暂停排空；Nextcloud、Synology、标准 WebDAV 实例、设备撤销/密钥轮换、远端回收、完整故障注入及跨平台固定向量仍待验证。
+
 ## 5. 下一执行顺序
 
-1. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力及未完成的真实应用/硬件矩阵。
-2. 进入 `phase1/windows-sync`，实现端到端加密 WebDAV 同步；不得上传 SQLite/WAL 文件或明文凭据。
-3. 同步阶段完成后再进入 Windows 签名、安装包、自动更新和正式发布。
-4. 在对应硬件和签名环境补齐 Windows ARM64、macOS Intel、Linux、8 小时长稳与各平台未完成的实机场景；不得从当前 Windows x64 结果外推。
+1. 使用 Nextcloud、Synology 和标准 WebDAV 实例执行认证、路径、ETag、限流、重试、损坏响应及双设备离线收敛矩阵。
+2. 实现 WebDAV 服务器迁移向导：协调暂停设备、完整镜像并验证原空间密文对象，保留空间/设备身份、Checkpoint 和 Outbox；连接凭据由每台设备分别原子切换。
+3. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，以及系统唤醒和网络恢复触发。
+4. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力、三次资源采样和 8 小时长稳。
+5. 在对应硬件补齐 Windows ARM64、macOS 同协议/Keychain、macOS Intel 和 Linux 验证；不得从当前 Windows x64 结果外推。
+6. 上述发布门槛完成后再进入 Windows 签名、安装包、自动更新和正式发布。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -354,7 +364,40 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
   - Developer ID Application/Installer、公证、staple、Gatekeeper 接受、安装升级/卸载和 GitHub macOS Runner 未完成。
 ```
 
-## 14. 更新规则
+## 14. 2026-07-28 执行记录：Windows 安全存储迁移与加密 WebDAV 同步
+
+```text
+日期：2026-07-28
+阶段/任务：Phase 1.6 Windows 安全存储迁移、端到端加密 WebDAV 同步和 SQLite v7
+状态：[x] Windows 本机实现、自动测试、性能及 win-x64 AOT 通过；[~] 真实服务、长期资源和跨平台矩阵未完成
+基线：phase1/windows-sync 从 origin/main 5cf0e40c98f227be307d6863e4f236ed8c4ff67f 创建
+完成内容：
+  - 新增 bootstrap 数据目录定位器、StorageInstanceId、路径/卷验证、迁移状态机、独立迁移器、复制校验、原子切换、启动确认和回滚；设置页接入目录选择、空间检查及迁移生命周期。
+  - SQLite 升级到 Schema v7；历史新增、置顶、删除和同步设置与 Outbox 原子提交，新增 Inbox、逐设备 Checkpoint、Blob staging、逐设置键逻辑版本、序号缺口保护和确定性冲突处理。
+  - 新增版本化同步 DTO、源生成 JSON、HKDF-SHA256、AES-256-GCM、keyed-blob-id、Argon2id 恢复材料，以及 Windows Credential Manager 主密钥/完整连接配置分离存储；SQLite v7 不含 URL、用户名或密码字段。
+  - 新增受限 WebDAV 客户端和 ISyncRemoteSession 适配器；实现不可变事件/Blob、严格 PROPFIND、同源重定向、证书固定、有限重试和稳定错误分类；精确指纹可接受自签名链但不接受主机名不匹配。
+  - Desktop 组合根接入真实 SyncService；设置页支持创建/加入空间、恢复材料、连接验证和手动同步，主窗口只显示真实同步状态；存储迁移会暂停并排空同步。
+  - 新增 `history.capture` 与 `history.retention` 动态设置：内容类型默认全开，自动清理默认关闭；设置使用加密事件逐键 LWW 同步，清理跳过置顶项并产生跨设备删除墓碑。
+  - 新增 `sync.pollInterval` 动态设置：缺省使用 5 分钟，设置页可选 30 秒到 1 小时，修改后当前调度器立即生效并通过加密事件同步到其他设备；本地变化始终立即触发同步。
+  - WebDAV 表单统一 40 px、6 px 圆角输入样式；创建/加入、同步频率、证书指纹、恢复码、空间 ID、密钥版本和恢复材料均有用途说明，创建结果显示并可复制空间 ID、打开恢复文件目录。
+  - 主窗口搜索区随窗口宽度自适应；Windows 来源图标的空 Shell 结果不再进入长期缓存，具备路径或 AUMID 的列表项会进行一次有限重试。
+  - 本地数据目录选择会在确认目标为空、位于固定磁盘且不含重解析点后，将宽 ACL 收紧为当前用户私有权限并复检；验证失败原因不再隐藏。设置窗口阻止主窗口输入，有效目标使用模态确认说明退出、迁移和自动重启，取消保持原位置；确认后再次检查空目录，失败时使用模态错误窗口说明程序和已有内容均未改变。Windows 发布只保留 Native AOT 迁移器 EXE，清除框架依赖版的 `.deps.json` 和 `.runtimeconfig.json`。
+验证结果：
+  - locked restore、Release build、format 和 NuGet 直接/传递漏洞检查通过；构建 0 警告、0 错误。
+  - 全量 244 项：236 项通过、8 项 macOS 原生测试按平台跳过、0 项失败；Application 10/10、WebDAV 29/29、Infrastructure 63/63、Windows 57/57、Desktop Headless 42/42。
+  - SQLite v6 重新生成 100,000 条数据耗时 26,782.90 ms；目标查询 P95 2.67 ms，300 次总体 P95 2.33 ms、最大 5.79 ms，结果 PASS。
+  - 最新 `artifacts/publish/win-x64-storage-migration-final-check-aot` 为 win-x64 Native AOT，0 个裁剪/AOT 告警；主程序 37,527,552 字节，SHA-256 556445E7214C4A93AFC987974A67950CEE1A4F92EA8675758396AE6AC3559A6D；迁移器 4,512,768 字节，SHA-256 3D51FCD67935BF91262FF2CEDC8B481C4BDC0D49DDCFEBD866B88D4CD1E9B9FF；无 `coreclr.dll`/`clrjit.dll` 和迁移器框架依赖配置，迁移器独立启动按无参数契约返回退出码 4。旧发布目录主程序仍由用户进程占用，本次未强制关闭或重复启动主程序。
+  - 隔离 bootstrap 根目录下后台启动约 565.52 ms，创建定位器和 270,336 字节 SQLite；同步设置窗口实际创建，两个场景均响应 --exit 正常退出且未强杀。
+  - 700 x 720 设置页、500 x 340 迁移确认和 500 x 350 最终校验错误 Headless/Skia 帧完成视觉复核；目录、说明和命令均无重叠或页脚遮挡。历史策略与同步表单底部、同步频率、恢复码、空间 ID、密钥版本及恢复路径也保持原有视觉验证结果。
+  - 最终 AOT 主窗口实测企业微信、QQ、PixPin 与 Explorer 来源图标；Explorer 由蓝色占位符恢复为黄色文件夹图标。
+限制：
+  - 本轮未连接 Nextcloud、Synology 或标准 WebDAV 实例；当前双设备收敛结果来自有状态假远端，不能替代真实服务矩阵。
+  - 设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收、OPTIONS/DELETE、系统唤醒及网络恢复触发未完成。
+  - 修复后的完整 AOT 桌面 10,000 次剪贴板压力、三次资源采样、10 分钟托盘和 8 小时长稳未执行，不能标记发布门槛通过。
+  - Windows ARM64、macOS 同协议/Keychain 固定向量、macOS Intel、Linux 和 GitHub Runner 未由 Windows x64 本机结果推断通过。
+```
+
+## 15. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

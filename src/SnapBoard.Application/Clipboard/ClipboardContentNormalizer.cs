@@ -23,15 +23,24 @@ public static class ClipboardContentNormalizer
         }
 
         List<ClipboardCapturedRepresentation> representations = [];
-        string? plainText = snapshot.Text;
-        string htmlText = snapshot.Html.IsEmpty ? string.Empty : ExtractHtmlText(snapshot.Html.Span);
-        if (plainText is null && htmlText.Length > 0)
+        IReadOnlySet<ClipboardContentKind> enabled = options.EnabledContentKinds;
+        bool textEnabled = enabled.Contains(ClipboardContentKind.Text);
+        bool htmlEnabled = !decision.TextOnly && enabled.Contains(ClipboardContentKind.Html);
+        bool richTextEnabled =
+            !decision.TextOnly && enabled.Contains(ClipboardContentKind.RichText);
+        bool imageEnabled = !decision.TextOnly && enabled.Contains(ClipboardContentKind.Image);
+        string? plainText = textEnabled ? snapshot.Text : null;
+        bool needsHtmlText = htmlEnabled || (textEnabled && plainText is null);
+        string htmlText = needsHtmlText && !snapshot.Html.IsEmpty
+            ? ExtractHtmlText(snapshot.Html.Span)
+            : string.Empty;
+        if (textEnabled && plainText is null && htmlText.Length > 0)
         {
             // 仅 HTML 来源也保留派生纯文本，使“复制为纯文本”无需重新加载或解析富格式。
             plainText = htmlText;
         }
 
-        if (options.EnabledContentKinds.Contains(ClipboardContentKind.Text) && plainText is not null)
+        if (textEnabled && plainText is not null)
         {
             representations.Add(new ClipboardCapturedRepresentation(
                 ClipboardContentKind.Text,
@@ -40,9 +49,7 @@ public static class ClipboardContentNormalizer
                 default));
         }
 
-        if (!decision.TextOnly &&
-            options.EnabledContentKinds.Contains(ClipboardContentKind.Html) &&
-            !snapshot.Html.IsEmpty)
+        if (htmlEnabled && !snapshot.Html.IsEmpty)
         {
             representations.Add(new ClipboardCapturedRepresentation(
                 ClipboardContentKind.Html,
@@ -51,9 +58,7 @@ public static class ClipboardContentNormalizer
                 snapshot.Html));
         }
 
-        if (!decision.TextOnly &&
-            options.EnabledContentKinds.Contains(ClipboardContentKind.RichText) &&
-            !snapshot.RichText.IsEmpty)
+        if (richTextEnabled && !snapshot.RichText.IsEmpty)
         {
             representations.Add(new ClipboardCapturedRepresentation(
                 ClipboardContentKind.RichText,
@@ -62,9 +67,8 @@ public static class ClipboardContentNormalizer
                 snapshot.RichText));
         }
 
-        if (!decision.TextOnly &&
-            options.EnabledContentKinds.Contains(ClipboardContentKind.Image) &&
-            snapshot.Bitmap is { } bitmap)
+        ClipboardBitmapData? bitmap = imageEnabled ? snapshot.Bitmap : null;
+        if (bitmap is not null)
         {
             representations.Add(new ClipboardCapturedRepresentation(
                 ClipboardContentKind.Image,
@@ -78,7 +82,7 @@ public static class ClipboardContentNormalizer
         }
 
         string[] filePaths = !decision.TextOnly &&
-            options.EnabledContentKinds.Contains(ClipboardContentKind.FileReference)
+            enabled.Contains(ClipboardContentKind.FileReference)
             ? snapshot.FilePaths.Where(path => !string.IsNullOrWhiteSpace(path)).ToArray()
             : Array.Empty<string>();
         if (representations.Count == 0 && filePaths.Length == 0)
@@ -87,7 +91,7 @@ public static class ClipboardContentNormalizer
         }
 
         ClipboardContentKind primaryKind = GetPrimaryKind(representations, filePaths);
-        string rtfText = plainText is null && !snapshot.RichText.IsEmpty
+        string rtfText = richTextEnabled && plainText is null && !snapshot.RichText.IsEmpty
             ? ExtractRtfText(snapshot.RichText.Span)
             : string.Empty;
         string displayText = GetDisplayText(
@@ -95,7 +99,7 @@ public static class ClipboardContentNormalizer
             plainText,
             htmlText,
             rtfText,
-            snapshot.Bitmap,
+            bitmap,
             filePaths);
         string searchableText = BuildSearchableText(
             plainText,

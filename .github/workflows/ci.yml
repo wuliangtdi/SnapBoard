@@ -83,6 +83,27 @@ jobs:
           -p:Version=0.0.0-ci
           -o artifacts/${{ matrix.rid }}
 
+      - name: Verify Native AOT storage migrator
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $publishDirectory = "artifacts/${{ matrix.rid }}"
+          $migrator = Join-Path $publishDirectory "SnapBoard.StorageMigrator.exe"
+          if (-not (Test-Path -LiteralPath $migrator -PathType Leaf)) {
+            throw "The Native AOT storage migrator is missing."
+          }
+          foreach ($forbidden in @(
+            "SnapBoard.StorageMigrator.deps.json",
+            "SnapBoard.StorageMigrator.runtimeconfig.json")) {
+            if (Test-Path -LiteralPath (Join-Path $publishDirectory $forbidden)) {
+              throw "Framework-dependent storage migrator artifact found: $forbidden"
+            }
+          }
+          $process = Start-Process -FilePath $migrator -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 4) {
+            throw "The storage migrator did not run as a standalone executable. Exit code: $($process.ExitCode)"
+          }
+
       - uses: actions/upload-artifact@v7
         with:
           name: snapboard-${{ matrix.rid }}

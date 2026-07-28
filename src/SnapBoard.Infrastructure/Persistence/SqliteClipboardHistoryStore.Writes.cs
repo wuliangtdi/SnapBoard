@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Sync.Contracts;
 
 namespace SnapBoard.Infrastructure.Persistence;
 
@@ -79,6 +80,15 @@ public sealed partial class SqliteClipboardHistoryStore
                     transaction,
                     item.Id,
                     item.SearchableText,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await AppendLocalSyncEventAsync(
+                    connection,
+                    transaction,
+                    SyncChangeKind.Upsert,
+                    item.Id,
+                    tags: null,
+                    isPinned: null,
                     cancellationToken)
                 .ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -173,6 +183,15 @@ public sealed partial class SqliteClipboardHistoryStore
                     transaction,
                     ParseItemId(identifier),
                     item.SearchableText,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await AppendLocalSyncEventAsync(
+                    connection,
+                    transaction,
+                    SyncChangeKind.Upsert,
+                    ParseItemId(identifier),
+                    tags: null,
+                    isPinned: null,
                     cancellationToken)
                 .ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -477,7 +496,7 @@ public sealed partial class SqliteClipboardHistoryStore
             command.Parameters.AddWithValue(
                 "@blobHash",
                 (object?)representation.Blob?.Hash ?? DBNull.Value);
-            command.Parameters.AddWithValue("@sizeBytes", representation.Source.SizeBytes);
+            command.Parameters.AddWithValue("@sizeBytes", representation.SizeBytes);
             command.Parameters.AddWithValue(
                 "@bitmapEncoding",
                 representation.Source.BitmapEncoding is { } bitmapEncoding
@@ -618,17 +637,47 @@ public sealed partial class SqliteClipboardHistoryStore
         bool isPinned,
         CancellationToken cancellationToken)
     {
-        await using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE clipboard_items
-            SET is_pinned = @isPinned,
-                updated_at_utc = @updatedAt
-            WHERE id = @id AND is_deleted = 0;
-            """;
-        command.Parameters.AddWithValue("@isPinned", isPinned ? 1 : 0);
-        command.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("@id", itemId.ToString());
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        try
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE clipboard_items
+                SET is_pinned = @isPinned,
+                    updated_at_utc = @updatedAt
+                WHERE id = @id AND is_deleted = 0;
+                """;
+            command.Parameters.AddWithValue("@isPinned", isPinned ? 1 : 0);
+            command.Parameters.AddWithValue(
+                "@updatedAt",
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("@id", itemId.ToString());
+            if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+
+            await AppendLocalSyncEventAsync(
+                    connection,
+                    transaction,
+                    SyncChangeKind.SetPinned,
+                    itemId,
+                    tags: null,
+                    isPinned,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async ValueTask<bool> SetTagsCoreAsync(
@@ -708,6 +757,15 @@ public sealed partial class SqliteClipboardHistoryStore
                 await cleanup.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            await AppendLocalSyncEventAsync(
+                    connection,
+                    transaction,
+                    SyncChangeKind.SetTags,
+                    itemId,
+                    tags.ToArray(),
+                    isPinned: null,
+                    cancellationToken)
+                .ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
@@ -739,11 +797,13 @@ public sealed partial class SqliteClipboardHistoryStore
 
     private static async ValueTask SetSettingCoreAsync(
         SqliteConnection connection,
+        SqliteTransaction transaction,
         string key,
         string value,
         CancellationToken cancellationToken)
     {
         await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO settings(key, value, version, updated_at_utc)
             VALUES (@key, @value, 1, @updatedAt)
@@ -847,7 +907,11 @@ public sealed partial class SqliteClipboardHistoryStore
         ClipboardCapturedRepresentation Source,
         string? InlineText,
         byte[]? InlineData,
-        StagedBlob? Blob);
+        StagedBlob? Blob,
+        long? SizeBytesOverride = null)
+    {
+        public long SizeBytes => SizeBytesOverride ?? Source.SizeBytes;
+    }
 
     private sealed class PreparedContent(
         IReadOnlyList<PreparedRepresentation> representations,

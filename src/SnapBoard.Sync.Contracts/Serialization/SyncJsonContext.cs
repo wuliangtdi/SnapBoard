@@ -9,6 +9,18 @@ namespace SnapBoard.Sync.Contracts.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    GenerationMode = JsonSourceGenerationMode.Metadata,
+    UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     WriteIndented = false)]
 [JsonSerializable(typeof(SyncEventEnvelope))]
+[JsonSerializable(typeof(SyncClipboardItemPayload))]
+[JsonSerializable(typeof(SyncRepresentationPayload))]
+[JsonSerializable(typeof(SyncRepresentationPayload[]))]
+[JsonSerializable(typeof(SyncBlobReferencePayload))]
+[JsonSerializable(typeof(SyncSpaceMetadata))]
+[JsonSerializable(typeof(SyncDeviceCheckpoint))]
+[JsonSerializable(typeof(SyncEncryptedObjectEnvelope))]
+[JsonSerializable(typeof(SyncRecoveryEnvelope))]
+[JsonSerializable(typeof(SyncSettingPayload))]
+[JsonSerializable(typeof(string[]))]
 public partial class SyncJsonContext : JsonSerializerContext;

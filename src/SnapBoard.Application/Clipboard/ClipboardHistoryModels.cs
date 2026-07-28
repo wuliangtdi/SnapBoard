@@ -168,8 +168,10 @@ public enum ClipboardHistoryChangeKind
     Updated = 2,
     Deleted = 3,
     Cleared = 4,
+    SettingChanged = 5,
 }
 
 public sealed record ClipboardHistoryChangedEvent(
     ClipboardHistoryChangeKind Kind,
-    ClipboardItemId? ItemId = null);
+    ClipboardItemId? ItemId = null,
+    string? SettingKey = null);

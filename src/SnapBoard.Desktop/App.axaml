@@ -169,6 +169,42 @@
             <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
         </Style>
 
+        <Style Selector="TextBox.settings-input">
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="Padding" Value="11,7" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{DynamicResource SubtleSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="TextBox.settings-input:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+
+        <Style Selector="ComboBox.settings-input">
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{DynamicResource SubtleSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="NumericUpDown.settings-input">
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{DynamicResource SubtleSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="RadioButton.sync-mode">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
         <Style Selector="ToggleButton.filter">
             <Setter Property="MinWidth" Value="78" />
             <Setter Property="Height" Value="38" />

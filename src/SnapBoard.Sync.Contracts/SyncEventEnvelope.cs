@@ -1,14 +1,17 @@
 namespace SnapBoard.Sync.Contracts;
 
-/// <summary>
-/// 加密前的同步事件信封。正文和 Blob 内容不会以明文形式写入 WebDAV；
-/// 此类型只定义跨版本稳定的协议字段。
-/// </summary>
+/// <summary>加密前的不可变同步事件。时间固定为 Unix 毫秒。</summary>
 public sealed record SyncEventEnvelope(
     int ProtocolVersion,
+    Guid SpaceId,
     Guid EventId,
     Guid DeviceId,
     long Sequence,
-    DateTimeOffset CreatedAt,
-    SyncPayloadKind PayloadKind,
-    string PayloadObjectName);
+    long LogicalTimestamp,
+    long CreatedAtUnixMilliseconds,
+    SyncChangeKind ChangeKind,
+    Guid ItemId,
+    SyncClipboardItemPayload? Item,
+    string[]? Tags,
+    bool? IsPinned,
+    SyncSettingPayload? Setting = null);

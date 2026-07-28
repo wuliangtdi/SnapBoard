@@ -11,8 +11,10 @@ internal sealed class SqliteWriteQueue : IAsyncDisposable, IDisposable
 {
     private readonly SnapBoardDatabaseConnectionFactory _connectionFactory;
     private readonly Channel<IWriteWorkItem> _channel;
+    private readonly SemaphoreSlim _enqueueGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _worker;
+    private int _accepting = 1;
     private int _disposed;
 
     public SqliteWriteQueue(
@@ -38,8 +40,57 @@ internal sealed class SqliteWriteQueue : IAsyncDisposable, IDisposable
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         ArgumentNullException.ThrowIfNull(operation);
         WriteWorkItem<T> item = new(operation, cancellationToken);
-        await _channel.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+        await _enqueueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Volatile.Read(ref _accepting) == 0)
+            {
+                throw new InvalidOperationException(
+                    "SQLite writes are paused for storage migration.");
+            }
+
+            await _channel.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _enqueueGate.Release();
+        }
+
         return await item.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<T> PauseAndDrainAsync<T>(
+        Func<SqliteConnection, CancellationToken, ValueTask<T>> finalOperation,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ArgumentNullException.ThrowIfNull(finalOperation);
+        WriteWorkItem<T> item = new(finalOperation, cancellationToken);
+        await _enqueueGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Interlocked.Exchange(ref _accepting, 0) == 0)
+            {
+                throw new InvalidOperationException(
+                    "SQLite writes are already paused for storage migration.");
+            }
+
+            await _channel.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _enqueueGate.Release();
+        }
+
+        try
+        {
+            return await item.Completion.Task.ConfigureAwait(false);
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _accepting, 1);
+            throw;
+        }
     }
 
     public void Dispose()
@@ -64,6 +115,7 @@ internal sealed class SqliteWriteQueue : IAsyncDisposable, IDisposable
         {
             _shutdown.Cancel();
             _shutdown.Dispose();
+            _enqueueGate.Dispose();
         }
 
         GC.SuppressFinalize(this);
