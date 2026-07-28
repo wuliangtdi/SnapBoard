@@ -468,7 +468,7 @@
                                                    Text="内容会在本机加密，WebDAV 服务器只保存密文。" />
                                         <TextBlock FontSize="11"
                                                    Foreground="{DynamicResource SecondaryTextBrush}"
-                                                   Text="WebDAV 密码保存在 Windows 凭据管理器；恢复码不会保存，请自行妥善保管。"
+                                                   Text="WebDAV 凭据保存在系统安全凭据存储中；恢复码不会保存，请自行妥善保管。"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>

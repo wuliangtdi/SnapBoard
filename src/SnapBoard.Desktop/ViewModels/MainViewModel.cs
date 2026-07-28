@@ -44,6 +44,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private int _disposed;
     private int _started;
 
+    internal bool HasSyncService => _syncService is not null;
+
     public MainViewModel()
     {
         // 参数less 构造仅供 XAML Design.DataContext 与无数据库视觉测试使用；
@@ -54,25 +56,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
 
     public MainViewModel(IClipboardHistoryService historyService)
+        : this(historyService, null, null, null, initializeServices: true)
     {
-        ArgumentNullException.ThrowIfNull(historyService);
-        _uiContext = SynchronizationContext.Current;
-        _historyService = historyService;
-        _designItems = [];
-        _historyService.HistoryChanged += OnHistoryChanged;
     }
 
     public MainViewModel(
         IClipboardHistoryService historyService,
         IClipboardSourceApplicationMetadataResolver sourceMetadataResolver)
+        : this(
+            historyService,
+            sourceMetadataResolver ?? throw new ArgumentNullException(nameof(sourceMetadataResolver)),
+            null,
+            null,
+            initializeServices: true)
     {
-        ArgumentNullException.ThrowIfNull(historyService);
-        ArgumentNullException.ThrowIfNull(sourceMetadataResolver);
-        _uiContext = SynchronizationContext.Current;
-        _historyService = historyService;
-        _sourceMetadataResolver = sourceMetadataResolver;
-        _designItems = [];
-        _historyService.HistoryChanged += OnHistoryChanged;
     }
 
     public MainViewModel(
@@ -80,10 +77,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         IClipboardSourceApplicationMetadataResolver sourceMetadataResolver,
         ISyncService syncService,
         IHistorySettingsService? historySettingsService = null)
+        : this(
+            historyService,
+            sourceMetadataResolver ?? throw new ArgumentNullException(nameof(sourceMetadataResolver)),
+            syncService ?? throw new ArgumentNullException(nameof(syncService)),
+            historySettingsService,
+            initializeServices: true)
     {
+    }
+
+    private MainViewModel(
+        IClipboardHistoryService historyService,
+        IClipboardSourceApplicationMetadataResolver? sourceMetadataResolver,
+        ISyncService? syncService,
+        IHistorySettingsService? historySettingsService,
+        bool initializeServices)
+    {
+        _ = initializeServices;
         ArgumentNullException.ThrowIfNull(historyService);
-        ArgumentNullException.ThrowIfNull(sourceMetadataResolver);
-        ArgumentNullException.ThrowIfNull(syncService);
         _uiContext = SynchronizationContext.Current;
         _historyService = historyService;
         _sourceMetadataResolver = sourceMetadataResolver;
@@ -91,9 +102,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _historySettingsService = historySettingsService;
         _designItems = [];
         _historyService.HistoryChanged += OnHistoryChanged;
-        _syncService.StatusChanged += OnSyncStatusChanged;
-        ApplySyncStatus(_syncService.Status);
+        if (_syncService is not null)
+        {
+            _syncService.StatusChanged += OnSyncStatusChanged;
+            ApplySyncStatus(_syncService.Status);
+        }
     }
+
+    internal static MainViewModel CreateForServices(
+        IClipboardHistoryService historyService,
+        IClipboardSourceApplicationMetadataResolver? sourceMetadataResolver,
+        ISyncService? syncService,
+        IHistorySettingsService? historySettingsService) => new(
+            historyService,
+            sourceMetadataResolver,
+            syncService,
+            historySettingsService,
+            initializeServices: true);
 
     [ObservableProperty]
     public partial string SearchText { get; set; } = string.Empty;

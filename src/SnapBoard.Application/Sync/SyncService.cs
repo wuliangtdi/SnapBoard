@@ -349,6 +349,31 @@ public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDispo
         byte[]? createdRecoveryEnvelope = null;
         try
         {
+            SyncConfigurationSnapshot? existingConfiguration =
+                await _store.GetConfigurationAsync(cancellationToken).ConfigureAwait(false);
+            if (existingConfiguration is not null)
+            {
+                if (createNewKey ||
+                    existingConfiguration.SpaceId != spaceId ||
+                    existingConfiguration.KeyVersion != keyVersion)
+                {
+                    return new SyncSetupResult(
+                        SyncSetupStatus.InvalidConfiguration,
+                        existingConfiguration.SpaceId,
+                        existingConfiguration.DeviceId,
+                        DiagnosticCode: "sync-space-already-configured");
+                }
+
+                return await ReconfigureExistingSpaceAsync(
+                        existingConfiguration,
+                        request,
+                        password,
+                        recoveryEnvelope,
+                        recoveryCode,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             UpdateStatus(new SyncStatusSnapshot(
                 SyncServiceState.Synchronizing,
                 spaceId,
@@ -538,6 +563,153 @@ public sealed partial class SyncService : ISyncService, IDisposable, IAsyncDispo
 
             _singleFlight.Release();
         }
+    }
+
+    private async ValueTask<SyncSetupResult> ReconfigureExistingSpaceAsync(
+        SyncConfigurationSnapshot configuration,
+        SyncSetupRequest request,
+        ReadOnlyMemory<byte> password,
+        ReadOnlyMemory<byte> recoveryEnvelope,
+        ReadOnlyMemory<byte> recoveryCode,
+        CancellationToken cancellationToken)
+    {
+        SyncStatusSnapshot previousStatus = Status;
+        UpdateStatus(previousStatus with
+        {
+            State = SyncServiceState.Synchronizing,
+            SpaceId = configuration.SpaceId,
+            DiagnosticCode = "configuring",
+        });
+
+        try
+        {
+            SyncMasterKeyOpenResult recovered = await _keyService.RecoverMasterKeyAsync(
+                    recoveryEnvelope,
+                    recoveryCode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (recovered.Status != SyncKeyOperationStatus.Success || recovered.Key is null)
+            {
+                return ExistingSetupFailure(
+                    configuration,
+                    previousStatus,
+                    MapKeySetupStatus(recovered.Status),
+                    "key-recovery-failed");
+            }
+
+            using (recovered.Key)
+            {
+                SyncMasterKeyOpenResult current = await _keyService.OpenMasterKeyAsync(
+                        configuration.SpaceId,
+                        configuration.KeyVersion,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (current.Status != SyncKeyOperationStatus.Success || current.Key is null)
+                {
+                    return ExistingSetupFailure(
+                        configuration,
+                        previousStatus,
+                        MapKeySetupStatus(current.Status),
+                        "key-open-failed");
+                }
+
+                using (current.Key)
+                {
+                    if (!CryptographicOperations.FixedTimeEquals(
+                            recovered.Key.Key.Span,
+                            current.Key.Key.Span))
+                    {
+                        return ExistingSetupFailure(
+                            configuration,
+                            previousStatus,
+                            SyncSetupStatus.CryptographicFailure,
+                            "recovery-key-mismatch");
+                    }
+
+                    await using ISyncRemoteSession session = _remoteSessionFactory.Create(
+                        request.RemoteConfiguration,
+                        password);
+                    await EnsureAndValidateMetadataAsync(
+                            session,
+                            configuration.SpaceId,
+                            configuration.DeviceId,
+                            configuration.KeyVersion,
+                            current.Key.Key,
+                            createIfMissing: false,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            SyncCredentialOperationStatus credentialStatus =
+                await _credentialService.StoreAsync(
+                        configuration.SpaceId,
+                        request.RemoteConfiguration,
+                        password,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (credentialStatus != SyncCredentialOperationStatus.Success)
+            {
+                return ExistingSetupFailure(
+                    configuration,
+                    previousStatus,
+                    MapCredentialSetupStatus(credentialStatus),
+                    "credential-store-failed");
+            }
+
+            UpdateStatus(previousStatus with
+            {
+                State = configuration.IsEnabled
+                    ? SyncServiceState.Idle
+                    : SyncServiceState.Disabled,
+                SpaceId = configuration.SpaceId,
+                DiagnosticCode = null,
+            });
+            RequestSync();
+            return new SyncSetupResult(
+                SyncSetupStatus.Success,
+                configuration.SpaceId,
+                configuration.DeviceId);
+        }
+        catch (SyncPipelineException exception)
+        {
+            return ExistingSetupFailure(
+                configuration,
+                previousStatus,
+                MapRemoteSetupStatus(exception.Category),
+                exception.DiagnosticCode);
+        }
+        catch (CryptographicException)
+        {
+            return ExistingSetupFailure(
+                configuration,
+                previousStatus,
+                SyncSetupStatus.CryptographicFailure,
+                "cryptographic-failure");
+        }
+        catch (Exception exception) when (exception is
+            DbException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return ExistingSetupFailure(
+                configuration,
+                previousStatus,
+                SyncSetupStatus.PersistenceFailure,
+                "local-persistence-failure");
+        }
+    }
+
+    private SyncSetupResult ExistingSetupFailure(
+        SyncConfigurationSnapshot configuration,
+        SyncStatusSnapshot previousStatus,
+        SyncSetupStatus setupStatus,
+        string diagnosticCode)
+    {
+        UpdateStatus(previousStatus);
+        return new SyncSetupResult(
+            setupStatus,
+            configuration.SpaceId,
+            configuration.DeviceId,
+            DiagnosticCode: diagnosticCode);
     }
 
     private async ValueTask CleanupFailedSetupAsync(

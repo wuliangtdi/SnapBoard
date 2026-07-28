@@ -10,6 +10,20 @@ public enum StorageVolumeKind
     Ram = 5,
 }
 
+public enum StorageDirectorySecurityMode
+{
+    EmptyDirectoryOnly = 0,
+    ApplicationOwnedRoot = 1,
+}
+
+public enum StoragePathRelation
+{
+    Unrelated = 0,
+    Same = 1,
+    Ancestor = 2,
+    Descendant = 3,
+}
+
 public sealed record StoragePathInspection(
     string CanonicalPath,
     string VolumeIdentity,
@@ -18,7 +32,9 @@ public sealed record StoragePathInspection(
     long AvailableBytes,
     bool ContainsReparsePoint,
     bool IsPrivateToCurrentUser,
-    bool SupportsWriteThroughAndAtomicRename);
+    bool SupportsWriteThroughAndAtomicRename,
+    string FileIdentity = "",
+    bool IsCaseSensitive = true);
 
 public sealed record StorageProcessIdentity(
     int ProcessId,

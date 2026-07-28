@@ -63,6 +63,11 @@ public interface ISyncKeyService
         ReadOnlyMemory<byte> recoveryCode,
         CancellationToken cancellationToken);
 
+    ValueTask<SyncMasterKeyOpenResult> RecoverMasterKeyAsync(
+        ReadOnlyMemory<byte> recoveryEnvelope,
+        ReadOnlyMemory<byte> recoveryCode,
+        CancellationToken cancellationToken);
+
     ValueTask<SyncMasterKeyOpenResult> OpenMasterKeyAsync(
         Guid spaceId,
         int keyVersion,

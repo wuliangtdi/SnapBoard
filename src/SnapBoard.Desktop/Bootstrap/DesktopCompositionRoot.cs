@@ -27,11 +27,15 @@ namespace SnapBoard.Desktop.Bootstrap;
 /// </summary>
 internal static class DesktopCompositionRoot
 {
-    public static ServiceProvider Build(WindowsStorageStartupContext? storageStartup = null)
+    public static ServiceProvider Build(DesktopStorageStartupContext? storageStartup = null)
     {
         ServiceCollection services = new();
         AddClipboardHistoryServices(services, storageStartup);
-        services.AddSingleton<MainViewModel>();
+        services.AddSingleton(provider => MainViewModel.CreateForServices(
+            provider.GetRequiredService<IClipboardHistoryService>(),
+            provider.GetService<IClipboardSourceApplicationMetadataResolver>(),
+            provider.GetService<ISyncService>(),
+            provider.GetService<IHistorySettingsService>()));
 
         if (OperatingSystem.IsWindows())
         {
@@ -51,7 +55,7 @@ internal static class DesktopCompositionRoot
 
     private static void AddClipboardHistoryServices(
         IServiceCollection services,
-        WindowsStorageStartupContext? storageStartup)
+        DesktopStorageStartupContext? storageStartup)
     {
         if (storageStartup is null)
         {
@@ -116,12 +120,7 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IAutoStartService, WindowsAutoStartService>();
         services.AddSingleton<IPlatformWindowPlacementService, WindowsWindowPlacementService>();
         services.AddSingleton<IPlatformSecretStore, WindowsCredentialSecretStore>();
-        services.AddSingleton<ISyncKeyService, PlatformSyncKeyService>();
-        services.AddSingleton<ISyncCredentialService, PlatformSyncCredentialService>();
-        services.AddSingleton<ISyncRecoveryMaterialStore, FileSyncRecoveryMaterialStore>();
-        services.AddSingleton<ISyncObjectProtector, SyncObjectProtector>();
-        services.AddSingleton<ISyncRemoteSessionFactory, WebDavSyncRemoteSessionFactory>();
-        services.AddSingleton<ISyncService, SyncService>();
+        AddSyncServices(services);
         services.AddSingleton<
             IClipboardSourceApplicationMetadataResolver,
             WindowsClipboardSourceApplicationMetadataResolver>();
@@ -148,6 +147,17 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IDesktopMenuBarService, MacOSMenuBarService>();
         services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
         services.AddSingleton<IPlatformSecretStore, MacOSKeychainSecretStore>();
+        AddSyncServices(services);
         services.AddSingleton<ClipboardCaptureCoordinator>();
+    }
+
+    private static void AddSyncServices(IServiceCollection services)
+    {
+        services.AddSingleton<ISyncKeyService, PlatformSyncKeyService>();
+        services.AddSingleton<ISyncCredentialService, PlatformSyncCredentialService>();
+        services.AddSingleton<ISyncRecoveryMaterialStore, FileSyncRecoveryMaterialStore>();
+        services.AddSingleton<ISyncObjectProtector, SyncObjectProtector>();
+        services.AddSingleton<ISyncRemoteSessionFactory, WebDavSyncRemoteSessionFactory>();
+        services.AddSingleton<ISyncService, SyncService>();
     }
 }

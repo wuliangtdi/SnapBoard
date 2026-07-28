@@ -104,6 +104,11 @@ jobs:
             throw "The storage migrator did not run as a standalone executable. Exit code: $($process.ExitCode)"
           }
 
+      - name: Verify macOS Native AOT application and storage migrator
+        if: runner.os == 'macOS'
+        shell: bash
+        run: scripts/macos/Verify-NativePublish.sh "artifacts/${{ matrix.rid }}" "${{ matrix.rid }}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: snapboard-${{ matrix.rid }}

@@ -1,8 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.Bootstrap;
+using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Abstractions.Security;
 using SnapBoard.Platform.MacOS;
+using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
 using SnapBoard.Platform.Windows.Clipboard;
 
@@ -23,6 +26,10 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IClipboardWriter>());
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
             Assert.Null(provider.GetService<IClipboardSourceApplicationMetadataResolver>());
+            Assert.IsType<MacOSKeychainSecretStore>(
+                provider.GetRequiredService<IPlatformSecretStore>());
+            Assert.IsType<SyncService>(provider.GetRequiredService<ISyncService>());
+            Assert.True(provider.GetRequiredService<MainViewModel>().HasSyncService);
         }
         else if (OperatingSystem.IsWindows())
         {

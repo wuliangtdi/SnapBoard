@@ -33,7 +33,7 @@ public partial class App : AvaloniaApplication, IDisposable
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _services = DesktopCompositionRoot.Build(Program.WindowsStorageStartup);
+            _services = DesktopCompositionRoot.Build(Program.StorageStartup);
             if (OperatingSystem.IsWindows() && EnableNativeWindowsLifecycle)
             {
                 DesktopStartupMode startupMode = Program.GetStartupMode(desktop.Args);
@@ -81,12 +81,18 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetRequiredService<IPlatformWindowPlacementService>(),
                     _services.GetRequiredService<IDesktopMenuBarService>(),
                     _services.GetRequiredService<ClipboardCaptureCoordinator>(),
-                    Program.MacSingleInstanceCoordinator);
+                    Program.MacSingleInstanceCoordinator,
+                    _services.GetService<IStorageManagementService>(),
+                    _services.GetService<IStorageMigrationBarrier>(),
+                    _services.GetService<IStoragePlatformService>(),
+                    _services.GetService<ISyncService>(),
+                    _services.GetService<IHistorySettingsService>());
                 _macOSLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 
                 base.OnFrameworkInitializationCompleted();
                 _macOSLifecycle.CompleteStartup(startupMode);
+                _services.GetService<StorageStartupAcknowledgementCoordinator>()?.Start();
                 return;
             }
 

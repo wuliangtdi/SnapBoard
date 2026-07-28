@@ -27,6 +27,7 @@ public sealed class StorageLocationStore(
         {
             await platformService.EnsurePrivateDirectoryAsync(
                     BootstrapPaths.BootstrapDirectory,
+                    StorageDirectorySecurityMode.ApplicationOwnedRoot,
                     cancellationToken)
                 .ConfigureAwait(false);
             await RecoverUnacknowledgedSwitchAsync(startupMigrationId, cancellationToken)
@@ -181,7 +182,10 @@ public sealed class StorageLocationStore(
         string initialRoot = HasLegacyData(BootstrapPaths.LegacyDataRoot)
             ? BootstrapPaths.LegacyDataRoot
             : BootstrapPaths.DefaultDataRoot;
-        await platformService.EnsurePrivateDirectoryAsync(initialRoot, cancellationToken)
+        await platformService.EnsurePrivateDirectoryAsync(
+                initialRoot,
+                StorageDirectorySecurityMode.ApplicationOwnedRoot,
+                cancellationToken)
             .ConfigureAwait(false);
         StoragePathInspection inspection = await platformService.InspectPathAsync(
                 initialRoot,
@@ -355,13 +359,8 @@ public sealed class StorageLocationStore(
         File.Exists(Path.Combine(root, "snapboard.db")) ||
         Directory.Exists(Path.Combine(root, "blobs"));
 
-    private static bool PathEquals(string left, string right) =>
-        string.Equals(
-            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar),
-            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar),
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal);
+    private bool PathEquals(string left, string right) =>
+        platformService.GetPathRelation(left, right) == StoragePathRelation.Same;
 
     private void EnsureBootstrapDocumentPath(
         string path,
@@ -369,13 +368,10 @@ public sealed class StorageLocationStore(
         string requiredSuffix)
     {
         string canonicalPath = Path.GetFullPath(path);
-        string canonicalBootstrap = Path.GetFullPath(BootstrapPaths.BootstrapDirectory)
-            .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        StringComparison comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
         string fileName = Path.GetFileName(canonicalPath);
-        if (!canonicalPath.StartsWith(canonicalBootstrap, comparison) ||
+        if (platformService.GetPathRelation(
+                canonicalPath,
+                BootstrapPaths.BootstrapDirectory) != StoragePathRelation.Descendant ||
             !fileName.StartsWith(requiredPrefix, StringComparison.Ordinal) ||
             !fileName.EndsWith(requiredSuffix, StringComparison.Ordinal))
         {

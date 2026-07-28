@@ -36,7 +36,7 @@ public sealed class StorageManagementService : IStorageManagementService
         _temporaryDirectory = Path.GetFullPath(temporaryDirectory ?? Path.GetTempPath());
         _userHomeDirectory = Path.GetFullPath(
             userHomeDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        _cloudDirectories = cloudDirectories ?? GetKnownCloudDirectories();
+        _cloudDirectories = cloudDirectories ?? GetKnownCloudDirectories(_userHomeDirectory);
     }
 
     public async ValueTask<StorageLocationSnapshot> GetSnapshotAsync(
@@ -92,6 +92,7 @@ public sealed class StorageManagementService : IStorageManagementService
         {
             await _platformService.EnsurePrivateDirectoryAsync(
                     canonicalTarget,
+                    StorageDirectorySecurityMode.ApplicationOwnedRoot,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -129,9 +130,9 @@ public sealed class StorageManagementService : IStorageManagementService
                 "nested-with-current");
         }
 
-        if (IsSameOrDescendant(canonicalTarget, _installationDirectory) ||
-            IsSameOrDescendant(canonicalTarget, _temporaryDirectory) ||
-            IsSameOrDescendant(canonicalTarget, _bootstrapPaths.BootstrapDirectory) ||
+        if (IsAncestorOrDescendant(canonicalTarget, _installationDirectory) ||
+            IsAncestorOrDescendant(canonicalTarget, _temporaryDirectory) ||
+            IsAncestorOrDescendant(canonicalTarget, _bootstrapPaths.BootstrapDirectory) ||
             IsKnownCloudDirectory(canonicalTarget))
         {
             return Invalid(
@@ -220,6 +221,7 @@ public sealed class StorageManagementService : IStorageManagementService
                 // 避免验证操作改变其他文件的访问权限。
                 await _platformService.EnsurePrivateDirectoryAsync(
                         canonicalTarget,
+                        StorageDirectorySecurityMode.EmptyDirectoryOnly,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -386,6 +388,7 @@ public sealed class StorageManagementService : IStorageManagementService
 
         await _platformService.EnsurePrivateDirectoryAsync(
                 validation.CanonicalTargetDirectory,
+                StorageDirectorySecurityMode.EmptyDirectoryOnly,
                 cancellationToken)
             .ConfigureAwait(false);
         string migrationId = $"m-{Guid.NewGuid():N}";
@@ -538,38 +541,24 @@ public sealed class StorageManagementService : IStorageManagementService
         error,
         code);
 
-    private static bool IsFileSystemRoot(string path) =>
+    private bool IsFileSystemRoot(string path) =>
         IsSamePath(path, Path.GetPathRoot(path) ?? path);
 
-    private static bool IsAncestorOrDescendant(string left, string right) =>
-        IsSameOrDescendant(left, right) || IsSameOrDescendant(right, left);
+    private bool IsAncestorOrDescendant(string left, string right) =>
+        _platformService.GetPathRelation(left, right) != StoragePathRelation.Unrelated;
 
-    private static bool IsSameOrDescendant(string path, string parent)
-    {
-        string canonicalPath = NormalizeDirectory(path);
-        string canonicalParent = NormalizeDirectory(parent);
-        StringComparison comparison = PathComparison;
-        return canonicalPath.Equals(canonicalParent, comparison) ||
-            canonicalPath.StartsWith(
-                canonicalParent + Path.DirectorySeparatorChar,
-                comparison);
-    }
+    private bool IsSameOrDescendant(string path, string parent) =>
+        _platformService.GetPathRelation(path, parent) is
+            StoragePathRelation.Same or StoragePathRelation.Descendant;
 
-    private static bool IsSamePath(string left, string right) =>
-        NormalizeDirectory(left).Equals(NormalizeDirectory(right), PathComparison);
-
-    private static string NormalizeDirectory(string path) =>
-        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-    private static StringComparison PathComparison => OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private bool IsSamePath(string left, string right) =>
+        _platformService.GetPathRelation(left, right) == StoragePathRelation.Same;
 
     private bool IsKnownCloudDirectory(string target)
     {
         foreach (string directory in _cloudDirectories)
         {
-            if (IsSameOrDescendant(target, directory))
+            if (IsAncestorOrDescendant(target, directory))
             {
                 return true;
             }
@@ -578,7 +567,7 @@ public sealed class StorageManagementService : IStorageManagementService
         return false;
     }
 
-    private static List<string> GetKnownCloudDirectories()
+    private static List<string> GetKnownCloudDirectories(string userHomeDirectory)
     {
         List<string> directories = [];
         foreach (string variable in new[] { "OneDrive", "OneDriveCommercial", "OneDriveConsumer" })
@@ -588,6 +577,12 @@ public sealed class StorageManagementService : IStorageManagementService
             {
                 directories.Add(Path.GetFullPath(value));
             }
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            directories.Add(Path.Combine(userHomeDirectory, "Library", "Mobile Documents"));
+            directories.Add(Path.Combine(userHomeDirectory, "Library", "CloudStorage"));
         }
 
         return directories;

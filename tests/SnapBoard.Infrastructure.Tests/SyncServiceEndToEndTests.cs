@@ -35,6 +35,223 @@ public sealed class SyncServiceEndToEndTests
     }
 
     [Fact]
+    public async Task CreatedSpaceKeepsKeysCredentialsAndRecoveryCodeOutOfOrdinaryFiles()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        MemorySyncRemote remote = new();
+        DictionarySecretStore secrets = new();
+        await using SyncService service = CreateService(context, secrets, remote);
+        byte[] password = Encoding.UTF8.GetBytes("distinct-webdav-password-7f84d9");
+        byte[] recoveryCode = Encoding.UTF8.GetBytes("distinct-recovery-code-118ca4");
+        byte[]? masterKey = null;
+        try
+        {
+            SyncRemoteConfiguration configuration = new(
+                new Uri("https://private-dav.example.test/account-4b91/"),
+                "PrivateRoot/62f0",
+                "private-user-a731",
+                new string('b', 64));
+            SyncSetupResult created = await service.CreateSpaceAsync(
+                new SyncSetupRequest(configuration),
+                password,
+                recoveryCode,
+                CancellationToken.None);
+
+            Assert.Equal(SyncSetupStatus.Success, created.Status);
+            Assert.NotNull(created.SpaceId);
+            Assert.True(File.Exists(created.RecoveryMaterialPath));
+            Dictionary<string, byte[]> secretSnapshot = secrets.CopySecrets();
+            KeyValuePair<string, byte[]> keySecret = Assert.Single(
+                secretSnapshot,
+                item => item.Key.StartsWith("sync/master/", StringComparison.Ordinal));
+            Assert.Equal(32, keySecret.Value.Length);
+            masterKey = keySecret.Value;
+            Assert.Contains(
+                secretSnapshot.Keys,
+                name => name == $"sync/webdav/{created.SpaceId.Value:N}");
+
+            await AssertRemoteConfigurationIsNotPersistedAsync(context);
+            List<byte[]> forbidden =
+            [
+                Encoding.UTF8.GetBytes(configuration.Endpoint.AbsoluteUri),
+                Encoding.UTF8.GetBytes(configuration.RemoteRoot),
+                Encoding.UTF8.GetBytes(configuration.Username),
+                Encoding.UTF8.GetBytes(configuration.CertificateSha256Pin!),
+                password.ToArray(),
+                recoveryCode.ToArray(),
+                masterKey.ToArray(),
+            ];
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(
+                    context.RootDirectory,
+                    "*",
+                    SearchOption.AllDirectories))
+                {
+                    await AssertFileDoesNotContainAnyAsync(file, forbidden);
+                }
+            }
+            finally
+            {
+                foreach (byte[] value in forbidden)
+                {
+                    CryptographicOperations.ZeroMemory(value);
+                }
+
+                foreach (byte[] value in secretSnapshot.Values)
+                {
+                    if (!ReferenceEquals(value, masterKey))
+                    {
+                        CryptographicOperations.ZeroMemory(value);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            if (masterKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(masterKey);
+            }
+
+            CryptographicOperations.ZeroMemory(password);
+            CryptographicOperations.ZeroMemory(recoveryCode);
+            secrets.Clear();
+            remote.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task FailedExistingSpaceReconfigurationPreservesWorkingSecretsAndConfiguration()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        MemorySyncRemote remote = new();
+        DictionarySecretStore secrets = new();
+        DictionarySecretStore alternateSecrets = new();
+        await using SyncService service = CreateService(context, secrets, remote);
+        byte[] originalPassword = Encoding.UTF8.GetBytes("original-webdav-password");
+        byte[] proposedPassword = Encoding.UTF8.GetBytes("proposed-webdav-password");
+        byte[] recoveryCode = Encoding.UTF8.GetBytes("existing-space-recovery-code");
+        byte[] wrongRecoveryCode = Encoding.UTF8.GetBytes("wrong-existing-recovery-code");
+        byte[]? recoveryEnvelope = null;
+        byte[]? mismatchedRecoveryEnvelope = null;
+        Dictionary<string, byte[]>? originalSecrets = null;
+        try
+        {
+            SyncSetupRequest originalRequest = new(new SyncRemoteConfiguration(
+                new Uri("https://dav.example.test/original/"),
+                "SnapBoard/v1",
+                "original-user",
+                new string('a', 64)));
+            SyncSetupResult created = await service.CreateSpaceAsync(
+                originalRequest,
+                originalPassword,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, created.Status);
+            recoveryEnvelope = await File.ReadAllBytesAsync(created.RecoveryMaterialPath!);
+            SyncConfigurationSnapshot originalConfiguration =
+                Assert.IsType<SyncConfigurationSnapshot>(
+                    await context.Store.GetConfigurationAsync(CancellationToken.None));
+            originalSecrets = secrets.CopySecrets();
+
+            SyncSetupRequest proposedRequest = new(new SyncRemoteConfiguration(
+                new Uri("https://dav.example.test/proposed/"),
+                "ProposedRoot/v2",
+                "proposed-user",
+                new string('b', 64)));
+            SyncSetupResult wrongCode = await service.JoinSpaceAsync(
+                created.SpaceId!.Value,
+                keyVersion: 1,
+                proposedRequest,
+                proposedPassword,
+                recoveryEnvelope,
+                wrongRecoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.CryptographicFailure, wrongCode.Status);
+            Assert.Equal(originalConfiguration, await context.Store.GetConfigurationAsync(
+                CancellationToken.None));
+            AssertSecretSnapshotEquals(originalSecrets, secrets);
+
+            remote.RejectNextEnsure(SyncRemoteErrorCategory.Certificate);
+            SyncSetupResult rejectedCertificate = await service.JoinSpaceAsync(
+                created.SpaceId.Value,
+                keyVersion: 1,
+                proposedRequest,
+                proposedPassword,
+                recoveryEnvelope,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.RemoteProtocolError, rejectedCertificate.Status);
+            Assert.Equal("remote-hierarchy-failed", rejectedCertificate.DiagnosticCode);
+            Assert.Equal(originalConfiguration, await context.Store.GetConfigurationAsync(
+                CancellationToken.None));
+            AssertSecretSnapshotEquals(originalSecrets, secrets);
+
+            PlatformSyncKeyService alternateKeyService = new(
+                alternateSecrets,
+                new SyncRecoveryKdfParameters(
+                    MemoryKiB: 8 * 1024,
+                    Iterations: 2,
+                    Parallelism: 1));
+            SyncSpaceKeyCreationResult alternateKey =
+                await alternateKeyService.CreateSpaceKeyAsync(
+                    Guid.NewGuid(),
+                    keyVersion: 1,
+                    recoveryCode,
+                    CancellationToken.None);
+            Assert.Equal(SyncKeyOperationStatus.Success, alternateKey.Status);
+            mismatchedRecoveryEnvelope = Assert.IsType<byte[]>(alternateKey.RecoveryEnvelope);
+
+            SyncSetupResult mismatchedKey = await service.JoinSpaceAsync(
+                created.SpaceId.Value,
+                keyVersion: 1,
+                proposedRequest,
+                proposedPassword,
+                mismatchedRecoveryEnvelope,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.CryptographicFailure, mismatchedKey.Status);
+            Assert.Equal("recovery-key-mismatch", mismatchedKey.DiagnosticCode);
+            Assert.Equal(originalConfiguration, await context.Store.GetConfigurationAsync(
+                CancellationToken.None));
+            AssertSecretSnapshotEquals(originalSecrets, secrets);
+
+            SyncStatusSnapshot synchronized = await service.SynchronizeNowAsync(
+                CancellationToken.None);
+            Assert.Equal(SyncServiceState.Idle, synchronized.State);
+        }
+        finally
+        {
+            if (recoveryEnvelope is not null)
+            {
+                CryptographicOperations.ZeroMemory(recoveryEnvelope);
+            }
+
+            if (mismatchedRecoveryEnvelope is not null)
+            {
+                CryptographicOperations.ZeroMemory(mismatchedRecoveryEnvelope);
+            }
+
+            if (originalSecrets is not null)
+            {
+                foreach (byte[] secret in originalSecrets.Values)
+                {
+                    CryptographicOperations.ZeroMemory(secret);
+                }
+            }
+
+            CryptographicOperations.ZeroMemory(originalPassword);
+            CryptographicOperations.ZeroMemory(proposedPassword);
+            CryptographicOperations.ZeroMemory(recoveryCode);
+            CryptographicOperations.ZeroMemory(wrongRecoveryCode);
+            secrets.Clear();
+            alternateSecrets.Clear();
+            remote.Clear();
+        }
+    }
+
+    [Fact]
     public async Task ConcurrentManualRunsAreSingleFlightAndPauseDrainsActiveRequest()
     {
         await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
@@ -203,6 +420,155 @@ public sealed class SyncServiceEndToEndTests
     }
 
     [Fact]
+    public async Task OfflineDevicesConvergeBidirectionallyAcrossConflictsDeletionAndRetention()
+    {
+        await using HistoryStoreTestContext firstContext =
+            await HistoryStoreTestContext.CreateAsync();
+        await using HistoryStoreTestContext secondContext =
+            await HistoryStoreTestContext.CreateAsync();
+        MemorySyncRemote remote = new();
+        DictionarySecretStore firstSecrets = new();
+        DictionarySecretStore secondSecrets = new();
+        await using SyncService first = CreateService(firstContext, firstSecrets, remote);
+        await using SyncService second = CreateService(secondContext, secondSecrets, remote);
+        byte[] firstPassword = Encoding.UTF8.GetBytes("first-device-app-password");
+        byte[] secondPassword = Encoding.UTF8.GetBytes("second-device-app-password");
+        byte[] recoveryCode = Encoding.UTF8.GetBytes("cross-device-recovery-code");
+        byte[]? recoveryEnvelope = null;
+        try
+        {
+            SyncSetupRequest firstRequest = new(new SyncRemoteConfiguration(
+                new Uri("https://dav.example.test/base/"),
+                "SnapBoard/v1",
+                "windows-device-user"));
+            SyncSetupRequest secondRequest = new(new SyncRemoteConfiguration(
+                new Uri("https://dav.example.test/base/"),
+                "SnapBoard/v1",
+                "macos-device-user"));
+            SyncSetupResult created = await first.CreateSpaceAsync(
+                firstRequest,
+                firstPassword,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, created.Status);
+            recoveryEnvelope = await File.ReadAllBytesAsync(created.RecoveryMaterialPath!);
+            SyncSetupResult joined = await second.JoinSpaceAsync(
+                created.SpaceId!.Value,
+                keyVersion: 1,
+                secondRequest,
+                secondPassword,
+                recoveryEnvelope,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, joined.Status);
+
+            string credentialName = $"sync/webdav/{created.SpaceId.Value:N}";
+            byte[] firstCredential = firstSecrets.CopySecret(credentialName);
+            byte[] secondCredential = secondSecrets.CopySecret(credentialName);
+            try
+            {
+                Assert.NotEqual(firstCredential, secondCredential);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(firstCredential);
+                CryptographicOperations.ZeroMemory(secondCredential);
+            }
+
+            ClipboardCapturedItem shared = CreateTextItem("shared-conflict-item");
+            await firstContext.Store.SaveAsync(shared, CancellationToken.None);
+            await SynchronizeUntilConvergedAsync(first, second);
+
+            Assert.True(await firstContext.Store.SetPinnedAsync(
+                shared.Id,
+                true,
+                CancellationToken.None));
+            Assert.True(await firstContext.Store.SetTagsAsync(
+                shared.Id,
+                ["alpha"],
+                CancellationToken.None));
+            Assert.True(await secondContext.Store.SetPinnedAsync(
+                shared.Id,
+                true,
+                CancellationToken.None));
+            Assert.True(await secondContext.Store.SetPinnedAsync(
+                shared.Id,
+                false,
+                CancellationToken.None));
+            Assert.True(await secondContext.Store.SetTagsAsync(
+                shared.Id,
+                ["beta"],
+                CancellationToken.None));
+
+            ClipboardCapturedItem firstOnly = CreateTextItem("first-offline-addition");
+            ClipboardCapturedItem secondOnly = CreateTextItem("second-offline-addition");
+            await firstContext.Store.SaveAsync(firstOnly, CancellationToken.None);
+            await secondContext.Store.SaveAsync(secondOnly, CancellationToken.None);
+            await SynchronizeUntilConvergedAsync(first, second);
+
+            ClipboardHistoryItemSummary firstShared = await GetItemAsync(
+                firstContext,
+                shared.Id);
+            ClipboardHistoryItemSummary secondShared = await GetItemAsync(
+                secondContext,
+                shared.Id);
+            Assert.Equal(firstShared.IsPinned, secondShared.IsPinned);
+            Assert.Equal(firstShared.Tags, secondShared.Tags);
+            Assert.Equal(
+                await GetVisibleItemIdsAsync(firstContext),
+                await GetVisibleItemIdsAsync(secondContext));
+
+            Assert.True(await firstContext.Store.SoftDeleteAsync(
+                shared.Id,
+                CancellationToken.None));
+            Assert.True(await secondContext.Store.SetTagsAsync(
+                shared.Id,
+                ["offline-stale-update"],
+                CancellationToken.None));
+            await SynchronizeUntilConvergedAsync(first, second);
+            Assert.DoesNotContain(shared.Id, await GetVisibleItemsAsync(firstContext));
+            Assert.DoesNotContain(shared.Id, await GetVisibleItemsAsync(secondContext));
+
+            DateTimeOffset oldCaptureTime = DateTimeOffset.UtcNow - TimeSpan.FromDays(60);
+            ClipboardCapturedItem oldPinned = CreateTextItem("old-pinned", oldCaptureTime);
+            ClipboardCapturedItem oldExpired = CreateTextItem("old-expired", oldCaptureTime);
+            await firstContext.Store.SaveAsync(oldPinned, CancellationToken.None);
+            Assert.True(await firstContext.Store.SetPinnedAsync(
+                oldPinned.Id,
+                true,
+                CancellationToken.None));
+            await firstContext.Store.SaveAsync(oldExpired, CancellationToken.None);
+            await SynchronizeUntilConvergedAsync(first, second);
+
+            Assert.Equal(1, await firstContext.Store.ApplyRetentionAsync(
+                ClipboardRetentionPolicy.Default,
+                DateTimeOffset.UtcNow,
+                CancellationToken.None));
+            await SynchronizeUntilConvergedAsync(first, second);
+            IReadOnlyList<ClipboardItemId> firstVisible = await GetVisibleItemsAsync(firstContext);
+            IReadOnlyList<ClipboardItemId> secondVisible = await GetVisibleItemsAsync(secondContext);
+            Assert.Contains(oldPinned.Id, firstVisible);
+            Assert.Contains(oldPinned.Id, secondVisible);
+            Assert.DoesNotContain(oldExpired.Id, firstVisible);
+            Assert.DoesNotContain(oldExpired.Id, secondVisible);
+        }
+        finally
+        {
+            if (recoveryEnvelope is not null)
+            {
+                CryptographicOperations.ZeroMemory(recoveryEnvelope);
+            }
+
+            CryptographicOperations.ZeroMemory(firstPassword);
+            CryptographicOperations.ZeroMemory(secondPassword);
+            CryptographicOperations.ZeroMemory(recoveryCode);
+            firstSecrets.Clear();
+            secondSecrets.Clear();
+            remote.Clear();
+        }
+    }
+
+    [Fact]
     public async Task HistorySettingsConvergeAfterSecondDeviceJoinsSpace()
     {
         await using HistoryStoreTestContext firstContext =
@@ -351,6 +717,63 @@ public sealed class SyncServiceEndToEndTests
         Assert.False(await reader.ReadAsync());
     }
 
+    private static async Task AssertFileDoesNotContainAnyAsync(
+        string path,
+        IReadOnlyList<byte[]> forbidden)
+    {
+        await using FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 4096,
+            useAsync: true);
+        if (stream.Length > int.MaxValue)
+        {
+            throw new InvalidOperationException("Test file is unexpectedly large.");
+        }
+
+        byte[] content = GC.AllocateUninitializedArray<byte>((int)stream.Length);
+        try
+        {
+            await stream.ReadExactlyAsync(content);
+            foreach (byte[] value in forbidden)
+            {
+                Assert.True(
+                    content.AsSpan().IndexOf(value) < 0,
+                    $"Sensitive material was persisted in {Path.GetFileName(path)}.");
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(content);
+        }
+    }
+
+    private static void AssertSecretSnapshotEquals(
+        IReadOnlyDictionary<string, byte[]> expected,
+        DictionarySecretStore actualStore)
+    {
+        Dictionary<string, byte[]> actual = actualStore.CopySecrets();
+        try
+        {
+            Assert.Equal(
+                expected.Keys.Order(StringComparer.Ordinal),
+                actual.Keys.Order(StringComparer.Ordinal));
+            foreach ((string name, byte[] expectedSecret) in expected)
+            {
+                Assert.Equal(expectedSecret, actual[name]);
+            }
+        }
+        finally
+        {
+            foreach (byte[] secret in actual.Values)
+            {
+                CryptographicOperations.ZeroMemory(secret);
+            }
+        }
+    }
+
     private static ClipboardCapturedItem CreateHtmlItem(byte[] html)
     {
         ClipboardItemId id = ClipboardItemId.New();
@@ -385,6 +808,71 @@ public sealed class SyncServiceEndToEndTests
             TotalSizeBytes = textBytes.LongLength + html.LongLength,
         };
     }
+
+    private static ClipboardCapturedItem CreateTextItem(
+        string text,
+        DateTimeOffset? capturedAt = null)
+    {
+        ClipboardItemId id = ClipboardItemId.New();
+        byte[] textBytes = Encoding.UTF8.GetBytes(text);
+        return new ClipboardCapturedItem
+        {
+            Id = id,
+            SequenceNumber = BitConverter.ToUInt64(id.Value.ToByteArray(), 0),
+            CapturedAt = capturedAt ?? DateTimeOffset.UtcNow,
+            SourceProcessName = "local-device-only",
+            SourceExecutablePath = "/private/local-device-only",
+            ContentHash = new ClipboardContentHash(Hash(textBytes)),
+            PrimaryKind = ClipboardContentKind.Text,
+            DisplayCategory = ClipboardHistoryDisplayCategory.Text,
+            PreviewText = text,
+            SearchableText = text,
+            Representations =
+            [
+                new ClipboardCapturedRepresentation(
+                    ClipboardContentKind.Text,
+                    "text/plain; charset=utf-8",
+                    text,
+                    default),
+            ],
+            Formats = [new ClipboardCapturedFormat("text", "Text", true)],
+            TotalSizeBytes = textBytes.LongLength,
+        };
+    }
+
+    private static async Task SynchronizeUntilConvergedAsync(
+        SyncService first,
+        SyncService second)
+    {
+        for (int round = 0; round < 2; round++)
+        {
+            Assert.Equal(
+                SyncServiceState.Idle,
+                (await first.SynchronizeNowAsync(CancellationToken.None)).State);
+            Assert.Equal(
+                SyncServiceState.Idle,
+                (await second.SynchronizeNowAsync(CancellationToken.None)).State);
+        }
+    }
+
+    private static async Task<ClipboardHistoryItemSummary> GetItemAsync(
+        HistoryStoreTestContext context,
+        ClipboardItemId itemId) => Assert.Single(
+            (await context.Store.SearchAsync(
+                new ClipboardHistoryQuery { PageSize = 100 },
+                CancellationToken.None)).Items,
+            item => item.Id == itemId);
+
+    private static async Task<IReadOnlyList<ClipboardItemId>> GetVisibleItemsAsync(
+        HistoryStoreTestContext context) => (await context.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 100 },
+            CancellationToken.None)).Items.Select(item => item.Id).ToArray();
+
+    private static async Task<string[]> GetVisibleItemIdsAsync(
+        HistoryStoreTestContext context) => (await GetVisibleItemsAsync(context))
+            .Select(itemId => itemId.Value.ToString("N"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
     private static string Hash(ReadOnlySpan<byte> content) =>
         Convert.ToHexStringLower(SHA256.HashData(content));
@@ -444,6 +932,13 @@ public sealed class SyncServiceEndToEndTests
 
             _secrets.Clear();
         }
+
+        public Dictionary<string, byte[]> CopySecrets() => _secrets.ToDictionary(
+            item => item.Key,
+            item => item.Value.ToArray(),
+            StringComparer.Ordinal);
+
+        public byte[] CopySecret(string name) => _secrets[name].ToArray();
     }
 
     private sealed class MemorySyncRemote : ISyncRemoteSessionFactory
@@ -455,6 +950,7 @@ public sealed class SyncServiceEndToEndTests
             _events = [];
         private readonly Dictionary<(Guid SpaceId, string BlobId), byte[]> _blobs = [];
         private EnsureBlock? _nextEnsureBlock;
+        private SyncRemoteErrorCategory _nextEnsureFailure;
         private int _activeEnsures;
         private int _maximumConcurrentEnsures;
 
@@ -482,6 +978,24 @@ public sealed class SyncServiceEndToEndTests
             }
         }
 
+        public void RejectNextEnsure(SyncRemoteErrorCategory category)
+        {
+            if (category == SyncRemoteErrorCategory.None)
+            {
+                throw new ArgumentOutOfRangeException(nameof(category));
+            }
+
+            lock (_gate)
+            {
+                if (_nextEnsureFailure != SyncRemoteErrorCategory.None)
+                {
+                    throw new InvalidOperationException("An ensure failure is already pending.");
+                }
+
+                _nextEnsureFailure = category;
+            }
+        }
+
         public void Clear()
         {
             lock (_gate)
@@ -497,6 +1011,7 @@ public sealed class SyncServiceEndToEndTests
                 _blobs.Clear();
                 _nextEnsureBlock?.Release();
                 _nextEnsureBlock = null;
+                _nextEnsureFailure = SyncRemoteErrorCategory.None;
             }
         }
 
@@ -526,10 +1041,13 @@ public sealed class SyncServiceEndToEndTests
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 EnsureBlock? block;
+                SyncRemoteErrorCategory failure;
                 lock (owner._gate)
                 {
                     block = owner._nextEnsureBlock;
                     owner._nextEnsureBlock = null;
+                    failure = owner._nextEnsureFailure;
+                    owner._nextEnsureFailure = SyncRemoteErrorCategory.None;
                     owner._devices.Add((spaceId, localDeviceId));
                 }
 
@@ -543,7 +1061,9 @@ public sealed class SyncServiceEndToEndTests
                         await block.WaitAsync(cancellationToken);
                     }
 
-                    return Success();
+                    return failure == SyncRemoteErrorCategory.None
+                        ? Success()
+                        : new SyncRemoteResult(false, failure);
                 }
                 finally
                 {

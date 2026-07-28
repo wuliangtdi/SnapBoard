@@ -46,11 +46,17 @@
 
   <Target Name="CopyStorageMigratorForBuild"
           AfterTargets="Build"
-          Condition="'$(RuntimeIdentifier)' == '' and Exists('$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.exe')">
+          Condition="'$(RuntimeIdentifier)' == ''">
+    <PropertyGroup>
+      <_StorageMigratorBuildExecutableName Condition="$([MSBuild]::IsOSPlatform('Windows'))">SnapBoard.StorageMigrator.exe</_StorageMigratorBuildExecutableName>
+      <_StorageMigratorBuildExecutableName Condition="'$(_StorageMigratorBuildExecutableName)' == ''">SnapBoard.StorageMigrator</_StorageMigratorBuildExecutableName>
+      <_StorageMigratorBuildDirectory>$(MSBuildThisFileDirectory)../SnapBoard.StorageMigrator/bin/$(Configuration)/net10.0/</_StorageMigratorBuildDirectory>
+    </PropertyGroup>
     <ItemGroup>
-      <_StorageMigratorBuildFiles Include="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.exe" />
-      <_StorageMigratorBuildFiles Include="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.deps.json" />
-      <_StorageMigratorBuildFiles Include="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\bin\$(Configuration)\net10.0\SnapBoard.StorageMigrator.runtimeconfig.json" />
+      <_StorageMigratorBuildFiles Include="$(_StorageMigratorBuildDirectory)$(_StorageMigratorBuildExecutableName)" />
+      <_StorageMigratorBuildFiles Include="$(_StorageMigratorBuildDirectory)SnapBoard.StorageMigrator.dll" />
+      <_StorageMigratorBuildFiles Include="$(_StorageMigratorBuildDirectory)SnapBoard.StorageMigrator.deps.json" />
+      <_StorageMigratorBuildFiles Include="$(_StorageMigratorBuildDirectory)SnapBoard.StorageMigrator.runtimeconfig.json" />
     </ItemGroup>
     <Copy SourceFiles="@(_StorageMigratorBuildFiles)"
           DestinationFolder="$(OutDir)"
@@ -59,20 +65,35 @@
 
   <Target Name="PublishNativeStorageMigrator"
           AfterTargets="Publish"
-          Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">
+          Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-')) Or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx-'))">
     <PropertyGroup>
-      <_StorageMigratorPublishDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(IntermediateOutputPath)storage-migrator-publish\'))</_StorageMigratorPublishDirectory>
+      <_StorageMigratorIntermediateRelative>$(IntermediateOutputPath)storage-migrator-publish/</_StorageMigratorIntermediateRelative>
+      <_StorageMigratorPublishDirectory>$([System.IO.Path]::GetFullPath('$(_StorageMigratorIntermediateRelative)', '$(MSBuildProjectDirectory)'))</_StorageMigratorPublishDirectory>
+      <_StorageMigratorPublishExecutableName Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">SnapBoard.StorageMigrator.exe</_StorageMigratorPublishExecutableName>
+      <_StorageMigratorPublishExecutableName Condition="'$(_StorageMigratorPublishExecutableName)' == ''">SnapBoard.StorageMigrator</_StorageMigratorPublishExecutableName>
     </PropertyGroup>
+    <RemoveDir Directories="$(_StorageMigratorPublishDirectory)" />
     <MSBuild Projects="$(MSBuildThisFileDirectory)..\SnapBoard.StorageMigrator\SnapBoard.StorageMigrator.csproj"
              Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishAot=true;PublishDir=$(_StorageMigratorPublishDirectory)" />
-    <Copy SourceFiles="$(_StorageMigratorPublishDirectory)SnapBoard.StorageMigrator.exe"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishAot=true;PublishDir=$(_StorageMigratorPublishDirectory)/" />
+    <Error Condition="!Exists('$(_StorageMigratorPublishDirectory)/$(_StorageMigratorPublishExecutableName)')"
+           Text="The matching Native AOT storage migrator was not produced." />
+    <Error Condition="Exists('$(_StorageMigratorPublishDirectory)/SnapBoard.StorageMigrator.dll') Or Exists('$(_StorageMigratorPublishDirectory)/SnapBoard.StorageMigrator.deps.json') Or Exists('$(_StorageMigratorPublishDirectory)/SnapBoard.StorageMigrator.runtimeconfig.json')"
+           Text="The storage migrator publish contains framework-dependent artifacts." />
+    <ItemGroup>
+      <_ObsoleteStorageMigratorPublishFiles Include="$(PublishDir)SnapBoard.StorageMigrator.dll" />
+      <_ObsoleteStorageMigratorPublishFiles Include="$(PublishDir)SnapBoard.StorageMigrator.deps.json" />
+      <_ObsoleteStorageMigratorPublishFiles Include="$(PublishDir)SnapBoard.StorageMigrator.runtimeconfig.json" />
+      <_ObsoleteStorageMigratorPublishFiles Include="$(PublishDir)SnapBoard.StorageMigrator.exe"
+                                             Condition="'$(_StorageMigratorPublishExecutableName)' != 'SnapBoard.StorageMigrator.exe'" />
+      <_ObsoleteStorageMigratorPublishFiles Include="$(PublishDir)SnapBoard.StorageMigrator"
+                                             Condition="'$(_StorageMigratorPublishExecutableName)' != 'SnapBoard.StorageMigrator'" />
+    </ItemGroup>
+    <Delete Files="@(_ObsoleteStorageMigratorPublishFiles)" />
+    <Copy SourceFiles="$(_StorageMigratorPublishDirectory)/$(_StorageMigratorPublishExecutableName)"
           DestinationFolder="$(PublishDir)"
           SkipUnchangedFiles="true" />
-    <ItemGroup>
-      <_StorageMigratorFrameworkArtifacts Include="$(PublishDir)SnapBoard.StorageMigrator.deps.json" />
-      <_StorageMigratorFrameworkArtifacts Include="$(PublishDir)SnapBoard.StorageMigrator.runtimeconfig.json" />
-    </ItemGroup>
-    <Delete Files="@(_StorageMigratorFrameworkArtifacts)" />
+    <Error Condition="!Exists('$(PublishDir)$(_StorageMigratorPublishExecutableName)')"
+           Text="The Native AOT storage migrator is missing from the Desktop publish output." />
   </Target>
 </Project>

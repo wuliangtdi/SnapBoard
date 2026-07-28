@@ -1,11 +1,16 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
 using System.Threading.Channels;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using SnapBoard.Application.Clipboard;
+using SnapBoard.Application.Storage;
+using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
+using SnapBoard.Platform.Abstractions.Storage;
 
 namespace SnapBoard.Desktop.HeadlessTests;
 
@@ -27,6 +32,11 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
         FakeAccessibilityPermissionService permission = new();
         FakePlacementService placement = new();
         FakeMenuBarService menu = new();
+        List<string> migrationOperations = [];
+        FakeStorageManagementService storage = new(migrationOperations);
+        FakeStoragePlatformService storagePlatform = new(migrationOperations);
+        FakeSyncService sync = new(migrationOperations);
+        FakeHistorySettingsService historySettings = new();
         MacOSDesktopLifecycleCoordinator coordinator = new(
             desktop,
             new MainViewModel(),
@@ -38,7 +48,12 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             placement,
             menu,
             capture,
-            null);
+            null,
+            storage,
+            new FakeStorageMigrationBarrier(migrationOperations),
+            storagePlatform,
+            sync,
+            historySettings);
 
         try
         {
@@ -62,14 +77,20 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             SettingsViewModel settings = Assert.IsType<SettingsViewModel>(
                 coordinator.CurrentSettingsViewModel);
             Assert.True(settings.IsPermissionSectionVisible);
+            Assert.True(settings.IsStorageSectionVisible);
+            Assert.True(settings.IsHistorySettingsSectionVisible);
+            Assert.True(settings.IsSyncSectionVisible);
             Assert.True(settings.IsRestrictedMode);
             Assert.DoesNotContain("Windows", settings.HotKeyStatus, StringComparison.OrdinalIgnoreCase);
+            Assert.True(coordinator.SettingsWindowHasOwner);
+            Assert.Equal(1, historySettings.SubscriberCount);
 
             coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.CloseWindows);
             Dispatcher.UIThread.RunJobs();
             Assert.False(coordinator.HasMainWindow);
             Assert.False(coordinator.HasQuickWindow);
             Assert.False(coordinator.HasSettingsWindow);
+            Assert.Equal(0, historySettings.SubscriberCount);
 
             menu.RaiseShowMain();
             menu.RaiseShowQuick();
@@ -78,6 +99,7 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             Assert.True(coordinator.HasMainWindow);
             Assert.True(coordinator.HasQuickWindow);
             Assert.True(coordinator.HasSettingsWindow);
+            Assert.Equal(1, historySettings.SubscriberCount);
 
             menu.RaiseTogglePause();
             Dispatcher.UIThread.RunJobs();
@@ -92,6 +114,88 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
 
         Assert.True(menu.Disposed);
         Assert.True(hotKey.Unregistered);
+        Assert.Equal(0, historySettings.SubscriberCount);
+    }
+
+    [AvaloniaFact]
+    [SupportedOSPlatform("macos")]
+    public async Task StorageMigrationPreparationUsesRequiredTransactionOrder()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        List<string> operations = [];
+        FakeClipboardPort clipboard = new();
+        using ClipboardCaptureCoordinator capture = new(clipboard, clipboard);
+        capture.StateChanged += state =>
+            operations.Add(state.IsPaused ? "capture-pause" : "capture-resume");
+        FakeStorageManagementService storage = new(operations);
+        FakeStoragePlatformService platform = new(operations);
+        FakeSyncService sync = new(operations);
+        using MacOSDesktopLifecycleCoordinator coordinator = CreateMigrationCoordinator(
+            clipboard,
+            capture,
+            storage,
+            platform,
+            sync,
+            new FakeStorageMigrationBarrier(operations));
+
+        await coordinator.BeginStorageMigrationAsync("/tmp/snapboard-target", CancellationToken.None);
+
+        Assert.Equal(
+            ["prepare", "start-helper", "sync-pause", "capture-pause", "database-barrier"],
+            operations);
+        Assert.True(capture.IsPaused);
+        Assert.False(sync.ResumeCalled);
+    }
+
+    [AvaloniaFact]
+    [SupportedOSPlatform("macos")]
+    public async Task FailedStorageMigrationPreparationStopsHelperAndRestoresServices()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        List<string> operations = [];
+        FakeClipboardPort clipboard = new();
+        using ClipboardCaptureCoordinator capture = new(clipboard, clipboard);
+        capture.StateChanged += state =>
+            operations.Add(state.IsPaused ? "capture-pause" : "capture-resume");
+        FakeStorageManagementService storage = new(operations);
+        FakeStoragePlatformService platform = new(operations);
+        FakeSyncService sync = new(operations);
+        using MacOSDesktopLifecycleCoordinator coordinator = CreateMigrationCoordinator(
+            clipboard,
+            capture,
+            storage,
+            platform,
+            sync,
+            new FakeStorageMigrationBarrier(operations, throwOnPrepare: true));
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await coordinator.BeginStorageMigrationAsync(
+                "/tmp/snapboard-target",
+                CancellationToken.None));
+
+        Assert.Equal(
+            [
+                "prepare",
+                "start-helper",
+                "sync-pause",
+                "capture-pause",
+                "database-barrier",
+                "stop-helper",
+                "cancel-prepared",
+                "capture-resume",
+                "sync-resume",
+            ],
+            operations);
+        Assert.False(capture.IsPaused);
+        Assert.True(sync.ResumeCalled);
     }
 
     [Fact]
@@ -137,6 +241,273 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             "App Bundle 身份：com.wuliangtdi.snapboard",
             viewModel.ApplicationIdentityStatus);
         Assert.Equal(0, permission.RequestCount);
+    }
+
+    [SupportedOSPlatform("macos")]
+    private static MacOSDesktopLifecycleCoordinator CreateMigrationCoordinator(
+        FakeClipboardPort clipboard,
+        ClipboardCaptureCoordinator capture,
+        IStorageManagementService storage,
+        IStoragePlatformService platform,
+        ISyncService sync,
+        IStorageMigrationBarrier barrier) => new(
+            new FakeDesktopLifetime(),
+            new MainViewModel(),
+            clipboard,
+            clipboard,
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            new FakeAccessibilityPermissionService(),
+            new FakePlacementService(),
+            new FakeMenuBarService(),
+            capture,
+            null,
+            storage,
+            barrier,
+            platform,
+            sync,
+            new FakeHistorySettingsService());
+
+    private sealed class FakeStorageManagementService(List<string> operations) :
+        IStorageManagementService
+    {
+        public ValueTask<StorageLocationSnapshot> GetSnapshotAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(new StorageLocationSnapshot(
+                "/tmp/snapboard-data",
+                "/tmp/snapboard-default",
+                "storage-1234567890123456",
+                "volume-1",
+                new StorageUsage(1024, 2048, 4096),
+                RollbackDirectory: null,
+                StorageMigrationPhase.None,
+                MigrationId: null,
+                LastErrorCode: null));
+        }
+
+        public ValueTask<StorageLocationValidationResult> ValidateTargetAsync(
+            string targetDirectory,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(new StorageLocationValidationResult(
+                true,
+                targetDirectory,
+                "volume-1",
+                4096,
+                1024,
+                StorageLocationValidationError.None));
+        }
+
+        public ValueTask<StorageMigrationLaunchPlan> PrepareMigrationAsync(
+            string targetDirectory,
+            StorageProcessIdentity mainProcess,
+            string mainExecutablePath,
+            string migratorExecutablePath,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.Equal(Environment.ProcessPath, mainExecutablePath);
+            Assert.EndsWith(
+                Path.DirectorySeparatorChar + "SnapBoard.StorageMigrator",
+                migratorExecutablePath,
+                StringComparison.Ordinal);
+            operations.Add("prepare");
+            return ValueTask.FromResult(new StorageMigrationLaunchPlan(
+                "migration-1",
+                "/tmp/manifest.json",
+                migratorExecutablePath,
+                ["--manifest", "/tmp/manifest.json"]));
+        }
+
+        public ValueTask AcknowledgeStartupAsync(
+            string migrationId,
+            StorageProcessIdentity process,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask CancelPreparedMigrationAsync(
+            string migrationId,
+            string errorCode,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal("migration-1", migrationId);
+            Assert.Equal("main-preparation-failed", errorCode);
+            operations.Add("cancel-prepared");
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeStorageMigrationBarrier(
+        List<string> operations,
+        bool throwOnPrepare = false) : IStorageMigrationBarrier
+    {
+        public ValueTask PrepareForMigrationAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            operations.Add("database-barrier");
+            return throwOnPrepare
+                ? ValueTask.FromException(new IOException("database close failed"))
+                : ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeStoragePlatformService(List<string> operations) :
+        IStoragePlatformService
+    {
+        public ValueTask<StoragePathInspection> InspectPathAsync(
+            string path,
+            bool probeWriteCapabilities,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask EnsurePrivateDirectoryAsync(
+            string path,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public StorageProcessIdentity GetCurrentProcessIdentity() => new(
+            Environment.ProcessId,
+            1,
+            Environment.ProcessPath ?? throw new InvalidOperationException(),
+            Environment.UserName);
+
+        public ValueTask WaitForProcessExitAsync(
+            StorageProcessIdentity process,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask<StorageProcessIdentity> StartProcessAsync(
+            string executablePath,
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            operations.Add("start-helper");
+            return ValueTask.FromResult(new StorageProcessIdentity(
+                4242,
+                2,
+                executablePath,
+                Environment.UserName));
+        }
+
+        public ValueTask StopProcessAsync(
+            StorageProcessIdentity process,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("stop-helper");
+            return ValueTask.CompletedTask;
+        }
+
+        public bool OpenDirectory(string path) => true;
+    }
+
+    private sealed class FakeSyncService(List<string> operations) : ISyncService
+    {
+        public event EventHandler<SyncStatusSnapshot>? StatusChanged;
+
+        public event EventHandler<SyncPollingSettingsChangedEvent>? PollingSettingsChanged;
+
+        public SyncStatusSnapshot Status { get; } = new(SyncServiceState.NotConfigured);
+
+        public SyncPollingSettings PollingSettings { get; private set; } =
+            SyncPollingSettings.Default;
+
+        public bool ResumeCalled { get; private set; }
+
+        public void Start()
+        {
+            StatusChanged?.Invoke(this, Status);
+        }
+
+        public bool RequestSync() => true;
+
+        public ValueTask InitializePollingSettingsAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask UpdatePollingSettingsAsync(
+            SyncPollingSettings settings,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PollingSettings = settings;
+            PollingSettingsChanged?.Invoke(this, new SyncPollingSettingsChangedEvent(settings));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<SyncStatusSnapshot> SynchronizeNowAsync(
+            CancellationToken cancellationToken) => ValueTask.FromResult(Status);
+
+        public ValueTask<SyncSetupResult> CreateSpaceAsync(
+            SyncSetupRequest request,
+            ReadOnlyMemory<byte> password,
+            ReadOnlyMemory<byte> recoveryCode,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask<SyncSetupResult> JoinSpaceAsync(
+            Guid spaceId,
+            int keyVersion,
+            SyncSetupRequest request,
+            ReadOnlyMemory<byte> password,
+            ReadOnlyMemory<byte> recoveryEnvelope,
+            ReadOnlyMemory<byte> recoveryCode,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public ValueTask PauseAndDrainAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            operations.Add("sync-pause");
+            return ValueTask.CompletedTask;
+        }
+
+        public void ResumeAfterPause()
+        {
+            ResumeCalled = true;
+            operations.Add("sync-resume");
+        }
+    }
+
+    private sealed class FakeHistorySettingsService : IHistorySettingsService
+    {
+        private EventHandler<HistorySettingsChangedEvent>? _changed;
+
+        public event EventHandler<HistorySettingsChangedEvent>? Changed
+        {
+            add
+            {
+                _changed += value;
+                SubscriberCount++;
+            }
+            remove
+            {
+                _changed -= value;
+                SubscriberCount--;
+            }
+        }
+
+        public HistorySettingsSnapshot Current { get; } = HistorySettingsSnapshot.Default;
+
+        public int SubscriberCount { get; private set; }
+
+        public ValueTask InitializeAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask UpdateAsync(
+            HistoryCaptureSettings capture,
+            HistoryRetentionSettings retention,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask ApplyRemoteSettingAsync(
+            string key,
+            string value,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask PublishCurrentSettingsAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<int> ApplyRetentionNowAsync(CancellationToken cancellationToken) =>
+            ValueTask.FromResult(0);
     }
 
     [AvaloniaFact]

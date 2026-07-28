@@ -113,26 +113,15 @@ dotnet publish src/SnapBoard.Desktop/SnapBoard.Desktop.csproj \
     -o "$publish_dir"
 
 published_entry="$publish_dir/SnapBoard.Desktop"
-if [[ ! -f "$published_entry" ]] || ! file "$published_entry" | grep -q "Mach-O 64-bit executable"; then
-    echo "Native AOT publish did not produce a Mach-O application entry point." >&2
-    exit 3
-fi
-if [[ "$runtime" == "osx-arm64" ]] && ! file "$published_entry" | grep -q "arm64"; then
-    echo "Native AOT entry point architecture does not match osx-arm64." >&2
-    exit 3
-fi
-if [[ "$runtime" == "osx-x64" ]] && ! file "$published_entry" | grep -q "x86_64"; then
-    echo "Native AOT entry point architecture does not match osx-x64." >&2
-    exit 3
-fi
-if [[ -e "$publish_dir/libcoreclr.dylib" || -e "$publish_dir/libhostfxr.dylib" ]]; then
-    echo "Framework-dependent runtime files were found in the Native AOT publish output." >&2
-    exit 3
-fi
+published_migrator="$publish_dir/SnapBoard.StorageMigrator"
+"$script_dir/Verify-NativePublish.sh" "$publish_dir" "$runtime"
 
 cp "$published_entry" "$bundle_dir/Contents/MacOS/SnapBoard"
+cp "$published_migrator" "$bundle_dir/Contents/MacOS/SnapBoard.StorageMigrator"
 while IFS= read -r native_library; do
-    if [[ "$native_library" != "$published_entry" ]] && file "$native_library" | grep -q "Mach-O"; then
+    if [[ "$native_library" != "$published_entry" &&
+          "$native_library" != "$published_migrator" ]] &&
+        file "$native_library" | grep -q "Mach-O"; then
         cp "$native_library" "$bundle_dir/Contents/MacOS/"
     fi
 done < <(find "$publish_dir" -maxdepth 1 -type f -print)
@@ -185,6 +174,8 @@ done < <(find "$bundle_dir/Contents/MacOS" -type f -print)
 codesign "${sign_args[@]}" \
     --entitlements "$entitlements_path" \
     "$bundle_dir"
+codesign --verify --strict --verbose=2 \
+    "$bundle_dir/Contents/MacOS/SnapBoard.StorageMigrator"
 codesign --verify --deep --strict --verbose=2 "$bundle_dir"
 
 mkdir -p "$staging_dir"

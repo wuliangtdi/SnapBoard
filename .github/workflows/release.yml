@@ -204,6 +204,21 @@ jobs:
             --output "artifacts/macos/${{ matrix.rid }}" \
             | tee "artifacts/macos/${{ matrix.rid }}/package-result-${{ matrix.rid }}.txt"
 
+      - name: Verify macOS helper and App Bundle signing hierarchy
+        shell: bash
+        run: |
+          output_root="artifacts/macos/${{ matrix.rid }}"
+          scripts/macos/Verify-NativePublish.sh \
+            "$output_root/publish-${{ matrix.rid }}" \
+            "${{ matrix.rid }}"
+          helper="$output_root/SnapBoard.app/Contents/MacOS/SnapBoard.StorageMigrator"
+          if [[ ! -f "$helper" ]]; then
+            echo "The App Bundle storage migrator is missing." >&2
+            exit 1
+          fi
+          codesign --verify --strict --verbose=2 "$helper"
+          codesign --verify --deep --strict --verbose=2 "$output_root/SnapBoard.app"
+
       - name: Remove temporary signing keychain
         if: always() && env.APP_CERTIFICATE != ''
         shell: bash

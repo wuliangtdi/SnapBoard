@@ -107,6 +107,85 @@ public sealed class StorageManagementServiceTests
         Assert.Null(await context.Store.ReadMigrationStateAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task CloudProviderRootDescendantAndParentAreReservedWithoutHardening()
+    {
+        await using ManagementTestContext context = await ManagementTestContext.CreateAsync();
+        string cloudParent = context.CreateDirectory("provider-parent");
+        string cloudRoot = context.CreateDirectory("provider-parent/CloudStorage");
+        string cloudChild = context.CreateDirectory("provider-parent/CloudStorage/account");
+        StorageManagementService service = context.CreateService([cloudRoot]);
+
+        StorageLocationValidationResult rootResult = await service.ValidateTargetAsync(
+            cloudRoot,
+            CancellationToken.None);
+        StorageLocationValidationResult childResult = await service.ValidateTargetAsync(
+            cloudChild,
+            CancellationToken.None);
+        StorageLocationValidationResult parentResult = await service.ValidateTargetAsync(
+            cloudParent,
+            CancellationToken.None);
+
+        Assert.Equal(StorageLocationValidationError.ReservedLocation, rootResult.Error);
+        Assert.Equal(StorageLocationValidationError.ReservedLocation, childResult.Error);
+        Assert.Equal(StorageLocationValidationError.ReservedLocation, parentResult.Error);
+        Assert.DoesNotContain(Path.GetFullPath(cloudRoot), context.Platform.HardenedDirectories);
+        Assert.DoesNotContain(Path.GetFullPath(cloudChild), context.Platform.HardenedDirectories);
+        Assert.DoesNotContain(Path.GetFullPath(cloudParent), context.Platform.HardenedDirectories);
+    }
+
+    [Fact]
+    public async Task PlatformPathIdentityPreventsAliasOfCurrentRoot()
+    {
+        await using ManagementTestContext context = await ManagementTestContext.CreateAsync();
+        string alias = context.CreateDirectory("active-alias");
+        context.Platform.RelationOverride = (left, right) =>
+            Path.GetFullPath(left) == Path.GetFullPath(alias) &&
+            Path.GetFullPath(right) == context.Active.Paths.RootDirectory
+                ? StoragePathRelation.Same
+                : null;
+
+        StorageLocationValidationResult result = await context.Service.ValidateTargetAsync(
+            alias,
+            CancellationToken.None);
+
+        Assert.Equal(StorageLocationValidationError.SameAsCurrent, result.Error);
+        Assert.DoesNotContain(Path.GetFullPath(alias), context.Platform.HardenedDirectories);
+    }
+
+    [Fact]
+    public async Task MacOSDefaultFileProviderRootsAreReserved()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        await using ManagementTestContext context = await ManagementTestContext.CreateAsync();
+        string home = context.CreateDirectory("test-home");
+        string mobileDocuments = context.CreateDirectory("test-home/Library/Mobile Documents");
+        string cloudStorage = context.CreateDirectory("test-home/Library/CloudStorage");
+        StorageManagementService service = new(
+            context.Store.BootstrapPaths,
+            context.Store,
+            context.Active,
+            context.Platform,
+            installationDirectory: Path.Combine(context.Root, "reserved-install"),
+            temporaryDirectory: Path.Combine(context.Root, "reserved-temp"),
+            userHomeDirectory: home,
+            cloudDirectories: null);
+
+        StorageLocationValidationResult mobileResult = await service.ValidateTargetAsync(
+            mobileDocuments,
+            CancellationToken.None);
+        StorageLocationValidationResult providerResult = await service.ValidateTargetAsync(
+            cloudStorage,
+            CancellationToken.None);
+
+        Assert.Equal(StorageLocationValidationError.ReservedLocation, mobileResult.Error);
+        Assert.Equal(StorageLocationValidationError.ReservedLocation, providerResult.Error);
+    }
+
     private sealed class ManagementTestContext : IAsyncDisposable
     {
         private ManagementTestContext(
@@ -132,6 +211,16 @@ public sealed class StorageManagementServiceTests
         public FakeStoragePlatformService Platform { get; }
 
         public StorageManagementService Service { get; }
+
+        public StorageManagementService CreateService(IReadOnlyList<string>? cloudDirectories) => new(
+            Store.BootstrapPaths,
+            Store,
+            Active,
+            Platform,
+            installationDirectory: Path.Combine(Root, "reserved-install"),
+            temporaryDirectory: Path.Combine(Root, "reserved-temp"),
+            userHomeDirectory: Path.Combine(Root, "reserved-home"),
+            cloudDirectories: cloudDirectories);
 
         public static async ValueTask<ManagementTestContext> CreateAsync()
         {
@@ -193,6 +282,40 @@ public sealed class StorageManagementServiceTests
         private readonly HashSet<string> _hardenedDirectories = new(StringComparer.Ordinal);
 
         public IReadOnlySet<string> HardenedDirectories => _hardenedDirectories;
+
+        public Func<string, string, StoragePathRelation?>? RelationOverride { get; set; }
+
+        public StoragePathRelation GetPathRelation(string left, string right)
+        {
+            StoragePathRelation? overridden = RelationOverride?.Invoke(left, right);
+            if (overridden.HasValue)
+            {
+                return overridden.Value;
+            }
+
+            string normalizedLeft = Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar);
+            string normalizedRight = Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (normalizedLeft.Equals(normalizedRight, comparison))
+            {
+                return StoragePathRelation.Same;
+            }
+
+            if (normalizedRight.StartsWith(
+                    normalizedLeft + Path.DirectorySeparatorChar,
+                    comparison))
+            {
+                return StoragePathRelation.Ancestor;
+            }
+
+            return normalizedLeft.StartsWith(
+                normalizedRight + Path.DirectorySeparatorChar,
+                comparison)
+                ? StoragePathRelation.Descendant
+                : StoragePathRelation.Unrelated;
+        }
 
         public ValueTask<StoragePathInspection> InspectPathAsync(
             string path,

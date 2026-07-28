@@ -12,7 +12,7 @@ internal static class Program
 
     internal static MacOSSingleInstanceCoordinator? MacSingleInstanceCoordinator { get; private set; }
 
-    internal static WindowsStorageStartupContext? WindowsStorageStartup { get; private set; }
+    internal static DesktopStorageStartupContext? StorageStartup { get; private set; }
 
     // Avalonia 启动前不能访问 UI、第三方组件或依赖 SynchronizationContext 的代码。
     // AOT、数据库和平台服务初始化统一放在 App 创建后的组合根中。
@@ -42,7 +42,7 @@ internal static class Program
             coordinator?.StartListening();
             try
             {
-                WindowsStorageStartup = WindowsStorageStartupContext.Create(
+                StorageStartup = WindowsStorageStartupContext.Create(
                     GetOptionValue(args, "--storage-bootstrap-root"),
                     GetOptionValue(args, "--migration-id"));
             }
@@ -73,6 +73,17 @@ internal static class Program
             }
 
             coordinator?.StartListening();
+            try
+            {
+                StorageStartup = MacOSStorageStartupContext.Create(
+                    GetOptionValue(args, "--storage-bootstrap-root"),
+                    GetOptionValue(args, "--migration-id"));
+            }
+            catch
+            {
+                DisposeMacOSSingleInstanceCoordinator();
+                throw;
+            }
         }
 
         try
@@ -84,11 +95,12 @@ internal static class Program
             if (OperatingSystem.IsWindows())
             {
                 DisposeSingleInstanceCoordinator();
-                DisposeWindowsStorageStartup();
+                DisposeStorageStartup();
             }
             else if (OperatingSystem.IsMacOS())
             {
                 DisposeMacOSSingleInstanceCoordinator();
+                DisposeStorageStartup();
             }
         }
     }
@@ -195,11 +207,10 @@ internal static class Program
         SingleInstanceCoordinator = null;
     }
 
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static void DisposeWindowsStorageStartup()
+    private static void DisposeStorageStartup()
     {
-        WindowsStorageStartup?.Dispose();
-        WindowsStorageStartup = null;
+        StorageStartup?.Dispose();
+        StorageStartup = null;
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("macos")]

@@ -67,24 +67,46 @@ public sealed class PlatformSyncKeyService : ISyncKeyService
         ReadOnlyMemory<byte> recoveryCode,
         CancellationToken cancellationToken)
     {
+        SyncMasterKeyOpenResult recovered = await RecoverMasterKeyAsync(
+                recoveryEnvelope,
+                recoveryCode,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (recovered.Status != SyncKeyOperationStatus.Success || recovered.Key is null)
+        {
+            return recovered.Status;
+        }
+
+        using (recovered.Key)
+        {
+            PlatformSecretWriteResult result = await _secretStore.WriteAsync(
+                    GetSecretName(spaceId, keyVersion),
+                    recovered.Key.Key,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return MapStatus(result.Status);
+        }
+    }
+
+    public async ValueTask<SyncMasterKeyOpenResult> RecoverMasterKeyAsync(
+        ReadOnlyMemory<byte> recoveryEnvelope,
+        ReadOnlyMemory<byte> recoveryCode,
+        CancellationToken cancellationToken)
+    {
         byte[] masterKey = await SyncRecoveryKeyProtector.UnwrapAsync(
                 recoveryEnvelope,
                 recoveryCode,
                 cancellationToken)
             .ConfigureAwait(false);
-        try
-        {
-            PlatformSecretWriteResult result = await _secretStore.WriteAsync(
-                    GetSecretName(spaceId, keyVersion),
-                    masterKey,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return MapStatus(result.Status);
-        }
-        finally
+        if (masterKey.Length != 32)
         {
             CryptographicOperations.ZeroMemory(masterKey);
+            return new SyncMasterKeyOpenResult(SyncKeyOperationStatus.Failed);
         }
+
+        return new SyncMasterKeyOpenResult(
+            SyncKeyOperationStatus.Success,
+            new SyncMasterKeyLease(masterKey));
     }
 
     public async ValueTask<SyncMasterKeyOpenResult> OpenMasterKeyAsync(

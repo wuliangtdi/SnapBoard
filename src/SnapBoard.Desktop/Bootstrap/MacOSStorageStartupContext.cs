@@ -1,15 +1,15 @@
 using System.Runtime.Versioning;
-using SnapBoard.Platform.Windows.Storage;
+using SnapBoard.Platform.MacOS.Storage;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
-internal static class WindowsStorageStartupContext
+internal static class MacOSStorageStartupContext
 {
-    [SupportedOSPlatform("windows")]
+    [SupportedOSPlatform("macos")]
     public static DesktopStorageStartupContext Create(
         string? applicationDataDirectory,
         string? migrationId) => DesktopStorageStartupContext.Create(
             applicationDataDirectory,
             migrationId,
-            new WindowsStoragePlatformService());
+            new MacOSStoragePlatformService());
 }

@@ -154,6 +154,7 @@ public sealed class StorageMigrationExecutor
             EnsureOwnedStagingDoesNotExist(stagingDirectory);
             await _platformService.EnsurePrivateDirectoryAsync(
                     stagingDirectory,
+                    StorageDirectorySecurityMode.EmptyDirectoryOnly,
                     cancellationToken)
                 .ConfigureAwait(false);
             state = await TransitionAsync(
@@ -317,7 +318,7 @@ public sealed class StorageMigrationExecutor
         }
     }
 
-    private static void ValidateManifest(
+    private void ValidateManifest(
         StorageMigrationManifest manifest,
         string manifestPath,
         StorageBootstrapPaths bootstrapPaths)
@@ -356,7 +357,7 @@ public sealed class StorageMigrationExecutor
         }
     }
 
-    private static void ValidateInitialState(
+    private void ValidateInitialState(
         StorageMigrationStateDocument state,
         StorageMigrationManifest manifest)
     {
@@ -376,7 +377,7 @@ public sealed class StorageMigrationExecutor
         }
     }
 
-    private static void ValidateLocator(
+    private void ValidateLocator(
         StorageLocationDocument location,
         StorageMigrationManifest manifest)
     {
@@ -395,7 +396,7 @@ public sealed class StorageMigrationExecutor
         }
     }
 
-    private static void ValidateSourceInspection(
+    private void ValidateSourceInspection(
         StoragePathInspection inspection,
         StorageMigrationManifest manifest)
     {
@@ -411,7 +412,7 @@ public sealed class StorageMigrationExecutor
         }
     }
 
-    private static void ValidateTargetInspection(
+    private void ValidateTargetInspection(
         StoragePathInspection inspection,
         StorageMigrationManifest manifest)
     {
@@ -615,7 +616,7 @@ public sealed class StorageMigrationExecutor
         throw new TimeoutException("The migrated application did not acknowledge startup.");
     }
 
-    private static void ValidateStartupAcknowledgement(
+    private void ValidateStartupAcknowledgement(
         StorageStartupAcknowledgementDocument acknowledgement,
         StorageMigrationManifest manifest,
         StorageProcessIdentity launchedProcess)
@@ -655,7 +656,10 @@ public sealed class StorageMigrationExecutor
                 bootstrapPaths.ApplicationDataDirectory,
                 "storage-backups",
                 $"{_timeProvider.GetUtcNow():yyyyMMdd-HHmmss}-{manifest.MigrationId}");
-            await _platformService.EnsurePrivateDirectoryAsync(backupRoot, cancellationToken)
+            await _platformService.EnsurePrivateDirectoryAsync(
+                    backupRoot,
+                    StorageDirectorySecurityMode.EmptyDirectoryOnly,
+                    cancellationToken)
                 .ConfigureAwait(false);
             List<(string Source, string Destination)> moved = [];
             try
@@ -925,28 +929,15 @@ public sealed class StorageMigrationExecutor
         _ => "unexpected-failure",
     };
 
-    private static bool IsAncestorOrDescendant(string left, string right) =>
-        IsSameOrDescendant(left, right) || IsSameOrDescendant(right, left);
+    private bool IsAncestorOrDescendant(string left, string right) =>
+        _platformService.GetPathRelation(left, right) != StoragePathRelation.Unrelated;
 
-    private static bool IsSameOrDescendant(string path, string parent)
-    {
-        string canonicalPath = Normalize(path);
-        string canonicalParent = Normalize(parent);
-        return canonicalPath.Equals(canonicalParent, PathComparison) ||
-            canonicalPath.StartsWith(
-                canonicalParent + Path.DirectorySeparatorChar,
-                PathComparison);
-    }
+    private bool IsSameOrDescendant(string path, string parent) =>
+        _platformService.GetPathRelation(path, parent) is
+            StoragePathRelation.Same or StoragePathRelation.Descendant;
 
-    private static bool PathEquals(string left, string right) =>
-        Normalize(left).Equals(Normalize(right), PathComparison);
-
-    private static string Normalize(string path) =>
-        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-    private static StringComparison PathComparison => OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private bool PathEquals(string left, string right) =>
+        _platformService.GetPathRelation(left, right) == StoragePathRelation.Same;
 
     private static void TryDelete(string path)
     {

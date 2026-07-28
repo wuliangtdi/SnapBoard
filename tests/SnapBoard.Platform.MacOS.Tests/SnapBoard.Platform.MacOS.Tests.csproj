@@ -12,6 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\SnapBoard.Application\SnapBoard.Application.csproj" />
+    <ProjectReference Include="..\..\src\SnapBoard.Infrastructure\SnapBoard.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\SnapBoard.Platform.MacOS\SnapBoard.Platform.MacOS.csproj" />
     <ProjectReference Include="..\..\src\SnapBoard.Platform.Abstractions\SnapBoard.Platform.Abstractions.csproj" />
   </ItemGroup>
