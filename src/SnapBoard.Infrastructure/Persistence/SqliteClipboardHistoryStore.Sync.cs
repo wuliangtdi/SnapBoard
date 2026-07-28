@@ -547,17 +547,69 @@ public sealed partial class SqliteClipboardHistoryStore
                 await insertDevice.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            // checkpoint 与 inbox 在正常写入时同事务提交；行丢失时只允许从连续 inbox 恢复。
+            long appliedSequence = 0;
+            string? appliedEventId = null;
+            await using (SqliteCommand readRecovery = connection.CreateCommand())
+            {
+                readRecovery.Transaction = transaction;
+                readRecovery.CommandText = """
+                    SELECT COUNT(*), COALESCE(MIN(sequence), 0), COALESCE(MAX(sequence), 0),
+                           (
+                               SELECT event_id
+                               FROM sync_inbox
+                               WHERE space_id = @spaceId AND device_id = @deviceId
+                               ORDER BY sequence DESC
+                               LIMIT 1
+                           )
+                    FROM sync_inbox
+                    WHERE space_id = @spaceId AND device_id = @deviceId
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM sync_checkpoints
+                          WHERE space_id = @spaceId AND remote_device_id = @deviceId
+                      );
+                    """;
+                readRecovery.Parameters.AddWithValue("@spaceId", space);
+                readRecovery.Parameters.AddWithValue("@deviceId", device);
+                await using SqliteDataReader reader = await readRecovery
+                    .ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    long inboxCount = reader.GetInt64(0);
+                    long minimumSequence = reader.GetInt64(1);
+                    long maximumSequence = reader.GetInt64(2);
+                    if (inboxCount != 0 &&
+                        (minimumSequence != 1 || maximumSequence != inboxCount))
+                    {
+                        throw new InvalidDataException(
+                            "The remote sync inbox is not contiguous.");
+                    }
+
+                    appliedSequence = maximumSequence;
+                    appliedEventId = reader.IsDBNull(3)
+                        ? null
+                        : ParseCanonicalGuid(reader.GetString(3)).ToString("N");
+                }
+            }
+
             await using (SqliteCommand insertCheckpoint = connection.CreateCommand())
             {
                 insertCheckpoint.Transaction = transaction;
                 insertCheckpoint.CommandText = """
                     INSERT INTO sync_checkpoints(
-                        space_id, remote_device_id, applied_sequence, updated_at_utc)
-                    VALUES (@spaceId, @deviceId, 0, @now)
+                        space_id, remote_device_id, applied_sequence, applied_event_id,
+                        updated_at_utc)
+                    VALUES (@spaceId, @deviceId, @appliedSequence, @appliedEventId, @now)
                     ON CONFLICT(space_id, remote_device_id) DO NOTHING;
                     """;
                 insertCheckpoint.Parameters.AddWithValue("@spaceId", space);
                 insertCheckpoint.Parameters.AddWithValue("@deviceId", device);
+                insertCheckpoint.Parameters.AddWithValue("@appliedSequence", appliedSequence);
+                insertCheckpoint.Parameters.AddWithValue(
+                    "@appliedEventId",
+                    (object?)appliedEventId ?? DBNull.Value);
                 insertCheckpoint.Parameters.AddWithValue("@now", now);
                 await insertCheckpoint.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }

@@ -357,6 +357,139 @@ public sealed class SqliteSyncStoreTests
     }
 
     [Fact]
+    public async Task MissingCheckpointIsRebuiltFromContiguousInbox()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        Guid spaceId = Guid.NewGuid();
+        Guid localDeviceId = Guid.NewGuid();
+        Guid remoteDeviceId = Guid.NewGuid();
+        Guid itemId = Guid.NewGuid();
+        await ConfigureRemoteAsync(context, spaceId, localDeviceId, remoteDeviceId);
+        SyncEventEnvelope first = CreateRemoteUpsert(
+            spaceId,
+            remoteDeviceId,
+            itemId,
+            sequence: 1,
+            logicalTimestamp: 1,
+            "first");
+        SyncEventEnvelope second = CreateRemoteUpsert(
+            spaceId,
+            remoteDeviceId,
+            Guid.NewGuid(),
+            sequence: 2,
+            logicalTimestamp: 2,
+            "second");
+        byte[] serializedFirst = Serialize(first);
+        byte[] serializedSecond = Serialize(second);
+        try
+        {
+            Assert.Equal(
+                SyncEventApplyStatus.Applied,
+                (await context.Store.ApplyRemoteEventAsync(
+                    first,
+                    serializedFirst,
+                    "\"first\"",
+                    CancellationToken.None)).Status);
+            Assert.Equal(
+                SyncEventApplyStatus.Applied,
+                (await context.Store.ApplyRemoteEventAsync(
+                    second,
+                    serializedSecond,
+                    "\"second\"",
+                    CancellationToken.None)).Status);
+            await DeleteCheckpointAsync(context, spaceId, remoteDeviceId);
+
+            await context.Store.EnsureRemoteDeviceAsync(
+                spaceId,
+                remoteDeviceId,
+                CancellationToken.None);
+
+            SyncCheckpointState rebuilt = await context.Store.GetCheckpointAsync(
+                spaceId,
+                remoteDeviceId,
+                CancellationToken.None);
+            Assert.Equal(2, rebuilt.AppliedSequence);
+            Assert.Equal(second.EventId, rebuilt.AppliedEventId);
+            Assert.Null(rebuilt.ETag);
+            SyncEventApplyResult duplicate = await context.Store.ApplyRemoteEventAsync(
+                second,
+                serializedSecond,
+                "\"second-replay\"",
+                CancellationToken.None);
+            Assert.Equal(SyncEventApplyStatus.Duplicate, duplicate.Status);
+            Assert.Equal(3, duplicate.ExpectedSequence);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(serializedFirst);
+            CryptographicOperations.ZeroMemory(serializedSecond);
+        }
+    }
+
+    [Fact]
+    public async Task MissingCheckpointIsNotRebuiltFromGappedInbox()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        Guid spaceId = Guid.NewGuid();
+        Guid localDeviceId = Guid.NewGuid();
+        Guid remoteDeviceId = Guid.NewGuid();
+        Guid itemId = Guid.NewGuid();
+        await ConfigureRemoteAsync(context, spaceId, localDeviceId, remoteDeviceId);
+        SyncEventEnvelope first = CreateRemoteUpsert(
+            spaceId,
+            remoteDeviceId,
+            itemId,
+            sequence: 1,
+            logicalTimestamp: 1,
+            "first");
+        SyncEventEnvelope second = CreateRemoteUpsert(
+            spaceId,
+            remoteDeviceId,
+            Guid.NewGuid(),
+            sequence: 2,
+            logicalTimestamp: 2,
+            "second");
+        byte[] serializedFirst = Serialize(first);
+        byte[] serializedSecond = Serialize(second);
+        try
+        {
+            Assert.Equal(
+                SyncEventApplyStatus.Applied,
+                (await context.Store.ApplyRemoteEventAsync(
+                    first,
+                    serializedFirst,
+                    null,
+                    CancellationToken.None)).Status);
+            Assert.Equal(
+                SyncEventApplyStatus.Applied,
+                (await context.Store.ApplyRemoteEventAsync(
+                    second,
+                    serializedSecond,
+                    null,
+                    CancellationToken.None)).Status);
+            await DeleteCheckpointAsync(context, spaceId, remoteDeviceId);
+            await DeleteInboxSequenceAsync(context, spaceId, remoteDeviceId, sequence: 1);
+
+            await Assert.ThrowsAsync<InvalidDataException>(async () =>
+                await context.Store.EnsureRemoteDeviceAsync(
+                    spaceId,
+                    remoteDeviceId,
+                    CancellationToken.None));
+            Assert.Equal(
+                0,
+                (await context.Store.GetCheckpointAsync(
+                    spaceId,
+                    remoteDeviceId,
+                    CancellationToken.None)).AppliedSequence);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(serializedFirst);
+            CryptographicOperations.ZeroMemory(serializedSecond);
+        }
+    }
+
+    [Fact]
     public async Task VerifiedStagedBlobIsConsumedByRemoteUpsert()
     {
         await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
@@ -435,6 +568,42 @@ public sealed class SqliteSyncStoreTests
             spaceId,
             remoteDeviceId,
             CancellationToken.None);
+    }
+
+    private static async Task DeleteCheckpointAsync(
+        HistoryStoreTestContext context,
+        Guid spaceId,
+        Guid remoteDeviceId)
+    {
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM sync_checkpoints
+            WHERE space_id = @spaceId AND remote_device_id = @deviceId;
+            """;
+        command.Parameters.AddWithValue("@spaceId", spaceId.ToString("N"));
+        command.Parameters.AddWithValue("@deviceId", remoteDeviceId.ToString("N"));
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(CancellationToken.None));
+    }
+
+    private static async Task DeleteInboxSequenceAsync(
+        HistoryStoreTestContext context,
+        Guid spaceId,
+        Guid remoteDeviceId,
+        long sequence)
+    {
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM sync_inbox
+            WHERE space_id = @spaceId AND device_id = @deviceId AND sequence = @sequence;
+            """;
+        command.Parameters.AddWithValue("@spaceId", spaceId.ToString("N"));
+        command.Parameters.AddWithValue("@deviceId", remoteDeviceId.ToString("N"));
+        command.Parameters.AddWithValue("@sequence", sequence);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(CancellationToken.None));
     }
 
     private static SyncEventEnvelope CreateRemoteUpsert(

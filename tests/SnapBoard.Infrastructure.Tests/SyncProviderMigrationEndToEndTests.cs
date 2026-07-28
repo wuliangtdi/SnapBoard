@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
@@ -42,9 +43,11 @@ public sealed class SyncProviderMigrationEndToEndTests
         byte[] firstTargetPassword = "target-password-first"u8.ToArray();
         byte[] secondTargetPassword = "target-password-second"u8.ToArray();
         byte[] recoveryCode = "provider-migration-recovery-code"u8.ToArray();
-        byte[] html = Enumerable.Range(0, 70 * 1024)
-            .Select(static index => (byte)('a' + index % 23))
-            .ToArray();
+        byte[] html = GC.AllocateUninitializedArray<byte>(8 * 1024 * 1024);
+        for (int index = 0; index < html.Length; index++)
+        {
+            html[index] = (byte)('a' + index % 23);
+        }
         byte[]? recoveryEnvelope = null;
         try
         {
@@ -268,6 +271,149 @@ public sealed class SyncProviderMigrationEndToEndTests
             CryptographicOperations.ZeroMemory(secondTargetPassword);
             CryptographicOperations.ZeroMemory(recoveryCode);
             CryptographicOperations.ZeroMemory(html);
+        }
+    }
+
+    [Fact]
+    public async Task MissingLocalCheckpointIsRebuiltBeforeMigrationFreezes()
+    {
+        await using HistoryStoreTestContext firstContext =
+            await HistoryStoreTestContext.CreateAsync();
+        await using HistoryStoreTestContext secondContext =
+            await HistoryStoreTestContext.CreateAsync();
+        using StatefulRemoteHub remote = new();
+        using NamedSecretStore firstSecrets = new();
+        using NamedSecretStore secondSecrets = new();
+        using PlatformSyncCredentialService firstCredentials = new(firstSecrets);
+        using PlatformSyncCredentialService secondCredentials = new(secondSecrets);
+        await using SyncService first = CreateService(
+            firstContext,
+            firstSecrets,
+            firstCredentials,
+            remote);
+        await using SyncService second = CreateService(
+            secondContext,
+            secondSecrets,
+            secondCredentials,
+            remote);
+        byte[] firstSourcePassword = "checkpoint-source-first"u8.ToArray();
+        byte[] secondSourcePassword = "checkpoint-source-second"u8.ToArray();
+        byte[] firstTargetPassword = "checkpoint-target-first"u8.ToArray();
+        byte[] secondTargetPassword = "checkpoint-target-second"u8.ToArray();
+        byte[] recoveryCode = "checkpoint-rebuild-recovery-code"u8.ToArray();
+        byte[]? recoveryEnvelope = null;
+        try
+        {
+            SyncRemoteConfiguration firstSource = SourceConfiguration("checkpoint-source-first");
+            SyncRemoteConfiguration secondSource = SourceConfiguration("checkpoint-source-second");
+            SyncSetupResult created = await first.CreateSpaceAsync(
+                new SyncSetupRequest(firstSource),
+                firstSourcePassword,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, created.Status);
+            recoveryEnvelope = await File.ReadAllBytesAsync(created.RecoveryMaterialPath!);
+            SyncSetupResult joined = await second.JoinSpaceAsync(
+                created.SpaceId!.Value,
+                keyVersion: 1,
+                new SyncSetupRequest(secondSource),
+                secondSourcePassword,
+                recoveryEnvelope,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, joined.Status);
+            await firstContext.Store.SaveAsync(
+                CreateTextItem("checkpoint-rebuild-event"),
+                CancellationToken.None);
+            await SynchronizeUntilConvergedAsync(first, second);
+
+            SyncProviderMigrationWatermark before = await secondContext.Store
+                .CaptureProviderMigrationWatermarkAsync(
+                    created.SpaceId.Value,
+                    joined.DeviceId!.Value,
+                    CancellationToken.None);
+            SyncCheckpointState expected = Assert.Single(
+                before.Checkpoints,
+                checkpoint => checkpoint.DeviceId == created.DeviceId!.Value);
+            Assert.True(expected.AppliedSequence > 0);
+            await DeleteCheckpointAsync(
+                secondContext,
+                created.SpaceId.Value,
+                created.DeviceId!.Value);
+            Assert.DoesNotContain(
+                (await secondContext.Store.CaptureProviderMigrationWatermarkAsync(
+                    created.SpaceId.Value,
+                    joined.DeviceId!.Value,
+                    CancellationToken.None)).Checkpoints,
+                checkpoint => checkpoint.DeviceId == created.DeviceId!.Value);
+
+            SyncRemoteConfiguration firstTarget = TargetConfiguration("checkpoint-target-first");
+            SyncRemoteConfiguration secondTarget = TargetConfiguration("checkpoint-target-second");
+            SyncProviderMigrationResult started = await first.StartProviderMigrationAsync(
+                new SyncProviderMigrationRequest(firstTarget),
+                firstTargetPassword,
+                CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.WaitingForDevices, started.Status);
+            Guid planId = Assert.IsType<Guid>(started.Snapshot.PlanId);
+            SyncStatusSnapshot detected = await second.SynchronizeNowAsync(CancellationToken.None);
+            Assert.Equal(
+                "provider-migration-target-credentials-required",
+                detected.DiagnosticCode);
+            SyncProviderMigrationResult ready = await second
+                .ProvideProviderMigrationCredentialsAsync(
+                    planId,
+                    new SyncProviderMigrationRequest(secondTarget),
+                    secondTargetPassword,
+                    CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.WaitingForDevices, ready.Status);
+
+            SyncProviderMigrationWatermark rebuilt = await secondContext.Store
+                .CaptureProviderMigrationWatermarkAsync(
+                    created.SpaceId.Value,
+                    joined.DeviceId.Value,
+                    CancellationToken.None);
+            SyncCheckpointState actual = Assert.Single(
+                rebuilt.Checkpoints,
+                checkpoint => checkpoint.DeviceId == created.DeviceId.Value);
+            Assert.Equal(expected.AppliedSequence, actual.AppliedSequence);
+            Assert.Equal(expected.AppliedEventId, actual.AppliedEventId);
+
+            Assert.Equal(
+                SyncProviderMigrationStatus.WaitingForDevices,
+                (await first.ContinueProviderMigrationAsync(
+                    planId,
+                    CancellationToken.None)).Status);
+            Assert.Equal(
+                SyncProviderMigrationStatus.WaitingForDevices,
+                (await second.ContinueProviderMigrationAsync(
+                    planId,
+                    CancellationToken.None)).Status);
+            Assert.Equal(
+                SyncProviderMigrationStatus.Success,
+                (await first.ContinueProviderMigrationAsync(
+                    planId,
+                    CancellationToken.None)).Status);
+            Assert.Equal(
+                SyncProviderMigrationStatus.Success,
+                (await second.ContinueProviderMigrationAsync(
+                    planId,
+                    CancellationToken.None)).Status);
+            Assert.Equal(
+                remote.Snapshot(firstSource, created.SpaceId.Value).MainCiphertextSha256,
+                remote.Snapshot(firstTarget, created.SpaceId.Value).MainCiphertextSha256);
+        }
+        finally
+        {
+            if (recoveryEnvelope is not null)
+            {
+                CryptographicOperations.ZeroMemory(recoveryEnvelope);
+            }
+
+            CryptographicOperations.ZeroMemory(firstSourcePassword);
+            CryptographicOperations.ZeroMemory(secondSourcePassword);
+            CryptographicOperations.ZeroMemory(firstTargetPassword);
+            CryptographicOperations.ZeroMemory(secondTargetPassword);
+            CryptographicOperations.ZeroMemory(recoveryCode);
         }
     }
 
@@ -1566,6 +1712,23 @@ public sealed class SyncProviderMigrationEndToEndTests
             historySettingsService: null,
             historyChangeNotifier: notifier,
             providerMigrationSessionFactory: providerMigrationRemote);
+    }
+
+    private static async Task DeleteCheckpointAsync(
+        HistoryStoreTestContext context,
+        Guid spaceId,
+        Guid remoteDeviceId)
+    {
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM sync_checkpoints
+            WHERE space_id = @spaceId AND remote_device_id = @deviceId;
+            """;
+        command.Parameters.AddWithValue("@spaceId", spaceId.ToString("N"));
+        command.Parameters.AddWithValue("@deviceId", remoteDeviceId.ToString("N"));
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(CancellationToken.None));
     }
 
     private static SyncRemoteConfiguration LiveConfiguration(
