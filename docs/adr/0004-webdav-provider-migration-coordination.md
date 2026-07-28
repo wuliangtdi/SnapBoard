@@ -23,8 +23,10 @@ WebDAV 没有跨服务商事务。平台安全存储也只提供独立条目的�
 - 每个设备的不可变 `events/*.enc`；
 - 共享的内容寻址 `blobs/*.enc`。
 
-删除 Tombstone 是加密事件的一种变化类型，随事件原样保留。镜像过程不得解密、重新序列化、
-重新加密或生成新主密钥。
+删除 Tombstone 是加密事件的一种变化类型，随事件原样保留。传输到目标端的内容必须始终是源端
+原始密文字节，不得把明文重新序列化、重新加密或生成新主密钥。协调者可以在本机受限缓冲中短暂
+解密副本，仅用于验证认证标签、descriptor、事件序号和 Blob 内容地址；明文验证后立即清零，
+不得成为迁移输出或持久化内容。
 
 当前版本只在每台设备的 SQLite 中保存下载 Checkpoint。远端虽然已有 `checkpoints/` 集合名、
 `SyncDeviceCheckpoint` DTO 和 `SyncObjectType.Checkpoint`，但没有规范文件路径或任何远端读写实现。
@@ -55,16 +57,24 @@ spaces/{space}/migrations/{plan}/ready/{device}.enc
 spaces/{space}/migrations/{plan}/freeze.enc
 spaces/{space}/migrations/{plan}/commit.enc
 spaces/{space}/migrations/{plan}/committed/{device}.enc
+spaces/{space}/migrations/{plan}/terminal.enc
 spaces/{space}/migrations/{plan}/rollback.enc
 spaces/{space}/migrations/{plan}/rolled-back/{device}.enc
 spaces/{space}/migrations/{plan}/completed.enc
 ```
 
-每个路径只条件创建一次。重复请求读取并解密既有对象，只有语义完全一致才视为幂等；
-同路径不同计划内容是协议冲突。旧 epoch、第二个并发活动计划和不属于必需设备集合的 ack 均拒绝。
+`terminal.enc` 是 `Rollback` 与 `Completed` 的唯一裁决点，其加密 payload 只能是这两种决定之一。
+所有设备先在旧端使用 `If-None-Match: *` 条件创建该对象；条件竞争的失败方读取并跟随已经存在的
+决定。`rollback.enc` 与 `completed.enc` 是裁决结果的可审计别名，不参与选择，且不得同时存在。
+这样完成与回滚即使由不同设备并发发起，也只能得到一个全局终态。
 
-intent、ready、freeze 和 rollback 写入旧端；intent、commit、committed、rollback 和 completed
-同时写入新端。旧端永久保留只读标记和原密文数据，使离线设备能够发现迁移。
+每个路径只条件创建一次。重复请求读取并解密既有对象，只有语义完全一致才视为幂等；
+同路径同类型但不同计划内容、终态裁决与别名不一致均是协议冲突。旧 epoch、第二个并发活动计划和
+不属于必需设备集合的 ack 均拒绝。
+
+所有控制标记都以相同语义写入旧端和新端，单边成功后的重试只补写缺失一侧。提交前旧端是发现
+迁移和决定回滚的权威入口；commit 后两端的相同不可变决定共同支持已切换与未切换设备恢复。
+旧端永久保留只读标记和原密文数据，使离线设备能够发现迁移。
 
 ### 3. 状态机与设备协调
 
@@ -98,7 +108,9 @@ Draft
 目标验证完成后，协调者在两端写入 commit。每台设备只在看到相同 PlanId/Epoch 的 commit、
 且本机已验证目标凭据后提交 active 凭据；随后从新端执行完整增量检查并写 committed ack。
 任一设备提交失败时，所有未提交设备继续阻断，已提交设备只写新端，状态保持可见的
-`WaitingForDeviceCommits`，不会恢复旧端写入。全部 committed 后写 completed 并恢复正常同步。
+`WaitingForDeviceCommits`，不会恢复旧端写入。全部 committed 后由发起设备在旧端提出 `Completed`
+终态；若并发回滚已经赢得 `terminal.enc`，发起设备必须跟随回滚，否则镜像 `completed.enc` 别名并
+恢复正常同步。
 
 ### 4. 密文库存、镜像和验证
 
@@ -141,12 +153,15 @@ source/target 暂存 key 共同承担崩溃恢复；启动时按 PlanId 重放�
 
 ### 6. 取消、回滚和重放
 
-冻结前取消写 rollback 并清理目标暂存，旧端继续权威。冻结后取消必须进入 RollingBack：
-在旧、新端写 rollback，所有已提交设备从 source 恢复 active，完成一次旧端增量检查并写
-rolled-back ack。全部必需设备确认后为 RolledBack。
+冻结前取消提出 rollback 并清理目标暂存，旧端继续权威。冻结后取消必须进入 RollingBack：
+先在旧端竞争 `terminal.enc`；只有 `Rollback` 获胜时才在旧、新端写 rollback 别名，所有已提交设备
+从 source 恢复 active，完成一次旧端增量检查并写 rolled-back ack。全部必需设备确认后为
+RolledBack。若 `Completed` 已先获胜，陈旧设备不得再写 rollback，而应完成本机目标凭据提交。
 
-协调者崩溃后使用同一 PlanId/Epoch 从 SQLite 和远端标记恢复。不可变条件 PUT、语义一致的 marker
-重放和同字节对象跳过保证镜像可重复。更高 epoch 已存在时，旧计划不得重新进入活动状态。
+协调者崩溃后，原发起设备使用同一 PlanId/Epoch 从 SQLite 和远端标记恢复。第一版不允许其他设备
+接管 freeze、镜像、commit 或 completed：在设备撤销和带租约的协调者选举完成前，跨设备接管会
+产生双协调者风险。其他设备只能等待原发起设备恢复或发起全局回滚。不可变条件 PUT、语义一致的
+marker 重放和同字节对象跳过保证镜像可重复；更高 epoch 已存在时，旧计划不得重新进入活动状态。
 
 ## 后果
 

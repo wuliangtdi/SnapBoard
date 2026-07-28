@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-28
-> 当前阶段：macOS 安全存储迁移与加密同步对等实现、自动测试及本机 `osx-arm64` AOT 已落地；Intel、正式发布、真实服务与跨系统设备矩阵继续收口
+> 当前阶段：共享 WebDAV 服务商迁移、SQLite v8、双平台设置流程、Apache 实测及本机 `osx-arm64` AOT 已落地；正式跨系统 App、Nextcloud/Synology、Intel 与正式发布继续收口
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -16,8 +16,8 @@
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
-| Phase 1.6-1.8 | 进行中 | Windows 安全存储迁移、加密同步引擎、SQLite v7、同步历史策略和真实 UI 已落地；真实 WebDAV 兼容矩阵、设备撤销/密钥轮换、长期资源验证及正式发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 持久历史/检索、存储迁移、完整 Keychain 同步、生命周期及含 Native AOT 迁移器的本地 DMG/PKG 已验证；内存、8 小时、Intel、Developer ID、公证和真实设备矩阵待完成 |
+| Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI 和共享 WebDAV 服务商迁移已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、生命周期及 Native AOT 已验证；内存、8 小时、Intel、Developer ID、公证和正式跨系统设备矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | macOS arm64 共 268 项：248 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 69/69、WebDAV 29/29、macOS 48/48、Desktop Headless 48/48 |
+| 全量自动测试 | 通过 | macOS arm64 共 299 项：279 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 91/91、WebDAV 35/35、macOS 48/48、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
 | macOS 存储与同步测试 | 通过 | macOS 原生项目 48/48 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实 Keychain 完整工作流、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
-| `osx-arm64` Native AOT | 本机通过 | 主程序 33,828,880 字节，迁移器 8,356,952 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
+| `osx-arm64` Native AOT | 本机通过 | 服务商迁移构建主程序 34,740,768 字节，迁移器 8,356,952 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -121,12 +121,18 @@ Windows 启动阶段现由 bootstrap 定位器解析活动数据根，SQLite 与
 
 SQLite Schema v7 新增同步空间、Outbox、Inbox、逐设备 Checkpoint、Blob staging 和逐设置键逻辑版本。历史新增、置顶、删除及 `history.capture`/`history.retention`/`sync.pollInterval` 设置与 Outbox 在同一写事务提交；`SyncService` 使用 single-flight、有界批次、动态轮询和暂停排空，远端只写加密元数据、不可变事件及 keyed Blob。Windows Credential Manager 分离保存内容主密钥与版本化、长度受限的完整 WebDAV 连接配置；SQLite 表结构不包含 URL、用户名或密码字段，恢复材料落盘前加密。设置页接入创建/加入、连接验证、证书指纹、恢复材料、记录类型、默认关闭的自动清理、后台检查频率和真实同步状态，密码及恢复码提交后清空。
 
-WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源同根重定向、条件写入、ETag、取消、有限重试、响应上限和严格 PROPFIND。精确 SHA-256 指纹允许自签名链错误，但证书缺失或主机名不匹配仍拒绝；DTD、外部实体、跨源 href、编码分隔符和路径逃逸也会被拒绝。当前自动化假远端已验证双设备创建/加入、加密事件与 Blob、重复收发、墓碑、序号缺口和迁移暂停排空；Nextcloud、Synology、标准 WebDAV 实例、设备撤销/密钥轮换、远端回收、完整故障注入及跨平台固定向量仍待验证。
+WebDAV 客户端已覆盖 HTTPS/显式 loopback 例外、证书固定、同源同根重定向、条件写入、ETag、取消、有限重试、响应上限和严格 PROPFIND。精确 SHA-256 指纹允许自签名链错误，但证书缺失或主机名不匹配仍拒绝；DTD、外部实体、跨源 href、编码分隔符和路径逃逸也会被拒绝。自动化假远端已验证双设备创建/加入、加密事件与 Blob、重复收发、墓碑、序号缺口、迁移暂停排空及服务商迁移故障恢复；Apache 2.4.62 标准 WebDAV 已完成真实双设备迁移。Nextcloud、Synology、设备撤销/密钥轮换、远端回收及正式跨系统 App 矩阵仍待验证。
+
+### 4.10 WebDAV 服务商迁移
+
+共享 Application 状态机实现 Draft 到 Completed 及全局 RollingBack/RolledBack，普通同步在上传前扫描旧端加密 intent；离线设备发现计划后先持久化阻断状态，再要求本机目标凭据。旧端一次性条件创建的 `terminal.enc` 在 `Completed` 与 `Rollback` 并发时裁决唯一赢家，目标端只镜像同一决定，陈旧参与设备不得生成相反终态。协调者只复制 metadata、不可变事件和 keyed Blob 的原始密文字节，同时在本机短暂解密副本验证认证标签、路径 descriptor、逐设备连续序号、ready 水位、Checkpoint 与 Blob 内容地址；目标端逐对象比较规范身份、长度和 SHA-256。相同对象幂等跳过，同路径不同密文阻断，旧端默认保留。
+
+SQLite v8 只保存计划 ID、epoch、远端指纹、阶段、水位和进度，不保存 endpoint、root、用户名、密码或证书。每台设备在 Credential Manager/Keychain 中使用独立 source/target 暂存槽；提交前校验 active 仍等于 source，写入 target 后读回验证，失败可恢复 source。目标密码提交后从 ViewModel 清空，不进入迁移 DTO、SQLite 或远端控制标记。共享设置页显示当前服务、设备就绪/离线/提交状态、对象/字节进度和可恢复错误，继续及回滚均使用 owner modal。
 
 ## 5. 下一执行顺序
 
-1. 以独立共享功能分支和 ADR 实现 WebDAV 服务器迁移向导：协调暂停设备、完整镜像并验证原空间密文对象，保留空间/设备身份、Checkpoint 和 Outbox；连接凭据由每台设备分别暂存并原子切换。
-2. 使用 Nextcloud、Synology 和标准 WebDAV 实例执行认证、路径、ETag、限流、重试、损坏响应及双设备离线收敛矩阵。
+1. 使用正式 Windows 与 macOS App 执行双向发起、离线恢复、部分提交恢复及回滚矩阵；共享状态机测试不能替代该双机门槛。
+2. 使用 Nextcloud 与 Synology 执行认证、路径、ETag、配额、限流、重试和损坏响应矩阵；Apache 标准 WebDAV 已通过。
 3. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，以及系统唤醒和网络恢复触发。
 4. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力、三次资源采样和 8 小时长稳。
 5. 在对应硬件补齐 Windows ARM64、macOS 同协议/Keychain、macOS Intel 和 Linux 验证；不得从当前 Windows x64 结果外推。
@@ -430,7 +436,46 @@ AOT 告警说明: 0 个 trim/AOT 分析告警；链接时 2 个 module-cache 调
 未完成限制: osx-x64/Intel 匹配硬件或 Runner、Developer ID Application/Installer、notary/staple/Gatekeeper 接受、真实 Windows 双机、真实 Nextcloud/Synology/Apache WebDAV、Retina/大小写敏感 APFS/睡眠唤醒/网络恢复及完整手工迁移流程未执行
 ```
 
-## 16. 更新规则
+## 16. 2026-07-28 执行记录：WebDAV 服务商迁移
+
+```text
+日期：2026-07-28
+阶段/任务：阶段 B，共享 WebDAV 服务商迁移协议、状态机、UI 与真实服务验证
+状态：[x] 共享实现、自动故障矩阵、Apache 标准 WebDAV 和 osx-arm64 AOT 通过；[~] 正式 Windows <-> macOS App、Nextcloud/Synology 与 Intel 未完成
+主分支基线：开发前已将 main 更新到 f6c1ffaa88f33d2b452f3707729f42388f6bb5f6
+分支：codex/webdav-provider-migration
+ADR Commit SHA: 5753905（docs(adr): define WebDAV provider migration）
+实现 Commit SHA: dc824e9e00141eb4b9b44cde03bd4e6c97334a67（feat(sync): add coordinated WebDAV provider migration）
+终态仲裁修复 Commit SHA: 9b6c336d693bbbac75b890fd1f6ee906cedaceb4（fix(sync): arbitrate provider migration terminal state）
+完成内容：
+  - 新增版本化 ProviderMigration DTO、SyncJsonContext 源生成登记、严格远端布局及加密控制标记。
+  - 共享 SyncService 实现多设备 ready/freeze/mirror/verify/commit/completed 与全局 rollback；旧端 `terminal.enc` 使用不可变条件创建裁决 Completed/Rollback 唯一终态，普通上传先检查迁移 intent，Failed 状态保持 fail-closed。
+  - 按规范顺序复制 metadata、事件和 Blob 原始密文；校验认证标签、descriptor、连续序号、ready 水位、Checkpoint、Blob 内容地址、目标身份/长度/SHA-256；相同对象幂等跳过，冲突对象阻断。
+  - 平台安全存储新增计划级 source/target 凭据槽、读回验证、幂等提交和回滚；不同设备账号/密码互不写入迁移协议或覆盖。
+  - SQLite 升级到 v8，仅持久化计划、epoch、远端指纹、设备水位、进度和稳定诊断码，不含 endpoint/root/用户名/密码/证书字段。
+  - Windows/macOS 共用设置 ViewModel 与界面：当前服务、设备状态、对象/字节进度、参与设备本机凭据、继续和回滚；确认窗口使用 owner modal，密码提交后清空。
+自动验证：
+  - locked restore、Release build、format、git diff 检查和 NuGet 直接/传递漏洞审计通过；构建 0 警告、0 错误。
+  - 全量 299 项：279 项通过、20 项 Windows 原生测试按 macOS 平台跳过、0 项失败；Infrastructure 91/91、WebDAV 35/35、Desktop Headless 51/51、macOS 48/48、Application 10/10、Architecture 2/2。
+  - 服务商迁移端到端矩阵 18/18：双设备不同凭据、离线恢复、复制中断后续传、目标同名冲突、intent/commit/terminal/completed 单边写入修复、完成后陈旧参与设备回滚竞争、认证/权限/限流/瞬态/协议/证书/响应过大分类、序号缺口、Blob 内容地址破坏、部分设备提交、全局回滚、Failed 上传阻断、空空间、Tombstone、设置和 Checkpoint。
+真实 WebDAV：
+  - macOS 自带 Apache 2.4.62 启动两个独立 loopback WebDAV 端点，使用两个不同 Basic Auth 账号；两个客户端创建/加入同一空间后从 A 迁到 B。
+  - 迁移前后按规范对象身份和原始密文字节计算的 SHA-256 完全一致，真实端点上的 metadata 与包含 Tombstone 的事件集保留；Blob、设置和本地 Checkpoint 由同一状态机的有状态故障矩阵覆盖。
+  - 完成后新增事件只改变目标端，旧端密文哈希保持不变；旧端未自动删除。真实集成用例在本轮全量测试中执行并通过，不是环境缺失跳过。
+UI/AOT：
+  - 700 x 720 输入与 WaitingForDeviceAcks 状态 Headless/Skia 帧完成复核，设备 ID、水位、Ready/Offline、进度和操作按钮无重叠；继续/回滚模态所有权测试通过。
+  - osx-arm64 主程序 34,740,768 字节，SHA-256 FEEC958B6D45ED8B1C2DA9EF1F19207155A9F7107D55281341BB7B3C8B7F2AF4。
+  - osx-arm64 迁移器 8,356,952 字节，SHA-256 619CCE098B4B2FFFC5C42BBC834CC1FF67A5753D555D60B41CC532936E0F33F2。
+  - 两者均为 arm64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4；隔离规范 bootstrap 的 AOT 后台启动及 --exit 通过。
+  - 0 个 trim/AOT 分析告警；2 个已解释 clang module-cache 调试信息告警仍来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，未 suppression。
+限制：
+  - 正式 Windows App 发起/macOS App 提交及反向、真实双机离线恢复与回滚未执行；共享状态机双设备测试不能替代该门槛。
+  - Nextcloud、Synology、真实 TLS 证书固定/配额服务矩阵及 osx-x64/Intel 未执行；本轮真实 Apache 使用显式允许的 loopback HTTP 开发例外。
+  - 设备撤销尚未实现，因此永久离线设备必须继续阻塞迁移；第一版只允许原发起设备恢复协调，不允许其他设备接管。
+  - Developer ID、正式签名/公证、长期资源和 8 小时稳定性门槛不由本次共享功能验证外推为完成。
+```
+
+## 17. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。
