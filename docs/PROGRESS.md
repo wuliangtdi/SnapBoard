@@ -58,8 +58,8 @@
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
 | 全量自动测试 | 通过 | macOS arm64 共 304 项：284 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 92/92、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
-| macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
-| `osx-arm64` Native AOT | 本机通过 | 系统恢复监听构建主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
+| macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/POSIX mode/真实扩展 ACL/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
+| `osx-arm64` Native AOT | 本机通过 | 扩展 ACL 修复后主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -113,7 +113,7 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 
 稳定 Bundle ID 为 `com.wuliangtdi.snapboard`，标准 `.icns` 和浅色/深色 Template 状态图标已接入。最终 `osx-arm64` DMG 校验通过，挂载后的 App Bundle 实际后台启动并显示状态项，PKG 可展开；应用使用 Hardened Runtime ad-hoc 签名，PKG 未签名。当前钥匙串没有 Developer ID Application/Installer 身份，也未配置公证凭据，因此正式签名、Gatekeeper 接受和公证均未执行，不能标记完成。
 
-macOS 现已在 Avalonia 和 SQLite 初始化前解析固定 bootstrap 与活动数据根，保留 `~/Library/Application Support/SnapBoard` legacy 数据，locator 损坏恢复与缺失自定义根均明确失败。平台存储服务使用原生文件身份、实际卷大小写语义、卷 UUID、POSIX mode 与扩展 ACL 检查 APFS 目录，保守拒绝网络/移动/只读/未知卷和 iCloud/File Provider 根；进程启动、等待与停止使用 PID、启动时间、可执行路径和 UID 的完整身份。共享组合根在 macOS 注册真实同步、历史设置和存储迁移服务，设置窗口的存储、历史、同步与辅助功能区域全部可见并遵循 owner modal 及失败恢复顺序。
+macOS 现已在 Avalonia 和 SQLite 初始化前解析固定 bootstrap 与活动数据根，保留 `~/Library/Application Support/SnapBoard` legacy 数据，locator 损坏恢复与缺失自定义根均明确失败。平台存储服务使用原生文件身份、实际卷大小写语义、卷 UUID、POSIX mode 与扩展 ACL 检查 APFS 目录；Darwin `acl_get_entry` 的成功返回值和 `EINVAL` 遍历终止语义已由真实 ACL 验证，带其他主体 allow 条目的目录不会误报为私有。平台保守拒绝网络/移动/只读/未知卷和 iCloud/File Provider 根；进程启动、等待与停止使用 PID、启动时间、可执行路径和 UID 的完整身份。共享组合根在 macOS 注册真实同步、历史设置和存储迁移服务，设置窗口的存储、历史、同步与辅助功能区域全部可见并遵循 owner modal 及失败恢复顺序。
 
 Keychain 原生测试已覆盖 32 字节空间主密钥和包含 endpoint/root/user/password/certificate pin/loopback 的凭据包新增、读取、覆盖、删除、不存在与拒绝状态。已有空间重新配置改为先临时恢复并恒定时间比较主密钥，再用候选凭据验证远端，成功后才覆盖安全存储；错误恢复码、有效但不匹配的恢复材料及证书失败均逐字节保持既有主密钥、凭据和 SQLite 配置，后续同步仍可用。
 
@@ -544,7 +544,35 @@ osx-arm64 开发包：
   - Retina、多 Space/多显示器、完整手工迁移、8 小时长稳及既有内存目标仍未完成。
 ```
 
-## 19. 更新规则
+## 19. 2026-07-29 执行记录：macOS 扩展 ACL 安全边界复核
+
+```text
+日期：2026-07-29
+阶段/任务：按原始 macOS 对等清单复核私有目录 ACL 与迁移进程完整身份
+状态：[x] Darwin ACL ABI、安全修复、原生测试、Apache 全解及 osx-arm64 开发包通过；[~] 外部设备与发布门槛保持未完成
+Commit SHA: 172ba8f（fix(macos): enforce extended ACL privacy）
+发现与修复：
+  - 实际 APFS 目录加入 group:everyone allow list 后，Darwin acl_get_entry 成功返回 0，最后一个条目后返回 -1/EINVAL；原实现将 0 错误当作遍历结束，可能把含扩展 allow ACL 的 0700 目录误报为当前用户私有。
+  - 枚举逻辑改为读取成功条目并仅将 EINVAL 视为正常结束；任何扩展 allow 条目均使 IsPrivateToCurrentUser=false，其他原生错误继续明确失败。
+  - 原生测试证明允许处理的空目录会同时清除扩展 ACL 和 group/other mode；非空用户目标拒绝收紧，ACL 条目数、mode、内容和目录时间戳保持不变。
+  - 进程身份测试新增伪造 Mach-O 路径，WaitForProcessExitAsync 与 StopProcessAsync 均拒绝；既有 PID、启动时间和 UID 校验继续通过。
+自动验证：
+  - Release build 0 警告、0 错误；format 与 git diff 检查通过。
+  - macOS 原生项目 49/49、0 跳过；启用 Apache 2.4.62 双 loopback 端点和双账号后，全量 304 项：284 项通过、20 项 Windows 原生测试按平台跳过、0 项失败。
+  - 临时 Apache、账号、锁文件和远端数据已删除，18731/18732 无监听。
+osx-arm64 开发包：
+  - 输出目录 artifacts/macos-acl-final-20260729 受 .gitignore 排除，不进入仓库。
+  - 主程序 34,573,888 字节，SHA-256 CFC093FDFA2467193AC985486B5CFE2349543764595782A1B01AF7038CC3EB54；迁移器 8,326,528 字节，SHA-256 0819E984FF3E95BF003EAE447C9D4B0273076902FF2D3D0A215EA960CF6D0BF6。
+  - 两者均为 arm64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4，codesign strict/deep 通过。
+  - DMG 30,290,132 字节，SHA-256 711F868481127F7CA2A9D3A4D0D66F1B74BC6248C62E6C8DFDA14ED9C4EE9198，CRC 有效，含 SnapBoard.app 与 Applications -> /Applications。
+  - PKG 27,019,391 字节，SHA-256 362BCB93FCE4169377FAE9A47D2EEA827440DB6348CDC81C34D4DA392C07A5A9；payload、com.wuliangtdi.snapboard、/Applications 安装位置和 root 授权要求均复核通过。
+  - 私有 /private/tmp bootstrap 下，AOT App 启动、第二实例 --exit 和主实例退出均返回 0；挂载、展开和 bootstrap 临时目录已删除。
+  - 0 个 trim/AOT 分析告警；2 个已解释 clang module-cache 调试信息告警仍来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，未 suppression。
+限制：
+  - osx-x64/Intel、正式 Windows <-> macOS App 双机、两台正式 macOS App、Nextcloud/Synology、真实 TLS/配额、Developer ID/公证、物理睡眠与网络恢复、Retina/多显示器、8 小时长稳和既有内存目标仍未完成。
+```
+
+## 20. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

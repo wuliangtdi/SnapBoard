@@ -652,7 +652,7 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] 实现目标应用恢复和自动粘贴。
 - [~] 实现辅助功能权限引导、状态检测和受限模式：设置页状态、用户触发的授权/系统设置入口和“已复制，请手动粘贴”降级已完成；当前签名身份为已授权，撤销后同一身份重新授权待实测。
 - [x] 提供供设备与同步密钥复用的 Keychain 密钥服务；真实 Keychain 已覆盖主密钥及完整 WebDAV 凭据的新增、读取、覆盖、删除、不存在和拒绝状态，普通文件与 SQLite 不保存明文凭据。
-- [x] 实现 macOS 固定 bootstrap、legacy 数据根识别、APFS/文件身份/路径关系/私有权限/云盘边界和身份校验进程控制，并复用共享存储迁移状态机。
+- [x] 实现 macOS 固定 bootstrap、legacy 数据根识别、APFS/文件身份/路径关系/私有权限/云盘边界和身份校验进程控制，并复用共享存储迁移状态机；真实扩展 ACL 已覆盖空目录清理、非空目录不修改及其他主体授权拒绝。
 - [x] macOS 组合根接入真实 `SyncService`、历史策略与存储管理；共享设置页四个区域可见，owner 存在时使用 modal，迁移准备、失败恢复和 ViewModel 释放顺序已由 Headless 测试覆盖。
 - [x] macOS 系统唤醒与网络全局状态变化通过平台抽象合并为 `SyncService.RequestSync()`；原生 observer/dynamic store 注册、非托管回调、重复启动与释放后解绑已测试，周期轮询继续作为失败兜底。
 
@@ -665,7 +665,7 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写，macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
 - [ ] 验证 Intel 与 Apple Silicon。
-- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：包含系统恢复监听的新 `osx-arm64` 主程序与独立迁移器均为 arm64 Mach-O，架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储后台启动/第二实例退出均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
+- [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：包含系统恢复监听与扩展 ACL 修复的新 `osx-arm64` 主程序、独立迁移器均为 arm64 Mach-O，架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储后台启动/第二实例退出均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
 
 #### 2.3 发布
 
