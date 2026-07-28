@@ -63,7 +63,7 @@
 | `win-x64` Native AOT | 本机通过 | 当前 Windows 11 x64 原生 EXE 29,531,648 字节；无 `coreclr.dll`/`clrjit.dll`；0 个 AOT/裁剪警告并实际启动、明确退出；Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
-| macOS 窗口/后台内存 | 未达标 | 共享历史 AOT 三次可见 Physical Footprint 200.05/200.02/199.66 MiB；关闭窗口后为 100.05/100.19/100.19 MiB，仍略高于 100 MB；8 小时未执行 |
+| macOS 窗口/后台内存 | 未达标 | AOT 平台探针 10,000 次增长 5.09 MiB、100,000 次增长 0.45 MiB，事件路径通过；完整桌面纯后台 41.4 MiB，首次开窗后关窗约 94-96 MiB，仍高于 80 MB 目标且有超过 100 MB 的历史波动；8 小时未执行 |
 
 ## 4. 重要发现
 
@@ -266,7 +266,7 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
   - DMG/PKG 本机生成；DMG 校验及挂载启动通过；Bundle 使用 ad-hoc Hardened Runtime 签名，PKG 未签名，公证跳过。
 限制：
   - 未实测登录启动开关/重新登录、权限撤销后重授予、睡眠唤醒、多 Space、多显示器、Retina、全屏、Office、远程桌面或可见 Terminal UI。
-  - 主机只有一台 1920 x 1080 非 Retina 显示器；后台 Physical Footprint 仍超过 100 MB，10,000 次资源增长也未满足严格预算。
+  - 主机只有一台 1920 x 1080 非 Retina 显示器；该轮后台 Physical Footprint 超过 100 MB。该轮 framework-dependent 探针的资源增长判定已由 2026-07-28 Native AOT Physical Footprint 复查纠正，平台事件路径实际满足严格预算。
   - 本机没有 Developer ID 身份/公证凭据，未执行正式签名、公证或 Gatekeeper 接受验证；osx-x64 未发布、未启动。
 ```
 
@@ -343,11 +343,11 @@ macOS 平台层新增每用户 `flock` 所有权锁与 Unix socket 命令通道�
 验证结果：
   - locked restore、Release build、format、NuGet 漏洞检查通过；全量 159 项中 144 通过、15 个 Windows 原生测试跳过、0 失败。
   - 100,000 条导入 15,289.62 ms；150 次目标查询 P95 1.04 ms、最大 1.72 ms；300 次总体 P95 1.01 ms、最大 2.23 ms。
-  - 连续 10,000 次 HistoryChanged 只在静默期刷新一次；真实 NSPasteboard 10,000 次写入/抽样读回/标记/丢弃均 0 失败，完整桌面保持存活。
+  - 连续 10,000 次 HistoryChanged 只在静默期刷新一次；真实 NSPasteboard 10,000 次写入/抽样读回/标记/丢弃均 0 失败，完整桌面保持存活；修正后的 arm64 Native AOT 探针 Physical 增长 5.09 MiB、FD 7 -> 7，100,000 次计量阶段增长 0.45 MiB。
   - osx-arm64 Native AOT 0 告警并实际启动；三次启动 1262.00/420.21/458.88 ms。
   - DMG 校验通过；Bundle 仅 ad-hoc、PKG 未签名且 spctl 拒绝，未把本地产物标记为正式发布。
 限制：
-  - 三轮后台 Physical Footprint 100.05/100.19/100.19 MiB，仍未通过 >100 MiB 失败线；探针 RSS 增长 15.69 MiB，也未满足 <8 MiB 预算。
+  - 原 framework-dependent 探针的 15.69 MiB RSS 增长已定位为 JIT/分层编译及诊断路径冷启动假阳性；Native AOT 事件路径满足 <8 MiB 预算。完整桌面纯后台为 41.4 MiB，首次开窗后关窗约 94-96 MiB，100 轮快速窗口不单调增长，但仍未达到 <=80 MiB 目标且历史样本曾超过 100 MiB。
   - 关闭窗口后菜单栏保持 12 分 23 秒，RSS 166.25 -> 96.94 MiB、线程 15 -> 14、FD 51 -> 47，但 Physical 138 -> 139 MB，10 分钟时长完成而内存目标失败。
   - 8 小时、osx-x64/Intel、登录启动重新登录、同一稳定签名权限重授予、睡眠/Space/多显示器/Retina/全屏未执行。
   - Terminal UI 被安全策略拒绝；Office 未安装；远程客户端未启动。

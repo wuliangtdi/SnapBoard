@@ -141,7 +141,7 @@ InitialRssMiB=61.36; PeakRssMiB=75.75; FinalRssMiB=76.41;
 Threads=18->20; FileDescriptors=50->52
 ```
 
-没有死锁、写入/抽样读回失败、来源标记失败、反馈循环或 Channel 丢弃。但 RSS 增长 15.05 MiB、线程 +2、文件描述符 +2，不满足 `< 8 MiB` 资源预算；单次两秒级结果不能证明 8 小时稳定。Phase 2.1 的空闲 AOT 监听探针历史结果仍为平均 CPU 0.001%、44 次 interrupt wakeups、`DroppedEvents=0`，但不能替代完整应用数据。
+没有死锁、写入/抽样读回失败、来源标记失败、反馈循环或 Channel 丢弃。当时按 framework-dependent 进程的冷启动 RSS 判为超过 `< 8 MiB`；9.7 已确认该判定混入 JIT、分层编译和探针自身采样路径的首次初始化，不能作为 NSPasteboard 泄漏结论。Phase 2.1 的空闲 AOT 监听探针历史结果仍为平均 CPU 0.001%、44 次 interrupt wakeups、`DroppedEvents=0`，但不能替代完整应用数据。
 
 ## 8. 已知限制与待验收
 
@@ -153,7 +153,7 @@ Threads=18->20; FileDescriptors=50->52
 - 未执行可见 Terminal UI、Office、远程桌面或任何真实用户文档场景。
 - `osx-x64`、通用应用和 Intel 未验证；GitHub Actions 的 macOS 构建/发布 Job 尚未实际运行。
 - 本地 ad-hoc Bundle 和未签名 PKG 不能替代 Developer ID 签名、公证、staple、Gatekeeper 和真实安装升级/卸载验证。
-- 10,000 次功能正确性通过，但 RSS、线程和文件描述符有一次性增长；后台 Physical Footprint 仍超过 100 MB，性能退出条件未完成。
+- 10,000 次功能正确性和 Native AOT 平台探针 `< 8 MiB` 预算通过；首次开窗后的完整桌面后台 Physical Footprint 仍未稳定达到 `<= 80 MB` 目标，8 小时未执行，因此整体性能退出条件未完成。
 
 ## 9. 2026-07-28 合并后共享历史与检索复验
 
@@ -222,7 +222,7 @@ InitialRssMiB=61.17; PeakRssMiB=76.20; FinalRssMiB=76.86;
 Threads=17->21; FileDescriptors=49->51
 ```
 
-探针功能正确性通过，但自身 RSS 增长 15.69 MiB、线程 +4、FD +2，不满足 `< 8 MiB` 资源预算。桌面进程在压力前后保持同一 PID，RSS 约 162.1 -> 163.7 MiB、线程 16 -> 17、FD 51 -> 51，数据库条数 6 -> 8；这里只证明完整桌面存活、收敛保存预热末项与事件末项，不把 10,000 个快速变化误述为 10,000 条历史。
+探针功能正确性通过；这里的 framework-dependent 冷启动 RSS 增长不能单独判定平台泄漏，修正后的 Physical Footprint 与 Native AOT 对照见 9.7。桌面进程在压力前后保持同一 PID，RSS 约 162.1 -> 163.7 MiB、线程 16 -> 17、FD 51 -> 51，数据库条数 6 -> 8；这里只证明完整桌面存活、收敛保存预热末项与事件末项，不把 10,000 个快速变化误述为 10,000 条历史。
 
 关闭全部窗口后已开始独立 10 分钟菜单栏常驻样本；最终时长与资源见 9.6。8 小时测试未执行。
 
@@ -249,3 +249,20 @@ Threads=17->21; FileDescriptors=49->51
 随后使用 `--exit` 干净结束 PID 25766，并以同一 App Bundle `--background` 启动 PID 28621。重启前后实际数据库聚合完全一致：11 条历史、1 个文件路径、`capture_count` 总和 13、11 条 Unknown 来源，Finder `README.md` 完整路径仍为 1 条；`journal_mode=wal`、`quick_check=ok`。这证明本轮真实外部应用内容和 Unknown 来源投影跨进程重启保持一致。标签、置顶、使用次数、软删除和设置的非零状态由 9.1 的独立 APFS 集成测试验证；实际桌面样本这些字段均为零，未伪造非零交互结果。
 
 重启后系统仍处于锁屏，无法补做快速窗口可见历史和全屏场景；它们继续保持自动测试通过/交互未完成的分级结论。
+
+### 9.7 资源未达标原因复查
+
+原压力探针只读取 `Process.WorkingSet64`，并在首次调用线程和 `/dev/fd` 采样 API 之前记录基线。这样会把 framework-dependent 进程的 JIT、分层编译、程序集按需加载和探针自身诊断路径算成 NSPasteboard 增长；同时也违背本项目在 macOS 以 Physical Footprint 为正式内存指标的规则。探针现已先预热诊断路径，再通过 `proc_pid_rusage(RUSAGE_INFO_V6)` 同时记录 Physical Footprint 和 RSS。
+
+| 探针 | 预热/计量事件 | Physical 初始/最终 | 增长 | RSS 初始/最终 | FD | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| framework-dependent | 100 / 10,000 | 29.61 / 44.55 MiB | 14.94 MiB | 61.94 / 78.17 MiB | 50 -> 52 | 冷运行时混入，不能归因于剪贴板 |
+| framework-dependent | 10,000 / 10,000 | 42.72 / 48.19 MiB | 5.47 MiB | 75.62 / 81.92 MiB | 50 -> 52 | 预热后内存预算通过 |
+| Native AOT arm64 | 100 / 10,000 | 9.22 / 14.31 MiB | 5.09 MiB | 30.67 / 36.50 MiB | 7 -> 7 | `< 8 MiB` 预算通过 |
+| Native AOT arm64 | 100,000 / 100,000 | 17.33 / 17.78 MiB | 0.45 MiB | 39.14 / 40.05 MiB | 7 -> 7 | 高事件量无持续增长 |
+
+四轮均为写入、抽样读回、来源标记、反馈事件和队列丢弃 0 失败。线程增加来自异步监听和线程池首次扩容；AOT 两轮 FD 均保持 7，100,000 次计量阶段只增长 0.45 MiB。因此，原先的约 15 MiB 结果是验证方法的假阳性，NSPasteboard 事件路径没有观察到按事件线性泄漏。
+
+完整 AOT 桌面另做同 PID A/B：纯后台启动 Physical 为 41.4 MiB；首次显示主窗口为 165.0 MiB；关闭 3 秒后回落到约 94-96 MiB，主窗口 IOSurface 从约 14.1 MiB 降至约 0.1 MiB。10,000 次真实事件前后 Physical 为 99,009,688 -> 99,042,456 字节，仅增加 32 KiB。连续 100 轮快速窗口打开/关闭期间关窗样本在约 95.9-107.8 MiB 间波动但不随轮次单调增长，Lifetime Peak 保持 213.1 MiB、FD 始终 45；约 28 分钟混合压力后的低侵入样本为 95.1 MiB。受签名调试限制，`leaks` 只能读取受限内存范围，在该范围报告 0 leak。
+
+`vmmap` 显示首次 UI 使用后主要留下 Avalonia/AppKit、字体、托管堆和图形驱动的已提交/压缩缓存；窗口表面本身能够释放。这个结果解释了“纯后台很低、开窗后关窗仍接近 100 MiB”的差异，但不能据此把完整桌面判为通过：`<= 80 MB` 目标仍未达到，历史 3 秒和 12 分钟样本也确实曾超过 100 MB。当前结论是“平台事件资源预算通过，完整桌面 UI 后台基线仍未达目标且存在系统波动”；8 小时长稳仍明确未执行。

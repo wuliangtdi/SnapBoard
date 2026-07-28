@@ -55,14 +55,23 @@ macOS 剪贴板测试同样分为三层：
 - macOS 原生自动测试：真实 `NSPasteboard.generalPasteboard` 的 Text、HTML、RTF、PNG、TIFF、两个文件 URL、UTI 清单、完整写回、非法 DIB 拒绝、跨适配器事件和自写事件抑制；`flock` 所有权、真实 Unix socket 确认、首实例监听前不可抢占与不完整客户端超时；Keychain 临时密钥新增、读取、覆盖和删除。集合使用 `DisableParallelization=true`，非 macOS 自动跳过。
 - 交互式桌面测试：TextEdit、Finder、Safari、Chrome、Preview、目标应用恢复、Command+V、辅助功能允许/拒绝、菜单栏、关闭窗口后台常驻、第二实例、自定义物理快捷键和明确退出。实际结果记录在 `docs/MACOS_CLIPBOARD_VALIDATION.md`；`pbcopy` CLI 结果不能冒充可见 Terminal UI 复制。
 
-macOS 10,000 次原生事件压力测试使用：
+macOS 10,000 次原生事件功能压力测试使用：
 
 ```bash
 dotnet run --project tools/SnapBoard.MacOSClipboardProbe -c Release --no-build -- \
   stress --events 10000 --warmup 100 --read-interval 250
 ```
 
-探针并行运行真实监听器，检查每次写入、定期读回、来源标记、反馈事件、Channel 丢弃、RSS、线程和文件描述符。事件功能通过与 `< 8 MiB` 资源预算分别判定，不能用零错误掩盖资源增长。
+探针并行运行真实监听器，检查每次写入、定期读回、来源标记、反馈事件、Channel 丢弃、Physical Footprint、RSS、线程和文件描述符。`dotnet run` 的 framework-dependent 冷启动会包含 JIT、分层编译和程序集按需加载，只用于功能结果；正式 `< 8 MiB` 资源预算必须在目标机发布并运行 Native AOT 探针：
+
+```bash
+dotnet publish tools/SnapBoard.MacOSClipboardProbe/SnapBoard.MacOSClipboardProbe.csproj \
+  -c Release -r osx-arm64 --self-contained true -p:PublishAot=true
+tools/SnapBoard.MacOSClipboardProbe/bin/Release/net10.0/osx-arm64/publish/SnapBoard.MacOSClipboardProbe \
+  stress --events 10000 --warmup 100 --read-interval 250
+```
+
+探针会先预热自身的资源采样路径，再通过 `proc_pid_rusage(RUSAGE_INFO_V6)` 读取 Physical Footprint；RSS 只保留为诊断数据。事件功能通过与资源预算必须分别判定，不能用零错误掩盖增长，也不能把 framework-dependent 冷启动外推为 Native AOT 泄漏。
 
 ## 4. 测试数据安全
 

@@ -663,7 +663,7 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 
 - [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、Hardened Runtime、DMG/PKG 脚本均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
 - [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、签名和公证步骤已配置，远程 Runner 尚未实际执行。
-- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：共享历史 arm64 AOT 三次后台 Physical 为 100.05/100.19/100.19 MiB，另有真实历史下 12 分 23 秒菜单栏样本最终 Physical 139 MB；均未通过内存线。10,000 次事件已记录，8 小时、睡眠唤醒、多 Space、多显示器、Retina 和全屏待验证。
+- [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：Native AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB，排除按事件线性泄漏；完整桌面纯后台为 41.4 MiB，首次开窗后关窗约 94-96 MiB，100 轮快速窗口无单调增长，但历史三次 3 秒样本和 12 分 23 秒样本仍曾超过 100 MB，尚未达到 `<= 80 MB` 目标。8 小时、睡眠唤醒、多 Space、多显示器、Retina 和全屏待验证。
 - [x] 更新平台支持矩阵和已知限制。
 
 退出条件：Windows 与 macOS 数据一致同步，macOS 正式包通过签名和公证。

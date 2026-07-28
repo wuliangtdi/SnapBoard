@@ -5,7 +5,7 @@
 | 平台 | 目标版本/桌面 | 剪贴板监听 | 全局快捷键 | 自动粘贴 | 凭据存储 | 当前状态 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Windows | Windows 11 x64 | 受限：原生适配器、delayed rendering、持久历史、检索、事件时来源快照及 PNG 已自动验证，外部应用矩阵未完成 | 受限：自定义按键录入、原生注册、冲突回滚和配置已自动验证，物理按键待验收 | 受限：Notepad/WinUI 已实机通过，管理员目标待验收 | Credential Manager 原生服务已验证 | Phase 1.4 自动验证完成，实机矩阵收口中 |
-| macOS | macOS 26.2 arm64 已测；x64 待测 | 受限：原生适配器、APFS 持久历史、100,000 条检索与 10,000 次功能压力已验证，资源预算未满足且 8 小时未执行 | 受限：自定义录入、原生注册、冲突回滚、持久化和物理组合键已验证 | 受限：TextEdit 允许/拒绝状态已测，需辅助功能权限 | Keychain 原生服务已验证 | 共享历史通过；正式发布与环境矩阵进行中 |
+| macOS | macOS 26.2 arm64 已测；x64 待测 | 受限：原生适配器、APFS 持久历史、100,000 条检索与 10,000 次功能/AOT 资源压力已验证；完整桌面 UI 后台预算未满足且 8 小时未执行 | 受限：自定义录入、原生注册、冲突回滚、持久化和物理组合键已验证 | 受限：TextEdit 允许/拒绝状态已测，需辅助功能权限 | Keychain 原生服务已验证 | 共享历史通过；正式发布与环境矩阵进行中 |
 | Ubuntu | GNOME X11 | 计划完整 | 计划完整 | 计划完整 | Secret Service | 三期 |
 | Ubuntu/Fedora | GNOME Wayland | 配套扩展或受限 | 桌面接口决定 | 通常受限 | Secret Service | 三期高风险 |
 | Fedora/KDE | Plasma Wayland | 待验证 | 待验证 | 可能受限 | KWallet/Secret Service | 三期 |
@@ -43,7 +43,7 @@
 - [~] ServiceManagement 登录启动与 App Bundle 能力检测已实现，当前状态为未启用；真实启用/禁用及重新登录待用户确认后验收。
 - [x] Keychain 临时密钥新增、读取和删除通过原生验证，平台抽象可供后续同步复用。
 - [ ] 睡眠唤醒、多 Space、多显示器、Retina 和全屏应用；当前主机仅一台 1920 x 1080 非 Retina 显示器，未从该环境外推。
-- [~] `osx-arm64` Native AOT 0 告警并实际启动；三轮后台 Physical Footprint 为 100.05/100.19/100.19 MiB，仍未通过内存线。DMG 校验通过，但 Bundle 仅 ad-hoc、PKG 未签名且 `spctl` 拒绝；Developer ID、公证、staple、安装升级/卸载、GitHub Runner、`osx-x64` 和 8 小时长稳待验证。
+- [~] `osx-arm64` Native AOT 0 告警并实际启动；AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB。完整桌面首次开窗后关窗约 94-96 MiB，未达到 80 MiB 目标且历史三轮样本为 100.05/100.19/100.19 MiB。DMG 校验通过，但 Bundle 仅 ad-hoc、PKG 未签名且 `spctl` 拒绝；Developer ID、公证、staple、安装升级/卸载、GitHub Runner、`osx-x64` 和 8 小时长稳待验证。
 
 详细证据、性能样本和未验证项见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 

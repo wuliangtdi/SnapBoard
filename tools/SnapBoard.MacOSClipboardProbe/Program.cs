@@ -1,12 +1,19 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.MacOS;
 
 namespace SnapBoard.MacOSClipboardProbe;
 
-internal static class Program
+internal static partial class Program
 {
+    private const string LibSystem = "/usr/lib/libSystem.B.dylib";
+    private const int RusageInfoVersion6 = 6;
+    private const int RusageInfoV6BufferSize = 464;
+    private const int ResidentSizeOffset = 64;
+    private const int PhysicalFootprintOffset = 72;
+
     public static async Task<int> Main(string[] args)
     {
         if (!OperatingSystem.IsMacOS())
@@ -211,6 +218,7 @@ internal static class Program
         }, CancellationToken.None);
 
         await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
+        WarmResourceMeasurement();
         for (int index = 1; index <= warmupCount; index++)
         {
             await adapter.WritePlainTextAsync(
@@ -219,8 +227,9 @@ internal static class Program
         }
 
         await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
-        long initialRss = GetWorkingSet();
-        long peakRss = initialRss;
+        ProcessMemorySnapshot initialMemory = GetMemorySnapshot();
+        long peakRss = initialMemory.ResidentSize;
+        long peakPhysicalFootprint = initialMemory.PhysicalFootprint;
         int initialThreads = GetThreadCount();
         int initialFileDescriptors = GetFileDescriptorCount();
         Stopwatch stopwatch = Stopwatch.StartNew();
@@ -251,7 +260,11 @@ internal static class Program
                     readFailures++;
                 }
 
-                peakRss = Math.Max(peakRss, GetWorkingSet());
+                ProcessMemorySnapshot currentMemory = GetMemorySnapshot();
+                peakRss = Math.Max(peakRss, currentMemory.ResidentSize);
+                peakPhysicalFootprint = Math.Max(
+                    peakPhysicalFootprint,
+                    currentMemory.PhysicalFootprint);
             }
         }
 
@@ -265,7 +278,11 @@ internal static class Program
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
         GC.WaitForPendingFinalizers();
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
-        long finalRss = GetWorkingSet();
+        ProcessMemorySnapshot finalMemory = GetMemorySnapshot();
+        peakRss = Math.Max(peakRss, finalMemory.ResidentSize);
+        peakPhysicalFootprint = Math.Max(
+            peakPhysicalFootprint,
+            finalMemory.PhysicalFootprint);
         int finalThreads = GetThreadCount();
         int finalFileDescriptors = GetFileDescriptorCount();
         string result =
@@ -274,8 +291,15 @@ internal static class Program
             $"WriteFailures={writeFailures}; ReadFailures={readFailures}; " +
             $"MarkerFailures={markerFailures}; FeedbackEvents={emittedFeedbackEvents}; " +
             $"DroppedEvents={droppedEvents}; " +
-            $"InitialRssMiB={ToMiB(initialRss):F2}; PeakRssMiB={ToMiB(peakRss):F2}; " +
-            $"FinalRssMiB={ToMiB(finalRss):F2}; Threads={initialThreads}->{finalThreads}; " +
+            $"InitialPhysicalMiB={ToMiB(initialMemory.PhysicalFootprint):F2}; " +
+            $"PeakPhysicalMiB={ToMiB(peakPhysicalFootprint):F2}; " +
+            $"FinalPhysicalMiB={ToMiB(finalMemory.PhysicalFootprint):F2}; " +
+            $"PhysicalGrowthMiB=" +
+            $"{ToMiB(finalMemory.PhysicalFootprint - initialMemory.PhysicalFootprint):F2}; " +
+            $"InitialRssMiB={ToMiB(initialMemory.ResidentSize):F2}; " +
+            $"PeakRssMiB={ToMiB(peakRss):F2}; " +
+            $"FinalRssMiB={ToMiB(finalMemory.ResidentSize):F2}; " +
+            $"Threads={initialThreads}->{finalThreads}; " +
             $"FileDescriptors={initialFileDescriptors}->{finalFileDescriptors}";
         Console.WriteLine(result);
         WriteOutputIfRequested(args, [result]);
@@ -285,10 +309,35 @@ internal static class Program
                 : 6;
     }
 
-    private static long GetWorkingSet()
+    private static void WarmResourceMeasurement()
+    {
+        _ = GetMemorySnapshot();
+        _ = GetThreadCount();
+        _ = GetFileDescriptorCount();
+    }
+
+    private static ProcessMemorySnapshot GetMemorySnapshot()
     {
         using Process process = Process.GetCurrentProcess();
-        return process.WorkingSet64;
+        nint buffer = Marshal.AllocHGlobal(RusageInfoV6BufferSize);
+        try
+        {
+            // rusage_info_v6 的 resident/physical 字段分别位于 64/72 字节；
+            // Physical Footprint 才是 macOS 资源预算的正式指标。
+            if (ProcPidRusage(process.Id, RusageInfoVersion6, buffer) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"proc_pid_rusage failed with {Marshal.GetLastPInvokeError()}.");
+            }
+
+            long residentSize = Marshal.ReadInt64(buffer, ResidentSizeOffset);
+            long physicalFootprint = Marshal.ReadInt64(buffer, PhysicalFootprintOffset);
+            return new ProcessMemorySnapshot(residentSize, physicalFootprint);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
     }
 
     private static int GetThreadCount()
@@ -301,6 +350,13 @@ internal static class Program
         Directory.EnumerateFileSystemEntries("/dev/fd").Count();
 
     private static double ToMiB(long bytes) => bytes / 1048576d;
+
+    [LibraryImport(LibSystem, EntryPoint = "proc_pid_rusage", SetLastError = true)]
+    private static partial int ProcPidRusage(int processId, int flavor, nint buffer);
+
+    private readonly record struct ProcessMemorySnapshot(
+        long ResidentSize,
+        long PhysicalFootprint);
 
     private static ClipboardBitmapData ReadBitmap(string imagePath)
     {
