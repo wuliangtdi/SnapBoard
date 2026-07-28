@@ -39,6 +39,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
     private readonly IStoragePlatformService? _storagePlatformService;
     private readonly ISyncService? _syncService;
     private readonly IHistorySettingsService? _historySettingsService;
+    private readonly IDesktopSystemEventService? _systemEventService;
     private readonly IClipboardWriter _writer;
     private MainWindow? _mainWindow;
     private QuickWindow? _quickWindow;
@@ -66,7 +67,8 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         IStorageMigrationBarrier? storageMigrationBarrier = null,
         IStoragePlatformService? storagePlatformService = null,
         ISyncService? syncService = null,
-        IHistorySettingsService? historySettingsService = null)
+        IHistorySettingsService? historySettingsService = null,
+        IDesktopSystemEventService? systemEventService = null)
     {
         _desktop = desktop;
         _mainViewModel = mainViewModel;
@@ -84,6 +86,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         _storagePlatformService = storagePlatformService;
         _syncService = syncService;
         _historySettingsService = historySettingsService;
+        _systemEventService = systemEventService;
     }
 
     internal bool HasMainWindow => _mainWindow is not null;
@@ -137,6 +140,16 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
         _mainViewModel.Start();
         _captureCoordinator.Start();
+        try
+        {
+            _systemEventService?.Start();
+        }
+        catch (Exception)
+        {
+            // 周期同步仍可兜底；UI 只暴露稳定诊断，不透传平台异常或路径。
+            _mainViewModel.StatusMessage = "系统恢复监听初始化失败";
+        }
+
         if (startupMode == DesktopStartupMode.MainWindow)
         {
             _desktop.MainWindow = CreateMainWindow();
@@ -167,6 +180,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         _restoreTargetWhenQuickCloses = false;
         CancelScheduledResourceRelease();
         UnsubscribeEvents();
+        _systemEventService?.Dispose();
         try
         {
             _hotKeyService.UnregisterAsync(CancellationToken.None)
@@ -227,6 +241,12 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
             _singleInstance.CommandReceived += OnSingleInstanceCommand;
         }
 
+        if (_systemEventService is not null)
+        {
+            _systemEventService.SystemResumed += OnSystemResumed;
+            _systemEventService.NetworkChanged += OnNetworkChanged;
+        }
+
         _desktop.ReopenRequested += OnApplicationReopenRequested;
     }
 
@@ -254,6 +274,12 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         if (_singleInstance is not null)
         {
             _singleInstance.CommandReceived -= OnSingleInstanceCommand;
+        }
+
+        if (_systemEventService is not null)
+        {
+            _systemEventService.SystemResumed -= OnSystemResumed;
+            _systemEventService.NetworkChanged -= OnNetworkChanged;
         }
 
         _desktop.ReopenRequested -= OnApplicationReopenRequested;
@@ -723,6 +749,12 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void OnApplicationReopenRequested(object? sender, EventArgs e) =>
         PostToUi(ShowMainWindow);
+
+    private void OnSystemResumed(object? sender, EventArgs e) =>
+        _syncService?.RequestSync();
+
+    private void OnNetworkChanged(object? sender, EventArgs e) =>
+        _syncService?.RequestSync();
 
     private void OnCaptureStateChanged(ClipboardCaptureState state) => PostToUi(() =>
     {

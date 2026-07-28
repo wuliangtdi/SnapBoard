@@ -37,6 +37,7 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
         FakeStoragePlatformService storagePlatform = new(migrationOperations);
         FakeSyncService sync = new(migrationOperations);
         FakeHistorySettingsService historySettings = new();
+        FakeDesktopSystemEventService systemEvents = new();
         MacOSDesktopLifecycleCoordinator coordinator = new(
             desktop,
             new MainViewModel(),
@@ -53,13 +54,19 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             new FakeStorageMigrationBarrier(migrationOperations),
             storagePlatform,
             sync,
-            historySettings);
+            historySettings,
+            systemEvents);
 
         try
         {
             coordinator.Initialize(DesktopStartupMode.Background);
             Dispatcher.UIThread.RunJobs();
             Assert.False(coordinator.HasMainWindow);
+            Assert.True(systemEvents.Started);
+
+            systemEvents.RaiseSystemResumed();
+            systemEvents.RaiseNetworkChanged();
+            Assert.Equal(2, sync.RequestSyncCount);
 
             menu.RaiseShowMain();
             Dispatcher.UIThread.RunJobs();
@@ -115,6 +122,10 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
         Assert.True(menu.Disposed);
         Assert.True(hotKey.Unregistered);
         Assert.Equal(0, historySettings.SubscriberCount);
+        Assert.True(systemEvents.Disposed);
+        systemEvents.RaiseSystemResumed();
+        systemEvents.RaiseNetworkChanged();
+        Assert.Equal(2, sync.RequestSyncCount);
     }
 
     [AvaloniaFact]
@@ -413,12 +424,18 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
 
         public bool ResumeCalled { get; private set; }
 
+        public int RequestSyncCount { get; private set; }
+
         public void Start()
         {
             StatusChanged?.Invoke(this, Status);
         }
 
-        public bool RequestSync() => true;
+        public bool RequestSync()
+        {
+            RequestSyncCount++;
+            return true;
+        }
 
         public ValueTask InitializePollingSettingsAsync(CancellationToken cancellationToken)
         {
@@ -466,6 +483,25 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             ResumeCalled = true;
             operations.Add("sync-resume");
         }
+    }
+
+    private sealed class FakeDesktopSystemEventService : IDesktopSystemEventService
+    {
+        public event EventHandler? SystemResumed;
+
+        public event EventHandler? NetworkChanged;
+
+        public bool Started { get; private set; }
+
+        public bool Disposed { get; private set; }
+
+        public void Start() => Started = true;
+
+        public void Dispose() => Disposed = true;
+
+        public void RaiseSystemResumed() => SystemResumed?.Invoke(this, EventArgs.Empty);
+
+        public void RaiseNetworkChanged() => NetworkChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private sealed class FakeHistorySettingsService : IHistorySettingsService

@@ -86,7 +86,8 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetService<IStorageMigrationBarrier>(),
                     _services.GetService<IStoragePlatformService>(),
                     _services.GetService<ISyncService>(),
-                    _services.GetService<IHistorySettingsService>());
+                    _services.GetService<IHistorySettingsService>(),
+                    _services.GetService<IDesktopSystemEventService>());
                 _macOSLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 

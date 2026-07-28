@@ -145,6 +145,7 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IAccessibilityPermissionService, MacOSAccessibilityPermissionService>();
         services.AddSingleton<IPlatformWindowPlacementService, MacOSWindowPlacementService>();
         services.AddSingleton<IDesktopMenuBarService, MacOSMenuBarService>();
+        services.AddSingleton<IDesktopSystemEventService, MacOSDesktopSystemEventService>();
         services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
         services.AddSingleton<IPlatformSecretStore, MacOSKeychainSecretStore>();
         AddSyncServices(services);

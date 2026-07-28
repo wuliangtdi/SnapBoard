@@ -3,8 +3,10 @@ using SnapBoard.Application.Sync;
 using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Security;
 using SnapBoard.Platform.MacOS;
+using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
 using SnapBoard.Platform.Windows.Clipboard;
@@ -28,6 +30,8 @@ public sealed class DesktopCompositionRootTests
             Assert.Null(provider.GetService<IClipboardSourceApplicationMetadataResolver>());
             Assert.IsType<MacOSKeychainSecretStore>(
                 provider.GetRequiredService<IPlatformSecretStore>());
+            Assert.IsType<MacOSDesktopSystemEventService>(
+                provider.GetRequiredService<IDesktopSystemEventService>());
             Assert.IsType<SyncService>(provider.GetRequiredService<ISyncService>());
             Assert.True(provider.GetRequiredService<MainViewModel>().HasSyncService);
             AssertSyncMigrationServices(provider);
