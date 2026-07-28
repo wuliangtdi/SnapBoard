@@ -700,62 +700,66 @@ public sealed partial class SyncService
                     intent.RequiredDeviceIds,
                     cancellationToken)
                 .ConfigureAwait(false);
-            SyncProviderMigrationDecision? rollback = await ReadDecisionMarkerAsync(
-                    sourceMigration,
-                    configuration,
-                    intent,
-                    SyncProviderMigrationMarkerKind.Rollback,
-                    keyResult.Key.Key,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (rollback is not null)
+            SyncProviderMigrationDecision? terminal =
+                await ReadResolvedTerminalDecisionAsync(
+                        sourceMigration,
+                        configuration,
+                        intent,
+                        keyResult.Key.Key,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (terminal is not null)
             {
-                try
+                terminal = await ResolveTerminalDecisionOnSessionAsync(
+                        sourceMigration,
+                        configuration,
+                        intent,
+                        terminal,
+                        keyResult.Key.Key,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (terminal.Kind == SyncProviderMigrationMarkerKind.Rollback)
                 {
-                    await PutDecisionMarkerAsync(
-                            targetMigration,
+                    try
+                    {
+                        SyncProviderMigrationDecision mirroredRollback =
+                            await ResolveTerminalDecisionOnSessionAsync(
+                                    targetMigration,
+                                    configuration,
+                                    intent,
+                                    terminal,
+                                    keyResult.Key.Key,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        EnsureTerminalDecisionMatchesAuthority(terminal, mirroredRollback);
+                    }
+                    catch (SyncPipelineException)
+                    {
+                        // 旧端回滚决定保持权威；失败目标不阻止设备恢复源凭据。
+                    }
+
+                    return await ApplyObservedRollbackAsync(
                             configuration,
+                            migration,
                             intent,
-                            rollback,
+                            sourceResult.Credential,
+                            sourceMigration,
+                            targetMigration,
                             keyResult.Key.Key,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
-                catch (SyncPipelineException)
-                {
-                    // 旧端回滚决定保持权威；失败目标不阻止设备恢复源凭据。
-                }
 
-                return await ApplyObservedRollbackAsync(
-                        configuration,
-                        migration,
-                        intent,
-                        sourceResult.Credential,
-                        sourceMigration,
-                        targetMigration,
-                        keyResult.Key.Key,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            SyncProviderMigrationDecision? completed = await ReadDecisionMarkerAsync(
-                    sourceMigration,
-                    configuration,
-                    intent,
-                    SyncProviderMigrationMarkerKind.Completed,
-                    keyResult.Key.Key,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (completed is not null)
-            {
-                await PutDecisionMarkerAsync(
-                        targetMigration,
-                        configuration,
-                        intent,
-                        completed,
-                        keyResult.Key.Key,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                SyncProviderMigrationDecision targetCompleted =
+                    await ResolveTerminalDecisionOnSessionAsync(
+                            targetMigration,
+                            configuration,
+                            intent,
+                            terminal,
+                            keyResult.Key.Key,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                EnsureTerminalDecisionMatchesAuthority(terminal, targetCompleted);
                 return await FinalizeObservedCompletionAsync(
                         configuration,
                         migration,
@@ -1016,38 +1020,28 @@ public sealed partial class SyncService
 
             if (configuration.DeviceId == intent.InitiatorDeviceId)
             {
-                SyncProviderMigrationDecision completion = CreateDecision(
+                SyncProviderMigrationDecision proposedCompletion = CreateDecision(
                     intent,
                     SyncProviderMigrationMarkerKind.Completed,
                     migration);
-                await PutDecisionMarkerAsync(
+                terminal = await ResolveTerminalDecisionOnSessionAsync(
                         sourceMigration,
                         configuration,
                         intent,
-                        completion,
-                        keyResult.Key.Key,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                await PutDecisionMarkerAsync(
-                        targetMigration,
-                        configuration,
-                        intent,
-                        completion,
+                        proposedCompletion,
                         keyResult.Key.Key,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                completed = await ReadDecisionMarkerAsync(
-                        sourceMigration,
-                        configuration,
-                        intent,
-                        SyncProviderMigrationMarkerKind.Completed,
-                        keyResult.Key.Key,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (completed is null)
+                terminal = await ReadResolvedTerminalDecisionAsync(
+                    sourceMigration,
+                    configuration,
+                    intent,
+                    keyResult.Key.Key,
+                    cancellationToken).ConfigureAwait(false);
+                if (terminal is null)
                 {
                     return new SyncProviderMigrationResult(
                         SyncProviderMigrationStatus.WaitingForDevices,
@@ -1055,7 +1049,59 @@ public sealed partial class SyncService
                             .ConfigureAwait(false),
                         "provider-migration-waiting-for-completion");
                 }
+
+                terminal = await ResolveTerminalDecisionOnSessionAsync(
+                        sourceMigration,
+                        configuration,
+                        intent,
+                        terminal,
+                        keyResult.Key.Key,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
+
+            if (terminal.Kind == SyncProviderMigrationMarkerKind.Rollback)
+            {
+                try
+                {
+                    SyncProviderMigrationDecision targetRollback =
+                        await ResolveTerminalDecisionOnSessionAsync(
+                                targetMigration,
+                                configuration,
+                                intent,
+                                terminal,
+                                keyResult.Key.Key,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    EnsureTerminalDecisionMatchesAuthority(terminal, targetRollback);
+                }
+                catch (SyncPipelineException)
+                {
+                    // 旧端回滚决定保持权威；失败目标不阻止设备恢复源凭据。
+                }
+
+                return await ApplyObservedRollbackAsync(
+                        configuration,
+                        migration,
+                        intent,
+                        sourceResult.Credential,
+                        sourceMigration,
+                        targetMigration,
+                        keyResult.Key.Key,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            SyncProviderMigrationDecision targetTerminal =
+                await ResolveTerminalDecisionOnSessionAsync(
+                        targetMigration,
+                        configuration,
+                        intent,
+                        terminal,
+                        keyResult.Key.Key,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            EnsureTerminalDecisionMatchesAuthority(terminal, targetTerminal);
 
             return await CompleteLocalProviderMigrationAsync(
                     configuration,
@@ -1083,11 +1129,6 @@ public sealed partial class SyncService
                 "provider-migration-terminal");
         }
 
-        migration = await SaveProviderMigrationStateAsync(
-                migration,
-                SyncProviderMigrationState.RollingBack,
-                cancellationToken)
-            .ConfigureAwait(false);
         SyncMasterKeyOpenResult keyResult = await _keyService.OpenMasterKeyAsync(
                 configuration.SpaceId,
                 configuration.KeyVersion,
@@ -1143,15 +1184,16 @@ public sealed partial class SyncService
             {
                 if (intent is not null)
                 {
-                    SyncProviderMigrationDecision rollback = CreateDecision(
+                    SyncProviderMigrationDecision proposedRollback = CreateDecision(
                         intent,
                         SyncProviderMigrationMarkerKind.Rollback,
                         migration);
-                    await PutDecisionMarkerAsync(
+                    SyncProviderMigrationDecision terminal =
+                        await ResolveTerminalDecisionOnSessionAsync(
                             sourceMigration,
                             configuration,
                             intent,
-                            rollback,
+                            proposedRollback,
                             keyResult.Key.Key,
                             cancellationToken)
                         .ConfigureAwait(false);
@@ -1159,21 +1201,61 @@ public sealed partial class SyncService
                     {
                         try
                         {
-                            await PutDecisionMarkerAsync(
+                            SyncProviderMigrationDecision targetTerminal =
+                                await ResolveTerminalDecisionOnSessionAsync(
                                     targetMigration,
                                     configuration,
                                     intent,
-                                    rollback,
+                                    terminal,
                                     keyResult.Key.Key,
                                     cancellationToken)
                                 .ConfigureAwait(false);
+                            EnsureTerminalDecisionMatchesAuthority(terminal, targetTerminal);
                         }
                         catch (SyncPipelineException)
                         {
                             // 旧远端上的全局回滚标记仍是权威，失败目标不阻止恢复旧端。
                         }
                     }
+
+                    if (terminal.Kind == SyncProviderMigrationMarkerKind.Completed)
+                    {
+                        EnsureCredentialAvailable(
+                            targetResult,
+                            "provider-migration-target-credential-unavailable");
+                        if (targetMigration is null)
+                        {
+                            throw new SyncPipelineException(
+                                SyncRemoteErrorCategory.Authentication,
+                                "provider-migration-target-credential-unavailable");
+                        }
+
+                        SyncProviderMigrationDecision targetCompleted =
+                            await ResolveTerminalDecisionOnSessionAsync(
+                                    targetMigration,
+                                    configuration,
+                                    intent,
+                                    terminal,
+                                    keyResult.Key.Key,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        EnsureTerminalDecisionMatchesAuthority(terminal, targetCompleted);
+                        return await FinalizeObservedCompletionAsync(
+                                configuration,
+                                migration,
+                                intent,
+                                targetResult.Credential!,
+                                keyResult.Key.Key,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
+
+                migration = await SaveProviderMigrationStateAsync(
+                        migration,
+                        SyncProviderMigrationState.RollingBack,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
                 SyncCredentialOperationStatus restored = await _credentialService
                     .RollbackMigrationSourceAsync(

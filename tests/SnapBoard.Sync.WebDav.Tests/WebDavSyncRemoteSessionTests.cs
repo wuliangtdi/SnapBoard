@@ -179,14 +179,13 @@ public sealed class WebDavSyncRemoteSessionTests
             requestBody = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.PreconditionFailed);
         });
-        byte[] encryptedMarker = "encrypted-ready-marker"u8.ToArray();
+        byte[] encryptedMarker = "encrypted-terminal-marker"u8.ToArray();
 
         SyncRemoteResult result = await session.PutProviderMigrationMarkerAsync(
             SpaceId,
             new SyncProviderMigrationMarkerAddress(
                 MigrationPlanId,
-                SyncProviderMigrationMarkerKind.Ready,
-                DeviceId),
+                SyncProviderMigrationMarkerKind.Terminal),
             encryptedMarker,
             CancellationToken.None);
 
@@ -197,8 +196,7 @@ public sealed class WebDavSyncRemoteSessionTests
         Assert.Equal(
             "https://dav.example.test/base/SnapBoard/v1/spaces/" +
             "11111111111111111111111111111111/migrations/" +
-            "55555555555555555555555555555555/ready/" +
-            "22222222222222222222222222222222.enc",
+            "55555555555555555555555555555555/terminal.enc",
             requestUri);
     }
 

@@ -732,9 +732,10 @@ public sealed class WebDavSyncRemoteSession :
                     address.Kind,
                     address.DeviceId.Value),
             SyncProviderMigrationMarkerKind.Freeze or
-                SyncProviderMigrationMarkerKind.Commit or
-                SyncProviderMigrationMarkerKind.Rollback or
-                SyncProviderMigrationMarkerKind.Completed when address.DeviceId is null =>
+            SyncProviderMigrationMarkerKind.Commit or
+            SyncProviderMigrationMarkerKind.Rollback or
+            SyncProviderMigrationMarkerKind.Completed or
+            SyncProviderMigrationMarkerKind.Terminal when address.DeviceId is null =>
                 SyncRemoteLayout.GetProviderMigrationDecisionPath(
                     spaceId,
                     address.PlanId,

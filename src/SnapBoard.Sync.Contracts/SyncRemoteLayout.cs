@@ -65,6 +65,7 @@ public static class SyncRemoteLayout
             SyncProviderMigrationMarkerKind.Commit => "commit.enc",
             SyncProviderMigrationMarkerKind.Rollback => "rollback.enc",
             SyncProviderMigrationMarkerKind.Completed => "completed.enc",
+            SyncProviderMigrationMarkerKind.Terminal => "terminal.enc",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
         return $"{GetProviderMigrationRoot(spaceId, planId)}/{objectName}";

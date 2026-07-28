@@ -132,5 +132,12 @@ public sealed class SyncJsonContextTests
                 planId,
                 SyncProviderMigrationMarkerKind.Ready,
                 deviceId));
+        Assert.Equal(
+            "SnapBoard/v1/spaces/11111111111111111111111111111111/migrations/" +
+            "44444444444444444444444444444444/terminal.enc",
+            SyncRemoteLayout.GetProviderMigrationDecisionPath(
+                spaceId,
+                planId,
+                SyncProviderMigrationMarkerKind.Terminal));
     }
 }

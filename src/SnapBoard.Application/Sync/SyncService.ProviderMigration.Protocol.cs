@@ -56,34 +56,20 @@ public sealed partial class SyncService
                     "provider-migration-epoch-reused");
             }
 
-            SyncProviderMigrationDecision? rollback = await ReadDecisionMarkerAsync(
-                    session,
-                    configuration,
-                    intent,
-                    SyncProviderMigrationMarkerKind.Rollback,
-                    masterKey,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            SyncProviderMigrationDecision? completed = await ReadDecisionMarkerAsync(
-                    session,
-                    configuration,
-                    intent,
-                    SyncProviderMigrationMarkerKind.Completed,
-                    masterKey,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (rollback is not null && completed is not null)
-            {
-                throw new SyncPipelineException(
-                    SyncRemoteErrorCategory.Protocol,
-                    "provider-migration-terminal-markers-conflict");
-            }
+            SyncProviderMigrationDecision? terminal =
+                await ReadResolvedTerminalDecisionAsync(
+                        session,
+                        configuration,
+                        intent,
+                        masterKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
             if (latest is null || intent.Epoch > latest.Epoch)
             {
                 latest = intent;
-                latestRolledBack = rollback is not null;
-                latestCompleted = completed is not null;
+                latestRolledBack = terminal?.Kind == SyncProviderMigrationMarkerKind.Rollback;
+                latestCompleted = terminal?.Kind == SyncProviderMigrationMarkerKind.Completed;
             }
         }
 
@@ -186,15 +172,31 @@ public sealed partial class SyncService
         }
     }
 
-    private async ValueTask<SyncProviderMigrationDecision?> ReadDecisionMarkerAsync(
+    private ValueTask<SyncProviderMigrationDecision?> ReadDecisionMarkerAsync(
         ISyncRemoteProviderMigrationSession session,
         SyncConfigurationSnapshot configuration,
         SyncProviderMigrationIntent intent,
         SyncProviderMigrationMarkerKind kind,
         ReadOnlyMemory<byte> masterKey,
+        CancellationToken cancellationToken) => ReadDecisionMarkerCoreAsync(
+            session,
+            configuration,
+            intent,
+            kind,
+            isTerminalMarker: false,
+            masterKey,
+            cancellationToken);
+
+    private async ValueTask<SyncProviderMigrationDecision?> ReadDecisionMarkerCoreAsync(
+        ISyncRemoteProviderMigrationSession session,
+        SyncConfigurationSnapshot configuration,
+        SyncProviderMigrationIntent intent,
+        SyncProviderMigrationMarkerKind addressKind,
+        bool isTerminalMarker,
+        ReadOnlyMemory<byte> masterKey,
         CancellationToken cancellationToken)
     {
-        SyncProviderMigrationMarkerAddress address = new(intent.PlanId, kind);
+        SyncProviderMigrationMarkerAddress address = new(intent.PlanId, addressKind);
         SyncRemoteContentResult result = await session.GetProviderMigrationMarkerAsync(
                 configuration.SpaceId,
                 address,
@@ -230,7 +232,15 @@ public sealed partial class SyncService
                     plaintext,
                     SyncJsonContext.Default.SyncProviderMigrationDecision,
                     "provider-migration-decision-payload-invalid");
-                ValidateDecision(decision, intent, kind);
+                if (isTerminalMarker)
+                {
+                    ValidateTerminalDecision(decision, intent);
+                }
+                else
+                {
+                    ValidateDecision(decision, intent, addressKind);
+                }
+
                 return decision;
             }
             finally
@@ -238,6 +248,61 @@ public sealed partial class SyncService
                 CryptographicOperations.ZeroMemory(plaintext);
             }
         }
+    }
+
+    private async ValueTask<SyncProviderMigrationDecision?> ReadResolvedTerminalDecisionAsync(
+        ISyncRemoteProviderMigrationSession session,
+        SyncConfigurationSnapshot configuration,
+        SyncProviderMigrationIntent intent,
+        ReadOnlyMemory<byte> masterKey,
+        CancellationToken cancellationToken)
+    {
+        SyncProviderMigrationDecision? terminal = await ReadDecisionMarkerCoreAsync(
+                session,
+                configuration,
+                intent,
+                SyncProviderMigrationMarkerKind.Terminal,
+                isTerminalMarker: true,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        SyncProviderMigrationDecision? rollback = await ReadDecisionMarkerAsync(
+                session,
+                configuration,
+                intent,
+                SyncProviderMigrationMarkerKind.Rollback,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        SyncProviderMigrationDecision? completed = await ReadDecisionMarkerAsync(
+                session,
+                configuration,
+                intent,
+                SyncProviderMigrationMarkerKind.Completed,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (rollback is not null && completed is not null)
+        {
+            throw new SyncPipelineException(
+                SyncRemoteErrorCategory.Protocol,
+                "provider-migration-terminal-markers-conflict");
+        }
+
+        SyncProviderMigrationDecision? alias = rollback ?? completed;
+        if (terminal is null)
+        {
+            return alias;
+        }
+
+        if (alias is not null && !DecisionsEqual(terminal, alias))
+        {
+            throw new SyncPipelineException(
+                SyncRemoteErrorCategory.Protocol,
+                "provider-migration-terminal-markers-conflict");
+        }
+
+        return terminal;
     }
 
     private async ValueTask<SyncProviderMigrationDeviceMarker?> ReadDeviceMarkerAsync(
@@ -547,6 +612,161 @@ public sealed partial class SyncService
         {
             CryptographicOperations.ZeroMemory(encrypted);
             CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    private async ValueTask<SyncProviderMigrationDecision>
+        ResolveTerminalDecisionOnSessionAsync(
+            ISyncRemoteProviderMigrationSession session,
+            SyncConfigurationSnapshot configuration,
+            SyncProviderMigrationIntent intent,
+            SyncProviderMigrationDecision proposed,
+            ReadOnlyMemory<byte> masterKey,
+            CancellationToken cancellationToken)
+    {
+        SyncProviderMigrationDecision? resolved = await ReadResolvedTerminalDecisionAsync(
+                session,
+                configuration,
+                intent,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        SyncProviderMigrationDecision candidate = resolved ?? proposed;
+        SyncProviderMigrationDecision winner = await PutTerminalDecisionMarkerAsync(
+                session,
+                configuration,
+                intent,
+                candidate,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        SyncProviderMigrationMarkerKind oppositeKind = winner.Kind ==
+            SyncProviderMigrationMarkerKind.Rollback
+                ? SyncProviderMigrationMarkerKind.Completed
+                : SyncProviderMigrationMarkerKind.Rollback;
+        if (await ReadDecisionMarkerAsync(
+                session,
+                configuration,
+                intent,
+                oppositeKind,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false) is not null)
+        {
+            throw new SyncPipelineException(
+                SyncRemoteErrorCategory.Protocol,
+                "provider-migration-terminal-markers-conflict");
+        }
+
+        await PutDecisionMarkerAsync(
+                session,
+                configuration,
+                intent,
+                winner,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return winner;
+    }
+
+    private async ValueTask<SyncProviderMigrationDecision> PutTerminalDecisionMarkerAsync(
+        ISyncRemoteProviderMigrationSession session,
+        SyncConfigurationSnapshot configuration,
+        SyncProviderMigrationIntent intent,
+        SyncProviderMigrationDecision decision,
+        ReadOnlyMemory<byte> masterKey,
+        CancellationToken cancellationToken)
+    {
+        ValidateTerminalDecision(decision, intent);
+        SyncProviderMigrationDecision? existing = await ReadDecisionMarkerCoreAsync(
+                session,
+                configuration,
+                intent,
+                SyncProviderMigrationMarkerKind.Terminal,
+                isTerminalMarker: true,
+                masterKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            EnsureCompatibleTerminalDecision(existing, decision);
+            return existing;
+        }
+
+        byte[] plaintext = JsonSerializer.SerializeToUtf8Bytes(
+            decision,
+            SyncJsonContext.Default.SyncProviderMigrationDecision);
+        byte[] encrypted = _protector.Encrypt(
+            plaintext,
+            CreateMigrationDescriptor(
+                configuration,
+                intent.PlanId,
+                intent.Epoch,
+                intent.InitiatorDeviceId),
+            masterKey.Span);
+        try
+        {
+            SyncRemoteResult put = await session.PutProviderMigrationMarkerAsync(
+                    configuration.SpaceId,
+                    new SyncProviderMigrationMarkerAddress(
+                        intent.PlanId,
+                        SyncProviderMigrationMarkerKind.Terminal),
+                    encrypted,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            ThrowIfRemoteFailure(put, "provider-migration-terminal-write-failed");
+            if (!put.AlreadyExisted)
+            {
+                return decision;
+            }
+
+            existing = await ReadDecisionMarkerCoreAsync(
+                    session,
+                    configuration,
+                    intent,
+                    SyncProviderMigrationMarkerKind.Terminal,
+                    isTerminalMarker: true,
+                    masterKey,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (existing is null)
+            {
+                throw new SyncPipelineException(
+                    SyncRemoteErrorCategory.Protocol,
+                    "provider-migration-terminal-missing-after-conflict");
+            }
+
+            EnsureCompatibleTerminalDecision(existing, decision);
+            return existing;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(encrypted);
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    private static void EnsureCompatibleTerminalDecision(
+        SyncProviderMigrationDecision existing,
+        SyncProviderMigrationDecision proposed)
+    {
+        if (existing.Kind == proposed.Kind && !DecisionsEqual(existing, proposed))
+        {
+            throw new SyncPipelineException(
+                SyncRemoteErrorCategory.Protocol,
+                "provider-migration-terminal-decision-conflict");
+        }
+    }
+
+    private static void EnsureTerminalDecisionMatchesAuthority(
+        SyncProviderMigrationDecision authoritative,
+        SyncProviderMigrationDecision mirrored)
+    {
+        if (!DecisionsEqual(authoritative, mirrored))
+        {
+            throw new SyncPipelineException(
+                SyncRemoteErrorCategory.Protocol,
+                "provider-migration-terminal-markers-conflict");
         }
     }
 
@@ -1369,6 +1589,21 @@ public sealed partial class SyncService
                 SyncRemoteErrorCategory.Protocol,
                 "provider-migration-decision-invalid");
         }
+    }
+
+    private static void ValidateTerminalDecision(
+        SyncProviderMigrationDecision decision,
+        SyncProviderMigrationIntent intent)
+    {
+        if (decision.Kind is not SyncProviderMigrationMarkerKind.Rollback and
+            not SyncProviderMigrationMarkerKind.Completed)
+        {
+            throw new SyncPipelineException(
+                SyncRemoteErrorCategory.Protocol,
+                "provider-migration-terminal-decision-invalid");
+        }
+
+        ValidateDecision(decision, intent, decision.Kind);
     }
 
     private static void ValidateStoredMigrationAgainstIntent(

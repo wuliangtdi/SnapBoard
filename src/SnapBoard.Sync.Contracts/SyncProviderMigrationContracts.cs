@@ -16,6 +16,7 @@ public enum SyncProviderMigrationMarkerKind
     Rollback = 6,
     RolledBack = 7,
     Completed = 8,
+    Terminal = 9,
 }
 
 public sealed record SyncProviderMigrationCheckpoint(

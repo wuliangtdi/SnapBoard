@@ -529,17 +529,42 @@ public sealed class SyncProviderMigrationEndToEndTests
                 CancellationToken.None);
             Assert.Equal(SyncProviderMigrationStatus.InvalidState, duplicate.Status);
 
-            remote.FailNextMarkerWrite(target, SyncProviderMigrationMarkerKind.Completed);
-            SyncProviderMigrationResult interruptedCompletion = await service
+            remote.FailNextMarkerWrite(target, SyncProviderMigrationMarkerKind.Terminal);
+            SyncProviderMigrationResult interruptedTerminal = await service
                 .ContinueProviderMigrationAsync(planId, CancellationToken.None);
             Assert.Equal(
                 SyncProviderMigrationStatus.RemoteUnavailable,
-                interruptedCompletion.Status);
+                interruptedTerminal.Status);
+            Assert.True(remote.HasMarker(
+                source,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Terminal));
             Assert.True(remote.HasMarker(
                 source,
                 created.SpaceId.Value,
                 planId,
                 SyncProviderMigrationMarkerKind.Completed));
+            Assert.False(remote.HasMarker(
+                target,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Terminal));
+            Assert.False(remote.HasMarker(
+                target,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Completed));
+
+            remote.FailNextMarkerWrite(target, SyncProviderMigrationMarkerKind.Completed);
+            SyncProviderMigrationResult interruptedAlias = await service
+                .ContinueProviderMigrationAsync(planId, CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.RemoteUnavailable, interruptedAlias.Status);
+            Assert.True(remote.HasMarker(
+                target,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Terminal));
             Assert.False(remote.HasMarker(
                 target,
                 created.SpaceId.Value,
@@ -1041,6 +1066,152 @@ public sealed class SyncProviderMigrationEndToEndTests
                 created.SpaceId.Value,
                 planId,
                 SyncProviderMigrationMarkerKind.Rollback));
+        }
+        finally
+        {
+            if (recoveryEnvelope is not null)
+            {
+                CryptographicOperations.ZeroMemory(recoveryEnvelope);
+            }
+
+            CryptographicOperations.ZeroMemory(firstSourcePassword);
+            CryptographicOperations.ZeroMemory(secondSourcePassword);
+            CryptographicOperations.ZeroMemory(firstTargetPassword);
+            CryptographicOperations.ZeroMemory(secondTargetPassword);
+            CryptographicOperations.ZeroMemory(recoveryCode);
+        }
+    }
+
+    [Fact]
+    public async Task CompletedTerminalDecisionDefeatsStaleParticipantRollback()
+    {
+        await using HistoryStoreTestContext firstContext =
+            await HistoryStoreTestContext.CreateAsync();
+        await using HistoryStoreTestContext secondContext =
+            await HistoryStoreTestContext.CreateAsync();
+        using StatefulRemoteHub remote = new();
+        using NamedSecretStore firstSecrets = new();
+        using NamedSecretStore secondSecrets = new();
+        using PlatformSyncCredentialService firstCredentials = new(firstSecrets);
+        using PlatformSyncCredentialService secondCredentials = new(secondSecrets);
+        await using SyncService first = CreateService(
+            firstContext,
+            firstSecrets,
+            firstCredentials,
+            remote);
+        await using SyncService second = CreateService(
+            secondContext,
+            secondSecrets,
+            secondCredentials,
+            remote);
+        byte[] firstSourcePassword = "first-source-password"u8.ToArray();
+        byte[] secondSourcePassword = "second-source-password"u8.ToArray();
+        byte[] firstTargetPassword = "first-target-password"u8.ToArray();
+        byte[] secondTargetPassword = "second-target-password"u8.ToArray();
+        byte[] recoveryCode = "terminal-decision-recovery-code"u8.ToArray();
+        byte[]? recoveryEnvelope = null;
+        try
+        {
+            SyncRemoteConfiguration firstSource = SourceConfiguration("first-source-user");
+            SyncRemoteConfiguration secondSource = SourceConfiguration("second-source-user");
+            SyncRemoteConfiguration firstTarget = TargetConfiguration("first-target-user");
+            SyncRemoteConfiguration secondTarget = TargetConfiguration("second-target-user");
+            SyncSetupResult created = await first.CreateSpaceAsync(
+                new SyncSetupRequest(firstSource),
+                firstSourcePassword,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, created.Status);
+            recoveryEnvelope = await File.ReadAllBytesAsync(created.RecoveryMaterialPath!);
+            SyncSetupResult joined = await second.JoinSpaceAsync(
+                created.SpaceId!.Value,
+                keyVersion: 1,
+                new SyncSetupRequest(secondSource),
+                secondSourcePassword,
+                recoveryEnvelope,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, joined.Status);
+            await SynchronizeUntilConvergedAsync(first, second);
+
+            SyncProviderMigrationResult started = await first.StartProviderMigrationAsync(
+                new SyncProviderMigrationRequest(firstTarget),
+                firstTargetPassword,
+                CancellationToken.None);
+            Guid planId = Assert.IsType<Guid>(started.Snapshot.PlanId);
+            Assert.Equal(
+                SyncServiceState.Error,
+                (await second.SynchronizeNowAsync(CancellationToken.None)).State);
+            SyncProviderMigrationResult prepared = await second
+                .ProvideProviderMigrationCredentialsAsync(
+                    planId,
+                    new SyncProviderMigrationRequest(secondTarget),
+                    secondTargetPassword,
+                    CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.WaitingForDevices, prepared.Status);
+            Assert.Equal(
+                SyncProviderMigrationStatus.WaitingForDevices,
+                (await first.ContinueProviderMigrationAsync(
+                    planId,
+                    CancellationToken.None)).Status);
+            SyncProviderMigrationResult participantCommitted = await second
+                .ContinueProviderMigrationAsync(planId, CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.WaitingForDevices, participantCommitted.Status);
+            Assert.Equal(
+                SyncProviderMigrationState.WaitingForDeviceCommits,
+                participantCommitted.Snapshot.State);
+            SyncProviderMigrationResult coordinatorCompleted = await first
+                .ContinueProviderMigrationAsync(planId, CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.Success, coordinatorCompleted.Status);
+            Assert.Equal(
+                SyncProviderMigrationState.Completed,
+                coordinatorCompleted.Snapshot.State);
+
+            SyncProviderMigrationResult staleRollback = await second
+                .CancelOrRollbackProviderMigrationAsync(planId, CancellationToken.None);
+
+            Assert.Equal(SyncProviderMigrationStatus.Success, staleRollback.Status);
+            Assert.Equal(SyncProviderMigrationState.Completed, staleRollback.Snapshot.State);
+            Assert.True(remote.HasMarker(
+                firstSource,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Terminal));
+            Assert.True(remote.HasMarker(
+                firstSource,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Completed));
+            Assert.True(remote.HasMarker(
+                firstTarget,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Terminal));
+            Assert.True(remote.HasMarker(
+                firstTarget,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Completed));
+            Assert.False(remote.HasMarker(
+                firstSource,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Rollback));
+            Assert.False(remote.HasMarker(
+                firstTarget,
+                created.SpaceId.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Rollback));
+            using SyncCredentialLease activeTarget = Assert.IsType<SyncCredentialLease>(
+                (await secondCredentials.OpenAsync(
+                    created.SpaceId.Value,
+                    CancellationToken.None)).Credential);
+            Assert.Equal(secondTarget.Endpoint, activeTarget.RemoteConfiguration.Endpoint);
+            Assert.Equal(secondTarget.Username, activeTarget.RemoteConfiguration.Username);
+            Assert.False(secondSecrets.Contains(
+                $"sync/webdav/{created.SpaceId.Value:N}/migration/{planId:N}/target"));
+            Assert.True(secondSecrets.Contains(
+                $"sync/webdav/{created.SpaceId.Value:N}/migration/{planId:N}/source"));
         }
         finally
         {
