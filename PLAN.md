@@ -622,7 +622,7 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 - [x] 实现记录类型与历史保留设置；配置作为加密事件逐键 LWW 同步，默认全部记录且不自动清理。
 - [x] 实现 WebDAV 后台检查频率设置；未设置时默认 5 分钟，修改后运行时生效并作为加密设置跨设备同步。
 - [x] 实现更换 WebDAV 服务器的迁移向导：共享状态机暂停多设备写入，完整镜像并逐项验证原空间密文对象，保留空间/设备身份与本地 Checkpoint，并由每台设备通过系统安全存储原子更新本机凭据。
-- [~] 已覆盖重试、乱序、重复、序号缺口、双设备离线收敛、Tombstone 及服务商迁移的镜像中断、commit 中断、部分设备提交、回滚和故障分类；正式跨系统 App 离线矩阵待完成。
+- [~] 已覆盖重试、乱序、重复、序号缺口、双设备离线收敛、Tombstone 及服务商迁移的镜像中断后进程级重建续传、commit 中断、部分设备提交、旧 epoch 重放、回滚和故障分类；HTTP 507 配额映射与不可信 ETag 降级已有协议测试，正式跨系统 App 离线矩阵待完成。
 - [~] Apache 2.4.62 标准 WebDAV 双端点、双账号迁移已通过；Nextcloud 与 Synology 兼容性矩阵待完成。
 - [x] 默认只同步文本、HTML、RTF 和受限大小图片；文件列表仅保留无本地路径的引用占位，不上传文件本体。
 
@@ -662,7 +662,7 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [~] 验证 Windows 与 macOS 格式映射和同步互操作：共享固定算法、恢复材料、同步收敛及服务商迁移状态机矩阵已在 macOS 运行；正式 Windows 与 macOS 应用双机互操作及双向迁移尚未执行。
 - [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复和单显示器窗口重开已实测；多 Space、多显示器、Retina 和全屏应用待验收。
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
-- [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
+- [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写，macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
 - [ ] 验证 Intel 与 Apple Silicon。
 - [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：服务商迁移构建的 `osx-arm64` 主程序与独立迁移器均为 arm64 Mach-O，架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及原生后台启动/退出均通过；0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。`osx-x64` 待 Intel 或匹配 Runner 验证。
 

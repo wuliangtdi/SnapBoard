@@ -57,8 +57,8 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | macOS arm64 共 299 项：279 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 91/91、WebDAV 35/35、macOS 48/48、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
-| macOS 存储与同步测试 | 通过 | macOS 原生项目 48/48 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实 Keychain 完整工作流、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
+| 全量自动测试 | 通过 | macOS arm64 共 303 项：283 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 92/92、WebDAV 38/38、macOS 48/48、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
+| macOS 存储与同步测试 | 通过 | macOS 原生项目 48/48 且无跳过；覆盖 APFS/权限/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
 | `osx-arm64` Native AOT | 本机通过 | 服务商迁移构建主程序 34,740,768 字节，迁移器 8,356,952 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，隔离 bootstrap 后台启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 37,527,552 字节、嵌套迁移器 4,512,768 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；此前 AOT 设置窗口启动冒烟通过，本次因旧构建正在运行未重复启动，Runner 待验证 |
 | `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
@@ -475,7 +475,39 @@ UI/AOT：
   - Developer ID、正式签名/公证、长期资源和 8 小时稳定性门槛不由本次共享功能验证外推为完成。
 ```
 
-## 17. 更新规则
+## 17. 2026-07-29 执行记录：WebDAV 迁移恢复与发布证据收口
+
+```text
+日期：2026-07-29
+阶段/任务：阶段 B 本机可验证门槛复核，补齐协调者重启、旧 epoch、配额/ETag 与明文泄漏证据
+状态：[x] 本机自动化、Apache、osx-arm64 AOT 和开发包链路通过；[~] 正式双机、外部服务、Intel 与发布身份仍未完成
+主分支复核：开发前及本轮均已 fetch；main 与 origin/main 一致为 f6c1ffaa88f33d2b452f3707729f42388f6bb5f6
+分支：codex/webdav-provider-migration
+测试增强 Commit SHA: 007e4e2e6342463cdbc96482365a985870537429（test(sync): strengthen provider migration recovery gates）
+新增证据：
+  - 双设备镜像在成功复制首个密文对象后注入失败，销毁并重建 SyncService；新实例从同一 SQLite 和安全凭据计划槽恢复 PlanId、阶段、对象数与字节进度，随后幂等完成并保持两端密文哈希一致。
+  - 完成 epoch 1 后，在当前权威远端注入使用合法空间密钥和新 PlanId 加密、但复用旧 epoch 的 intent；第二次迁移以 provider-migration-epoch-reused 拒绝，active credentials 保持当前权威端。
+  - WebDAV 507 Insufficient Storage 映射为可恢复 Transient，Application 现有 Transient 故障矩阵证明失败时不提交目标凭据；超过 256 字节的不可信 ETag 被降级为不可用，迁移正确性继续由认证标签、长度和密文字节 SHA-256 决定。
+  - 目标远端所有数据/控制对象扫描未出现用户名、密码、恢复码、剪贴板文本或 HTML 探针；两台设备的 SQLite、WAL、SHM 原始字节扫描未出现 endpoint、root、用户名、密码或恢复码。迁移表仍只保存指纹、epoch、水位、进度和稳定诊断码。
+自动验证：
+  - locked restore、Release build、format、git diff 检查和 NuGet 直接/传递漏洞审计通过；构建 0 警告、0 错误。
+  - 全量 303 项：283 项通过、20 项 Windows 原生测试按 macOS 平台跳过、0 项失败；Infrastructure 92/92、WebDAV 38/38、Desktop Headless 51/51、macOS 48/48、Application 10/10、Architecture 2/2。
+  - 服务商迁移端到端矩阵 19/19；其中 macOS 自带 Apache 2.4.62 双 loopback 端点、双账号真实用例在本轮全量测试中启用并通过。临时实例、测试凭据和数据已删除，18731/18732 无监听。
+  - 128 MiB 临时 APFSX 镜像经 diskutil 确认为可写 Case-sensitive APFS；以该卷作为 TMPDIR 运行 PathRelationUsesVolumeCaseAndFileIdentity 通过，MixedCase 与 mixedcase 判为 Unrelated。卷已卸载，镜像已删除。
+osx-arm64 开发包：
+  - 输出目录 artifacts/macos-provider-migration-final-20260729 受 .gitignore 排除，不进入仓库。
+  - 主程序 34,740,768 字节，SHA-256 C7133C6416271BC787437240EB5893712BC35E4C19424384AF59A0058AAE9B27；迁移器 8,356,952 字节，SHA-256 D4057FC268880D0223B917A5E220C8AC6A3BB0F4332EFE203B68B8056F9CC882。
+  - 两者均为 arm64 Mach-O；无 CoreCLR/hostfxr 和 helper DLL/deps/runtimeconfig，helper 无参数退出码 4。App 及嵌套原生文件 codesign strict/deep 验证通过。
+  - DMG 30,285,190 字节，SHA-256 968E9FF9791C0E58B2AAB1A667B3C60E260A32D99ED18D8719C208B9CD894E22，hdiutil CRC 验证通过；PKG 27,013,866 字节，SHA-256 DCBA4080FCE1041CAE72ABF2B70FFD388D3EDC18E65BC0A739FB94C29E55D568。
+  - 规范 /private/tmp 隔离 bootstrap 下，打包 App 后台启动、第二实例 --exit 和主实例退出均返回 0；经 /tmp 符号链接的路径按安全策略拒绝。
+  - 0 个 trim/AOT 分析告警；2 个已解释 clang module-cache 调试信息告警仍来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，未 suppression。
+限制：
+  - 当前 App 为 ad-hoc Hardened Runtime 签名，PKG 无签名，notary skipped，spctl rejected；Developer ID Application/Installer、notary/staple 和 Gatekeeper 接受未执行。
+  - osx-x64/Intel、正式 Windows <-> macOS 双向发起/离线恢复/回滚、两台正式 macOS App、Nextcloud、Synology、真实 TLS 固定与真实配额服务矩阵未执行。
+  - Retina、睡眠唤醒、网络恢复、多 Space/多显示器、完整手工迁移和 8 小时长稳仍按既有未完成项保留。
+```
+
+## 18. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。
