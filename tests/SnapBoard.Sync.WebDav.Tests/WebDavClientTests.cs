@@ -89,6 +89,35 @@ public sealed class WebDavClientTests
         Assert.Equal(321, resource.ContentLength);
     }
 
+    [Fact]
+    public async Task PropFindTreatsOverlongEtagAsUnavailable()
+    {
+        string collectionHref =
+            "/base/SnapBoard/v1/" + CollectionPath + "/";
+        string eventHref = collectionHref + EventName;
+        string overlongEtag = new('e', 257);
+        string xml = $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <d:multistatus xmlns:d="DAV:">
+              <d:response>
+                <d:href>{{eventHref}}</d:href>
+                <d:propstat><d:prop><d:resourcetype /><d:getetag>{{overlongEtag}}</d:getetag><d:getcontentlength>321</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
+              </d:response>
+            </d:multistatus>
+            """;
+        using WebDavClient client = CreateClient(_ => XmlResponse(xml));
+
+        WebDavListResult result = await client.ListAsync(
+            CollectionPath,
+            CancellationToken.None);
+
+        Assert.True(result.Result.IsSuccess);
+        WebDavResource resource = Assert.Single(result.Resources);
+        Assert.Equal(EventName, resource.ObjectName);
+        Assert.Null(resource.ETag);
+        Assert.Equal(321, resource.ContentLength);
+    }
+
     [Theory]
     [MemberData(nameof(UnsafePropFindResponses))]
     public async Task PropFindRejectsMaliciousXmlAndHref(string xml)
@@ -134,6 +163,7 @@ public sealed class WebDavClientTests
     [InlineData(423, WebDavErrorCategory.Locked)]
     [InlineData(429, WebDavErrorCategory.RateLimited)]
     [InlineData(503, WebDavErrorCategory.TransientServer)]
+    [InlineData(507, WebDavErrorCategory.TransientServer)]
     public async Task ClassifiesProtocolStatusCodes(
         int statusCode,
         WebDavErrorCategory expected)

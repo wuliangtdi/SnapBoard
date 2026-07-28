@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Infrastructure.Sync;
 using SnapBoard.Platform.Abstractions.Security;
 using SnapBoard.Sync.Contracts;
+using SnapBoard.Sync.Contracts.Serialization;
 using SnapBoard.Sync.WebDav;
 
 namespace SnapBoard.Infrastructure.Tests;
@@ -14,7 +16,7 @@ namespace SnapBoard.Infrastructure.Tests;
 public sealed class SyncProviderMigrationEndToEndTests
 {
     [Fact]
-    public async Task TwoDevicesMigrateCiphertextWithDistinctCredentialsAndResumeAfterFailure()
+    public async Task TwoDevicesMigrateCiphertextAndResumeAfterCoordinatorRestart()
     {
         await using HistoryStoreTestContext firstContext =
             await HistoryStoreTestContext.CreateAsync();
@@ -25,7 +27,7 @@ public sealed class SyncProviderMigrationEndToEndTests
         using NamedSecretStore secondSecrets = new();
         using PlatformSyncCredentialService firstCredentials = new(firstSecrets);
         using PlatformSyncCredentialService secondCredentials = new(secondSecrets);
-        await using SyncService first = CreateService(
+        SyncService first = CreateService(
             firstContext,
             firstSecrets,
             firstCredentials,
@@ -135,6 +137,19 @@ public sealed class SyncProviderMigrationEndToEndTests
                 interrupted.DiagnosticCode);
             Assert.True(remote.Snapshot(firstTarget, created.SpaceId.Value).ObjectCount >= 1);
 
+            await first.DisposeAsync();
+            first = CreateService(
+                firstContext,
+                firstSecrets,
+                firstCredentials,
+                remote);
+            SyncProviderMigrationSnapshot restored = await first.RefreshProviderMigrationAsync(
+                CancellationToken.None);
+            Assert.Equal(planId, restored.PlanId);
+            Assert.Equal(interrupted.Snapshot.State, restored.State);
+            Assert.Equal(interrupted.Snapshot.CompletedObjects, restored.CompletedObjects);
+            Assert.Equal(interrupted.Snapshot.CompletedBytes, restored.CompletedBytes);
+
             SyncProviderMigrationResult firstCommitted =
                 await first.ContinueProviderMigrationAsync(planId, CancellationToken.None);
             Assert.True(
@@ -213,10 +228,35 @@ public sealed class SyncProviderMigrationEndToEndTests
                 secondTarget.Username,
                 Encoding.UTF8.GetString(firstTargetPassword),
                 Encoding.UTF8.GetString(secondTargetPassword),
+                Encoding.UTF8.GetString(recoveryCode),
+                "provider migration blob",
+                Encoding.UTF8.GetString(html.AsSpan(0, 256)));
+            await AssertDatabaseFilesDoNotContainAsync(
+                firstContext.Paths.DatabasePath,
+                firstSource.Endpoint.AbsoluteUri,
+                firstSource.RemoteRoot,
+                firstSource.Username,
+                firstTarget.Endpoint.AbsoluteUri,
+                firstTarget.RemoteRoot,
+                firstTarget.Username,
+                Encoding.UTF8.GetString(firstSourcePassword),
+                Encoding.UTF8.GetString(firstTargetPassword),
+                Encoding.UTF8.GetString(recoveryCode));
+            await AssertDatabaseFilesDoNotContainAsync(
+                secondContext.Paths.DatabasePath,
+                secondSource.Endpoint.AbsoluteUri,
+                secondSource.RemoteRoot,
+                secondSource.Username,
+                secondTarget.Endpoint.AbsoluteUri,
+                secondTarget.RemoteRoot,
+                secondTarget.Username,
+                Encoding.UTF8.GetString(secondSourcePassword),
+                Encoding.UTF8.GetString(secondTargetPassword),
                 Encoding.UTF8.GetString(recoveryCode));
         }
         finally
         {
+            await first.DisposeAsync();
             if (recoveryEnvelope is not null)
             {
                 CryptographicOperations.ZeroMemory(recoveryEnvelope);
@@ -600,6 +640,151 @@ public sealed class SyncProviderMigrationEndToEndTests
         {
             CryptographicOperations.ZeroMemory(sourcePassword);
             CryptographicOperations.ZeroMemory(targetPassword);
+            CryptographicOperations.ZeroMemory(recoveryCode);
+        }
+    }
+
+    [Fact]
+    public async Task ReplayedOldEpochCannotStartASecondMigration()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        using StatefulRemoteHub remote = new();
+        using NamedSecretStore secrets = new();
+        using PlatformSyncCredentialService credentials = new(secrets);
+        await using SyncService service = CreateService(context, secrets, credentials, remote);
+        byte[] sourcePassword = "source-password"u8.ToArray();
+        byte[] targetPassword = "target-password"u8.ToArray();
+        byte[] nextTargetPassword = "next-target-password"u8.ToArray();
+        byte[] recoveryCode = "epoch-replay-recovery-code"u8.ToArray();
+        byte[]? originalEncryptedIntent = null;
+        byte[]? originalPlaintextIntent = null;
+        byte[]? replayedPlaintextIntent = null;
+        byte[]? replayedEncryptedIntent = null;
+        try
+        {
+            SyncRemoteConfiguration source = SourceConfiguration("source-user");
+            SyncRemoteConfiguration target = TargetConfiguration("target-user");
+            SyncRemoteConfiguration nextTarget = new(
+                new Uri("https://next.example.test/dav/"),
+                "SnapBoardNext",
+                "next-target-user",
+                new string('c', 64));
+            SyncSetupResult created = await service.CreateSpaceAsync(
+                new SyncSetupRequest(source),
+                sourcePassword,
+                recoveryCode,
+                CancellationToken.None);
+            Assert.Equal(SyncSetupStatus.Success, created.Status);
+            SyncProviderMigrationResult started = await service.StartProviderMigrationAsync(
+                new SyncProviderMigrationRequest(target),
+                targetPassword,
+                CancellationToken.None);
+            Guid planId = Assert.IsType<Guid>(started.Snapshot.PlanId);
+            SyncProviderMigrationResult completed = await service
+                .ContinueProviderMigrationAsync(planId, CancellationToken.None);
+            Assert.Equal(SyncProviderMigrationStatus.Success, completed.Status);
+
+            Guid replayedPlanId = Guid.NewGuid();
+            originalEncryptedIntent = remote.ReadMarker(
+                target,
+                created.SpaceId!.Value,
+                planId,
+                SyncProviderMigrationMarkerKind.Intent);
+            PlatformSyncKeyService keyService = new(
+                secrets,
+                new SyncRecoveryKdfParameters(
+                    MemoryKiB: 8 * 1024,
+                    Iterations: 2,
+                    Parallelism: 1));
+            SyncMasterKeyOpenResult key = await keyService.OpenMasterKeyAsync(
+                created.SpaceId.Value,
+                keyVersion: 1,
+                CancellationToken.None);
+            using (key.Key)
+            {
+                SyncObjectProtector protector = new();
+                originalPlaintextIntent = protector.Decrypt(
+                    originalEncryptedIntent,
+                    new SyncObjectDescriptor(
+                        SyncProtocol.CurrentVersion,
+                        created.SpaceId.Value,
+                        created.DeviceId!.Value,
+                        SyncObjectType.ProviderMigration,
+                        started.Snapshot.Epoch,
+                        planId.ToString("N"),
+                        KeyVersion: 1),
+                    key.Key!.Key.Span);
+                SyncProviderMigrationIntent originalIntent =
+                    Assert.IsType<SyncProviderMigrationIntent>(JsonSerializer.Deserialize(
+                        originalPlaintextIntent,
+                        SyncJsonContext.Default.SyncProviderMigrationIntent));
+                SyncProviderMigrationIntent replayedIntent = originalIntent with
+                {
+                    PlanId = replayedPlanId,
+                };
+                replayedPlaintextIntent = JsonSerializer.SerializeToUtf8Bytes(
+                    replayedIntent,
+                    SyncJsonContext.Default.SyncProviderMigrationIntent);
+                replayedEncryptedIntent = protector.Encrypt(
+                    replayedPlaintextIntent,
+                    new SyncObjectDescriptor(
+                        SyncProtocol.CurrentVersion,
+                        created.SpaceId.Value,
+                        created.DeviceId.Value,
+                        SyncObjectType.ProviderMigration,
+                        started.Snapshot.Epoch,
+                        replayedPlanId.ToString("N"),
+                        KeyVersion: 1),
+                    key.Key.Key.Span);
+            }
+
+            remote.SeedMarker(
+                target,
+                created.SpaceId.Value,
+                replayedPlanId,
+                SyncProviderMigrationMarkerKind.Intent,
+                replayedEncryptedIntent);
+
+            SyncProviderMigrationResult rejected = await service.StartProviderMigrationAsync(
+                new SyncProviderMigrationRequest(nextTarget),
+                nextTargetPassword,
+                CancellationToken.None);
+
+            Assert.Equal(SyncProviderMigrationStatus.RemoteUnavailable, rejected.Status);
+            Assert.Equal("provider-migration-epoch-reused", rejected.DiagnosticCode);
+            using SyncCredentialLease active = Assert.IsType<SyncCredentialLease>(
+                (await credentials.OpenAsync(
+                    created.SpaceId.Value,
+                    CancellationToken.None)).Credential);
+            Assert.Equal(target.Endpoint, active.RemoteConfiguration.Endpoint);
+            Assert.Equal(target.Username, active.RemoteConfiguration.Username);
+            Assert.Equal(targetPassword, active.Password.ToArray());
+        }
+        finally
+        {
+            if (originalEncryptedIntent is not null)
+            {
+                CryptographicOperations.ZeroMemory(originalEncryptedIntent);
+            }
+
+            if (originalPlaintextIntent is not null)
+            {
+                CryptographicOperations.ZeroMemory(originalPlaintextIntent);
+            }
+
+            if (replayedPlaintextIntent is not null)
+            {
+                CryptographicOperations.ZeroMemory(replayedPlaintextIntent);
+            }
+
+            if (replayedEncryptedIntent is not null)
+            {
+                CryptographicOperations.ZeroMemory(replayedEncryptedIntent);
+            }
+
+            CryptographicOperations.ZeroMemory(sourcePassword);
+            CryptographicOperations.ZeroMemory(targetPassword);
+            CryptographicOperations.ZeroMemory(nextTargetPassword);
             CryptographicOperations.ZeroMemory(recoveryCode);
         }
     }
@@ -1462,6 +1647,45 @@ public sealed class SyncProviderMigrationEndToEndTests
         throw new InvalidOperationException("The test devices did not converge.");
     }
 
+    private static async Task AssertDatabaseFilesDoNotContainAsync(
+        string databasePath,
+        params string[] forbidden)
+    {
+        foreach (string path in new[]
+                 {
+                     databasePath,
+                     $"{databasePath}-wal",
+                     $"{databasePath}-shm",
+                 })
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            byte[] content = await File.ReadAllBytesAsync(path);
+            try
+            {
+                foreach (string text in forbidden)
+                {
+                    byte[] probe = Encoding.UTF8.GetBytes(text);
+                    try
+                    {
+                        Assert.DoesNotContain(probe, content);
+                    }
+                    finally
+                    {
+                        CryptographicOperations.ZeroMemory(probe);
+                    }
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(content);
+            }
+        }
+    }
+
     private static SyncRemoteConfiguration SourceConfiguration(string username) => new(
         new Uri("https://source.example.test/dav/"),
         "SnapBoardSource",
@@ -1729,6 +1953,34 @@ public sealed class SyncProviderMigrationEndToEndTests
             }
         }
 
+        public byte[] ReadMarker(
+            SyncRemoteConfiguration configuration,
+            Guid spaceId,
+            Guid planId,
+            SyncProviderMigrationMarkerKind kind)
+        {
+            lock (_gate)
+            {
+                return GetState(GetIdentity(configuration)).Markers[
+                    (spaceId, planId, kind, null)].ToArray();
+            }
+        }
+
+        public void SeedMarker(
+            SyncRemoteConfiguration configuration,
+            Guid spaceId,
+            Guid planId,
+            SyncProviderMigrationMarkerKind kind,
+            ReadOnlySpan<byte> content)
+        {
+            lock (_gate)
+            {
+                RemoteState state = GetState(GetIdentity(configuration));
+                state.Markers.Add((spaceId, planId, kind, null), content.ToArray());
+                state.Plans.Add((spaceId, planId));
+            }
+        }
+
         public void AssertDoesNotContain(
             SyncRemoteConfiguration configuration,
             params string[] forbidden)
@@ -1740,7 +1992,15 @@ public sealed class SyncProviderMigrationEndToEndTests
                 {
                     foreach (string text in forbidden)
                     {
-                        Assert.DoesNotContain(Encoding.UTF8.GetBytes(text), value);
+                        byte[] probe = Encoding.UTF8.GetBytes(text);
+                        try
+                        {
+                            Assert.DoesNotContain(probe, value);
+                        }
+                        finally
+                        {
+                            CryptographicOperations.ZeroMemory(probe);
+                        }
                     }
                 }
             }

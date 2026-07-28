@@ -201,6 +201,24 @@ public sealed class WebDavSyncRemoteSessionTests
     }
 
     [Fact]
+    public async Task ProviderMigrationQuotaFailureMapsToTransientError()
+    {
+        await using WebDavSyncRemoteSession session = CreateSession(
+            _ => new HttpResponseMessage((HttpStatusCode)507));
+
+        SyncRemoteResult result = await session.PutProviderMigrationMarkerAsync(
+            SpaceId,
+            new SyncProviderMigrationMarkerAddress(
+                MigrationPlanId,
+                SyncProviderMigrationMarkerKind.Intent),
+            "encrypted-intent"u8.ToArray(),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(SyncRemoteErrorCategory.Transient, result.ErrorCategory);
+    }
+
+    [Fact]
     public async Task MigrationPlansUseCanonicalCollectionsAndStableOrder()
     {
         const string collection =
