@@ -158,9 +158,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<ClipboardHistoryItemViewModel> VisibleItems { get; } = [];
 
-    public string ProductName { get; } = "SnapBoard";
-
-    public string ProductNameChinese { get; } = "闪剪";
+    public string ProductName { get; } = "闪剪";
 
     public string SearchWatermark { get; } = "搜索剪贴板记录";
 
@@ -1207,11 +1205,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 ClipboardItemType.Code,
                 MaterialIconKind.CodeTags,
                 MaterialIconKind.MicrosoftVisualStudioCode,
-                "Console.WriteLine(\"Hello, SnapBoard!\");",
-                "C# · 31 字符",
+                "Console.WriteLine(\"Hello, 闪剪!\");",
+                "C# · 32 字符",
                 "VS Code",
                 "今天 17:58",
-                "Console.WriteLine(\"Hello, SnapBoard!\");",
+                "Console.WriteLine(\"Hello, 闪剪!\");",
                 "C#",
                 "Program.cs",
                 "剪贴板历史"),

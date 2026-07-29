@@ -12,7 +12,7 @@
         ShowInTaskbar="True"
         Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="Manual"
-        Title="SnapBoard 快速粘贴">
+        Title="闪剪">
     <Grid RowDefinitions="64,*,52">
         <Border Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource DividerBrush}"

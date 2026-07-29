@@ -1,3 +1,4 @@
+using System.Reflection;
 using SnapBoard.Desktop.ViewModels;
 
 namespace SnapBoard.Desktop.HeadlessTests;
@@ -5,12 +6,23 @@ namespace SnapBoard.Desktop.HeadlessTests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public void DesktopAssemblyUsesChineseDisplayMetadataAndStableInternalName()
+    {
+        Assembly assembly = typeof(App).Assembly;
+
+        Assert.Equal("SnapBoard.Desktop", assembly.GetName().Name);
+        Assert.Equal("闪剪", assembly.GetCustomAttribute<AssemblyTitleAttribute>()?.Title);
+        Assert.Equal("闪剪", assembly.GetCustomAttribute<AssemblyProductAttribute>()?.Product);
+        Assert.Equal("闪剪", assembly.GetCustomAttribute<AssemblyDescriptionAttribute>()?.Description);
+    }
+
+    [Fact]
     public void NewViewModelStartsWithPopulatedCommandCenterState()
     {
         MainViewModel viewModel = new();
 
         Assert.Empty(viewModel.SearchText);
-        Assert.Equal("SnapBoard", viewModel.ProductName);
+        Assert.Equal("闪剪", viewModel.ProductName);
         Assert.Equal(10, viewModel.VisibleItems.Count);
         Assert.NotNull(viewModel.SelectedItem);
         Assert.True(viewModel.IsAllFilterSelected);

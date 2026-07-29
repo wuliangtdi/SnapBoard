@@ -122,7 +122,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
         }
 
         Hosts[_target] = new WeakReference<MacOSMenuBarService>(this);
-        nint menuTitle = ObjectiveC.CreateString("SnapBoard");
+        nint menuTitle = ObjectiveC.CreateString("闪剪");
         try
         {
             _menu = MacOSNativeMethods.SendIntPtrWithIntPtr(
@@ -137,7 +137,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
             ObjectiveC.Release(menuTitle);
         }
 
-        AddMenuItem("打开 SnapBoard", CommandShowMain);
+        AddMenuItem("打开闪剪", CommandShowMain);
         AddMenuItem("快速粘贴", CommandShowQuick);
         _pauseItem = AddMenuItem("暂停记录", CommandTogglePause);
         AddMenuItem("设置...", CommandShowSettings);
@@ -148,7 +148,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
             _menu,
             ObjectiveC.GetSelector("addItem:"),
             separator);
-        AddMenuItem("退出 SnapBoard", CommandExit);
+        AddMenuItem("退出闪剪", CommandExit);
 
         _statusBar = MacOSNativeMethods.SendIntPtr(
             ObjectiveC.GetRequiredClass("NSStatusBar"),
@@ -251,7 +251,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
                 ObjectiveC.GetSelector("setImage:"),
                 image);
 
-            nint toolTip = ObjectiveC.CreateString("SnapBoard - 闪剪");
+            nint toolTip = ObjectiveC.CreateString("闪剪");
             try
             {
                 MacOSNativeMethods.SendVoidWithIntPtr(

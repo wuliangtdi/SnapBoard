@@ -779,7 +779,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         ApplyAccessibilityState(result.State);
         if (result.State.IsRestrictedMode && result.ActionSucceeded)
         {
-            AccessibilityPermissionStatus = "授权尚未生效；启用 SnapBoard 后返回此页刷新";
+            AccessibilityPermissionStatus = "授权尚未生效；启用闪剪后返回此页刷新";
         }
     }
 
@@ -870,7 +870,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         {
             StorageStatus = $"迁移未启动，数据未切换（{exception.GetType().Name}）";
             StorageMigrationErrorMessage =
-                "启动迁移时发生错误。SnapBoard 没有关闭，仍在使用原数据目录；" +
+                "启动迁移时发生错误。闪剪没有关闭，仍在使用原数据目录；" +
                 "请重新选择目标目录后再试。";
             IsStorageBusy = false;
         }
@@ -1655,7 +1655,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
                 validation.ErrorCode == "target-not-empty" =>
                 "所选目录中已有文件或子目录；为避免覆盖现有内容，请选择一个空目录",
             StorageLocationValidationError.ExistingStorage =>
-                "所选目录属于另一份 SnapBoard 数据，现有内容不会被覆盖",
+                "所选目录属于另一份闪剪数据，现有内容不会被覆盖",
             StorageLocationValidationError.ProbeFailed => "目标目录无法可靠写入、刷盘或重命名",
             StorageLocationValidationError.Unavailable => "目标目录当前不可用",
             _ => "目标目录无效",

@@ -5,6 +5,9 @@
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64;osx-x64</RuntimeIdentifiers>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\snapboard.ico</ApplicationIcon>
+    <AssemblyTitle>闪剪</AssemblyTitle>
+    <Product>闪剪</Product>
+    <Description>闪剪</Description>
     <PublishAot>true</PublishAot>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>

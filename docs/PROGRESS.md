@@ -13,7 +13,7 @@
 | Phase 0 规划与决策 | 已完成 | 名称、MIT、三期平台、WebDAV 和同步范围已确认 |
 | Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
 | Phase 1.1 AOT/内存基线 | 进行中 | 最终历史构建三轮可见峰值 PWS 155.74/155.33/138.97 MiB，关闭窗口后为 103.32/110.13/94.82 MiB；Private Bytes 为 136.59/135.54/127.82 MiB，内存门槛未完成 |
-| Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现；托盘点击、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
+| Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现，用户可见应用名统一为“闪剪”；托盘点击、Windows 任务管理器实机显示、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
@@ -49,7 +49,7 @@
 - [ ] 在 Windows Runner 完成 `win-x64` Native AOT 发布。
 - [x] 在 Windows 11 实机启动 `win-x64` AOT 壳并记录冷启动、Private Working Set、Private Bytes 和句柄。
 - [ ] 完成 Ursa 与纯 Avalonia 的 A/B 基准，决定是否引入运行时依赖。
-- [~] 已从现有透明品牌图生成 Windows 多尺寸 `.ico` 和 macOS 标准 `.icns`，并接入 EXE/App Bundle、标题栏、Dock/Finder 与托盘/Template 状态图标；Developer ID 正式签名身份待配置。
+- [~] 已从现有透明品牌图生成 Windows 多尺寸 `.ico` 和 macOS 标准 `.icns`，并接入 EXE/App Bundle、标题栏、Dock/Finder 与托盘/Template 状态图标；用户可见名称及双平台产品元数据已统一为“闪剪”，Windows 任务管理器仍待实机复核，Developer ID 正式签名身份待配置。
 - [ ] 优化可见窗口内存，完成纯 Avalonia、Material Icons、Ursa 和最终壳的可重复 A/B 测量。
 
 ## 3. 已验证基线
@@ -648,7 +648,38 @@ osx-arm64 最终开发包：
   - 关闭本开发目标不改变这些条目的待验证状态，也不等同于 macOS 正式发布、跨设备产品验收或 PLAN.md 的最终发布退出条件通过。
 ```
 
-## 22. 更新规则
+## 22. 2026-07-29 执行记录：用户可见名称与 Windows 图标资源复核
+
+```text
+日期：2026-07-29
+阶段/任务：统一双平台用户可见应用名，并复核 Windows 可执行文件图标与产品资源
+状态：[x] 展示代码、产品元数据、自动测试、Headless 渲染和当前环境 PE 资源检查通过；[~] Windows Native AOT 最终 EXE 与任务管理器显示待实机验证
+开发基线：开发前已 fetch；main、origin/main 与 FETCH_HEAD 均为 f6c1ffaa88f33d2b452f3707729f42388f6bb5f6
+分支：codex/webdav-provider-migration（变更前 HEAD 78b2491111ebfa0880f011ff53ca53a15a16389c）
+完成内容：
+  - 主窗口、快速窗口和设置窗口的系统标题统一为“闪剪”；主界面及设置页品牌区不再显示英文标识，首次启动模拟记录也不再展示英文品牌。
+  - Windows 托盘菜单/提示、macOS 菜单栏菜单/提示、文件选择器和存储迁移提示统一使用“闪剪”。
+  - Desktop 的 AssemblyTitle、Product 和 Description 设为“闪剪”；macOS CFBundleDisplayName/CFBundleName 设为“闪剪”。
+  - 内部程序集名、SnapBoard.Desktop.exe、SnapBoard.app 内部可执行文件、根命名空间、Bundle ID、数据路径和协议标识保持不变；Windows 任务管理器“详细信息”页仍预期显示 SnapBoard.Desktop.exe。
+图标与名称资源验证：
+  - Windows 源图标 snapboard.ico 为 9 尺寸 ICO；Desktop 项目继续通过 ApplicationIcon 嵌入，不新增或替换品牌素材。
+  - 在 macOS 上交叉生成的 win-x64 PE GUI 产物保留 SnapBoard.Desktop.exe 文件名，并同时包含 RT_ICON、RT_GROUP_ICON、RT_VERSION 和 RT_MANIFEST。
+  - 供 Windows Native AOT 使用的托管 Win32 资源模块中 FileDescription=闪剪、ProductName=闪剪，且包含图标组；.NET 10 Native AOT 构建目标会将该模块作为 --win32resourcemodule 输入。
+  - macOS Info.plist 模板通过 plutil lint；最终 Windows Native AOT 产物仍必须在 Windows Runner/实机重新核对资源、Explorer 图标和任务管理器“进程”页名称。
+自动验证：
+  - Release build 0 警告、0 错误；Desktop Headless 52/52，通过主/快速/设置窗口标题、程序集显示元数据、内部程序集名和图标非空断言。
+  - 全量 308 项：287 项通过、20 项 Windows 原生测试及 1 项真实 WebDAV 测试按当前环境跳过、0 项失败。
+  - osx-arm64 Native AOT 主程序与迁移器均生成 arm64 Mach-O；0 个 trim/AOT 分析告警，仍只有 2 个既有且已解释的 .NET 10.0.10 Apple 静态库 clang module-cache 调试信息告警。
+  - 主窗口 Headless 实际渲染帧已检查，单行“闪剪”品牌区没有文字重叠、溢出或异常空白。
+性能说明：
+  - 本次只修改静态文案、程序集/Bundle 元数据和既有图标资源引用，没有新增依赖、后台任务、对象缓存或运行时热路径，因此未新增性能压测或内存采样。
+  - 既有内存、启动、10,000 次压力与 8 小时长稳门槛不因本次名称调整而改变；正式发布仍必须沿用当前性能验证清单。
+限制：
+  - 当前主机为 macOS，不能把交叉构建和资源检查表述为 Windows Native AOT 实机或任务管理器验收。
+  - Windows 默认“进程”页目标显示为“闪剪”；“详细信息”页按已确认方案继续显示内部文件名 SnapBoard.Desktop.exe。
+```
+
+## 23. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

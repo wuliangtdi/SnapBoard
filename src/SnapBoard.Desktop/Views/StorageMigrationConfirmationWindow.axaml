@@ -43,7 +43,7 @@
         <Grid Grid.Row="1"
               Margin="24,19,24,18"
               RowDefinitions="Auto,Auto,Auto,Auto">
-            <TextBlock Text="迁移会关闭 SnapBoard，将当前数据完整复制到新位置并校验。完成后应用会自动重新启动。"
+            <TextBlock Text="迁移会关闭闪剪，将当前数据完整复制到新位置并校验。完成后应用会自动重新启动。"
                        TextWrapping="Wrap" />
 
             <Border Grid.Row="1"
@@ -73,7 +73,7 @@
                        Margin="0,7,0,0"
                        FontSize="12"
                        Foreground="{DynamicResource SecondaryTextBrush}"
-                       Text="为保护已有文件，只能迁移到空目录；SnapBoard 不会覆盖目标目录中的其他数据。"
+                       Text="为保护已有文件，只能迁移到空目录；闪剪不会覆盖目标目录中的其他数据。"
                        TextWrapping="Wrap" />
         </Grid>
 

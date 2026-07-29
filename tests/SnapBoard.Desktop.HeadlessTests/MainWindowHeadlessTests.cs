@@ -27,6 +27,7 @@ public sealed class MainWindowHeadlessTests
 
             // 视觉基线与选定参考稿使用完全相同的画布，避免缩放掩盖间距问题。
             Assert.Equal(new Avalonia.Size(1487, 1058), window.ClientSize);
+            Assert.Equal("闪剪", window.Title);
             Assert.NotNull(window.Icon);
             Assert.NotNull(window.FindControl<TextBox>("SearchBox"));
             Assert.NotNull(window.FindControl<Button>("SettingsButton"));
@@ -128,6 +129,7 @@ public sealed class MainWindowHeadlessTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
 
+            Assert.Equal("闪剪", window.Title);
             Assert.NotNull(window.Icon);
             Assert.NotNull(window.FindControl<TextBox>("QuickSearchBox"));
             ListBox historyList = window.FindControl<ListBox>("QuickHistoryList")!;

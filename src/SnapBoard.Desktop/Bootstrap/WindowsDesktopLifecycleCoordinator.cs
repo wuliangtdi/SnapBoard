@@ -374,7 +374,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         try
         {
             NativeMenu menu = new();
-            NativeMenuItem showMain = new("打开 SnapBoard");
+            NativeMenuItem showMain = new("打开闪剪");
             showMain.Click += (_, _) => PostToUi(ShowMainWindow);
             NativeMenuItem showQuick = new("快速粘贴");
             showQuick.Click += (_, _) => PostToUi(ShowQuickWindow);
@@ -402,7 +402,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 Icon = new WindowIcon(iconStream),
                 IsVisible = true,
                 Menu = menu,
-                ToolTipText = "SnapBoard - 闪剪",
+                ToolTipText = "闪剪",
             };
             _trayIcon.Clicked += (_, _) => PostToUi(ShowMainWindow);
             _trayIcons = new TrayIcons { _trayIcon };

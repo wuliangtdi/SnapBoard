@@ -70,6 +70,7 @@ public sealed class SecondaryWindowHeadlessTests
                 @"C:\SnapBoardData\recovery\sync-space-11111111111111111111111111111111-v1.recovery";
 
             Assert.Equal(new Avalonia.Size(700, 720), window.ClientSize);
+            Assert.Equal("闪剪", window.Title);
             Assert.NotNull(window.Icon);
             Assert.NotNull(window.FindControl<Button>("HotKeyCaptureButton"));
             TextBox syncEndpoint = Assert.IsType<TextBox>(

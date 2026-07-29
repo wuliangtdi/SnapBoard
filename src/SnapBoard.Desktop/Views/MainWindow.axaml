@@ -17,7 +17,7 @@
         Background="{DynamicResource AppBackgroundBrush}"
         Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="CenterScreen"
-        Title="SnapBoard - 闪剪">
+        Title="闪剪">
 
     <Design.DataContext>
         <vm:MainViewModel />
@@ -36,14 +36,11 @@
                            Height="54"
                            Stretch="Uniform"
                            Source="/Assets/snapboard-logo.png" />
-                    <StackPanel VerticalAlignment="Center" Spacing="0">
+                    <StackPanel VerticalAlignment="Center">
                         <TextBlock FontSize="17"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource PrimaryTextBrush}"
                                    Text="{Binding ProductName}" />
-                        <TextBlock FontSize="12"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                   Text="{Binding ProductNameChinese}" />
                     </StackPanel>
                 </StackPanel>
 

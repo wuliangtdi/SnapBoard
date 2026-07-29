@@ -125,11 +125,11 @@ public partial class SettingsWindow : Window
         IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
-                Title = "选择 SnapBoard 同步恢复材料",
+                Title = "选择闪剪同步恢复材料",
                 AllowMultiple = false,
                 FileTypeFilter =
                 [
-                    new FilePickerFileType("SnapBoard 恢复材料")
+                    new FilePickerFileType("闪剪恢复材料")
                     {
                         Patterns = ["*.recovery"],
                     },
@@ -183,7 +183,7 @@ public partial class SettingsWindow : Window
         IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(
             new FolderPickerOpenOptions
             {
-                Title = "选择 SnapBoard 本地数据目录",
+                Title = "选择闪剪本地数据目录",
                 AllowMultiple = false,
             });
         if (folders.Count == 1)

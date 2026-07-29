@@ -67,7 +67,7 @@
                        Margin="0,11,0,0"
                        FontSize="12"
                        Foreground="{DynamicResource SecondaryTextBrush}"
-                       Text="SnapBoard 仍在使用原数据目录，程序没有关闭，也没有修改目标目录中的已有内容。"
+                       Text="闪剪仍在使用原数据目录，程序没有关闭，也没有修改目标目录中的已有内容。"
                        TextWrapping="Wrap" />
         </Grid>
 

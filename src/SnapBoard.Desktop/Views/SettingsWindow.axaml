@@ -12,7 +12,7 @@
         Background="{DynamicResource AppBackgroundBrush}"
         Icon="/Assets/snapboard-app-icon.png"
         WindowStartupLocation="CenterOwner"
-        Title="SnapBoard 设置">
+        Title="闪剪">
     <Grid RowDefinitions="64,*,60">
         <Border Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource DividerBrush}"
@@ -29,10 +29,10 @@
                             Spacing="1">
                     <TextBlock FontSize="17"
                                FontWeight="SemiBold"
-                               Text="SnapBoard 设置" />
+                               Text="闪剪" />
                     <TextBlock FontSize="12"
                                Foreground="{DynamicResource SecondaryTextBrush}"
-                               Text="闪剪" />
+                               Text="设置" />
                 </StackPanel>
                 <materialIcons:MaterialIcon Grid.Column="2"
                                             Width="21"
