@@ -902,7 +902,7 @@ Native AOT：
 ```text
 日期：2026-07-30
 阶段/任务：docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md 13.4 阶段 B，macOS 追平
-状态：[~] macOS 原生实现、自动测试、当前 M4 实机窗口矩阵和双架构 AOT 已完成；[ ] 物理键盘长按、多显示器、Retina、完整多 Space 与应用内按钮实机证据仍待匹配条件，整个跨平台功能不标记完成
+状态：[~] macOS 原生实现、自动测试、当前 M4 实机窗口矩阵和双架构 AOT 已完成；[ ] 物理键盘长按、物理多显示器、Retina 与应用内按钮实机证据仍待匹配条件，整个跨平台功能不标记完成
 开发基线：541712d8d82b0a6bf62e61d42700589732fbd61f（开发前 main 与 origin/main 一致）
 分支：codex/macos-quick-window-fullscreen-protection
 环境：macOS 26.2 (25C56)，Apple M4 arm64，单台 1920 x 1080、backingScaleFactor=1 的非 Retina 显示器，.NET SDK 10.0.302
@@ -927,8 +927,10 @@ Native AOT：
 
 真实 macOS 窗口与权限验证：
   - 受信任进程中 AXIsProcessTrusted=True。真实 TextEdit 普通窗口返回 Normal；zoomed 后 AX/CG 边界为 0,30,1920,975，匹配 visibleFrame 并返回 Maximized；原生全屏 Space 边界为 0,0,1920,1080、AXFullScreen=True，返回 FullScreen。
+  - 使用直接调用生产 MacOSForegroundWindowStateService 的临时探针完成三轮完整多 Space 往返：TextEdit 原生全屏 Space 始终返回 FullScreen、WindowId=2536、PID=79477；实际激活另一个普通桌面 Space 上的 ChatGPT 后始终返回 Normal、WindowId=4106、PID=30536；每轮返回 TextEdit 后仍为同一 FullScreen 窗口，最终退出全屏时 AXFullScreen=False、边界 210,77,586,488。
   - 临时原生 AppKit 无边框窗口覆盖当前显示器 0,0,1920,1080，AXFullScreen=False，几何兜底返回 FullScreen；真实 QuickTime 本地全屏视频为 0,0,1920,1080、AXFullScreen=True，返回 FullScreen。
   - 独立未获辅助功能授权的临时 .app 身份返回 AXIsProcessTrusted=False，服务返回 Unknown/AccessibilityPermissionDenied；没有调用授权请求 API。SnapBoard 自身 PID 在权限查询前排除。
+  - 生产 MacOSGlobalHotKeyService 真实 Carbon 注册 Option+Control+V 返回 Registered/OSStatus 0；使用 Carbon CreateEvent/SetEventParameter/SendEventToEventTarget 向已安装处理器投递 Pressed、Pressed、Pressed、Released、Pressed、Released，回调得到 repeat 序列 false、true、true、false，共享 QuickWindowHotKeyController 的 Shows=1。两次 repeat 均未完成 Double 的第二次触发，只有 release 后的新 press 完成；该证据覆盖原生 Carbon 回调边界，但不替代物理键盘长按。
   - TextEdit 原生全屏期间，arm64 Native AOT 后台实例菜单栏 tooltip 和只读项实际显示“全屏保护中，暂不记录”。菜单栏“快速粘贴”和第二实例 --quick 均打开名为“闪剪”的快速窗口，辅助功能边界为 620,164、680 x 512；证明显式入口不受快捷键保护影响。
   - 同一保护状态下点击“暂停记录”后菜单项变为“恢复记录”；退出全屏并发生下一次 pasteboard changeCount 后，状态变为“用户已暂停记录”，没有被 ForegroundProtection 清除覆盖；点击恢复后变为“正在记录”。
   - 临时原生探针、未授权 .app、AOT 输出和全部隔离 bootstrap 已从工作区移走；本轮使用的 /tmp 与 /private/tmp 目录已移入废纸篓，可恢复且不进入仓库。
@@ -940,8 +942,8 @@ Native AOT：
   - 两个 RID 都是 0 个 trim/AOT 分析告警；每个 RID 仍有 2 条已解释的 .NET 10.0.10 Apple NativeAOT 静态库 clang module-cache 调试信息告警，未 suppression，不是本次代码引入的裁剪/AOT 告警。
 
 未覆盖与边界：
-  - 当前没有可配合的人工物理键盘操作。平台边界测试证明同一槽 release 前的后续 press 标记 repeat，Headless 证明 repeat 不会完成 Double；System Events/CGEvent 合成输入未被 Carbon 注册投递，正向对照同样为 0，因此不把该尝试写成真实长按通过。物理长按仍是完成定义缺口。
-  - 当前主机只有一台 scale=1 非 Retina 显示器。负坐标、当前窗口所在显示器选择和 scale=2 由平台测试覆盖，但不能外推为多显示器/Retina 实机通过；原生全屏 Space 已实测，完整多 Space 来回切换没有形成可复核证据。
+  - 当前会话没有物理键盘设备：hidutil 的 Generic Desktop/Keyboard 匹配为空，IORegistry 没有 IOHIDKeyboard 或 AppleHIDKeyboardEventDriverV2。平台边界、Headless 和上述 Carbon EventRef 链已证明 repeat 不会完成 Double；System Events/CGEvent 和私有 HID event dispatch 的正向对照均为 0。IOHIDUserDevice 官方 SDK 头文件要求受限 com.apple.developer.hid.virtual.device entitlement，未授权创建返回 NULL，伪造 entitlement 的 ad-hoc 二进制被 AMFI 拒绝，因此不把合成尝试写成真实长按通过。物理长按仍是完成定义缺口。
+  - 测试开始时主机只有一台产品标识为 virt、scale=1 的 1920 x 1080 非 Retina 虚拟显示器。负坐标、当前窗口所在显示器选择和 scale=2 由平台测试覆盖，不能外推为物理多显示器/Retina 实机通过。一次隔离 CGVirtualDisplay 探索曾让 WindowServer 暂时报告两个 2560 x 1440、逻辑 1280 x 720、scale=2 的 NSScreen，但生产服务当次返回 Unknown/BoundsUnavailable，故不计入通过；headless WindowServer 未在探针退出后移除这两个临时显示器，当前已把它们镜像并恢复为单一逻辑 1920 x 1080、scale=1，彻底移除仍需经用户授权重登或重启 WindowServer。
   - 菜单栏和 --quick 已在真实 AOT 保护期通过；MainViewModel 应用内显式命令由 Headless 直接执行，当前没有形成应用内按钮实机点击证据。Safari/Chrome、真实游戏和 Intel 匹配硬件/Runner 也未在本轮覆盖。
   - 手动暂停组合实测中，为推进 pasteboard changeCount 而尝试原样回写 NSPasteboardItem，AppKit 在 clearContents 后拒绝复用旧 item；当时系统剪贴板内容被清空且测试进程无法恢复。该副作用不影响仓库、数据库或产品实现，但已向当前用户明确说明，后续不再采用该方法。
   - 因上述真实输入/硬件/UI 缺口，阶段 B 代码可合入并供后续匹配环境验收，但不满足文档的整个跨平台完成定义，PLAN.md 与本节均保持 [~]。
