@@ -17,6 +17,204 @@ namespace SnapBoard.Desktop.HeadlessTests;
 public sealed class MacOSDesktopLifecycleHeadlessTests
 {
     [AvaloniaFact]
+    public void StartupWithoutDoubleGestureRegistersOnlyPrimary()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: false);
+
+        context.Initialize();
+
+        Assert.Equal([GlobalHotKeySlot.Primary], context.HotKey.RegisteredSlots);
+    }
+
+    [AvaloniaFact]
+    public void GlobalProtectionSuppressesBothSlotsButExplicitRequestsAlwaysOpen()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+        context.Foreground.Result = Protected(ForegroundWindowState.FullScreen);
+
+        context.HotKey.Raise(GlobalHotKeySlot.Primary);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(context.Coordinator.HasQuickWindow);
+
+        context.Menu.RaiseShowQuick();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+
+        context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.CloseWindows);
+        Dispatcher.UIThread.RunJobs();
+        context.MainViewModel.OpenQuickWindowCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+
+        context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.CloseWindows);
+        Dispatcher.UIThread.RunJobs();
+        context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.ShowQuickWindow);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void MaximizedForegroundAllowsBothSlotsByDefault()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+        context.Foreground.Result = Protected(ForegroundWindowState.Maximized);
+
+        context.HotKey.Raise(GlobalHotKeySlot.Primary);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+
+        context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.CloseWindows);
+        Dispatcher.UIThread.RunJobs();
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void StrictScopeSuppressesBothSlotsForMaximizedForeground()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+        context.LocalSettings.Update(context.LocalSettings.Current with
+        {
+            ProtectionScope = ForegroundProtectionScope.FullScreenAndMaximized,
+        });
+        context.Foreground.Result = Protected(ForegroundWindowState.Maximized);
+
+        context.HotKey.Raise(GlobalHotKeySlot.Primary);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void EnteringProtectionCancelsPendingDoubleSequence()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        context.Foreground.Result = Protected(ForegroundWindowState.FullScreen);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(context.Coordinator.HasQuickWindow);
+
+        context.Foreground.Result = Normal();
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(context.Coordinator.HasQuickWindow);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void PrimaryAndCompleteDoubleSequenceUseTheSameSingleQuickWindowFlow()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+
+        context.HotKey.Raise(GlobalHotKeySlot.Primary);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+        context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.CloseWindows);
+        Dispatcher.UIThread.RunJobs();
+
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(context.Coordinator.HasQuickWindow);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void RepeatedCarbonPressesCannotCompleteDoubleSequence()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        context.HotKey.Raise(GlobalHotKeySlot.Double, isRepeat: true);
+        context.HotKey.Raise(GlobalHotKeySlot.Double, isRepeat: true);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void ManualPauseSurvivesForegroundProtectionAndMenuKeepsReasonsSeparate()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: false);
+        context.Initialize();
+
+        context.Capture.SetPauseReason(ClipboardCapturePauseReason.Manual, active: true);
+        context.Capture.SetPauseReason(
+            ClipboardCapturePauseReason.ForegroundProtection,
+            active: true);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Menu.LastPausedState);
+        Assert.True(context.Menu.LastForegroundProtectedState);
+
+        context.Capture.SetPauseReason(
+            ClipboardCapturePauseReason.ForegroundProtection,
+            active: false);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(context.Capture.IsManuallyPaused);
+        Assert.True(context.Menu.LastPausedState);
+        Assert.False(context.Menu.LastForegroundProtectedState);
+    }
+
+    [AvaloniaFact]
     public void MenuCommandsCloseReleaseAndRecreateEveryWindow()
     {
         if (!OperatingSystem.IsMacOS())
@@ -26,7 +224,14 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
 
         FakeDesktopLifetime desktop = new();
         FakeClipboardPort clipboard = new();
-        using ClipboardCaptureCoordinator capture = new(clipboard, clipboard);
+        FakeDesktopLocalSettingsService localSettings = new();
+        FakeForegroundWindowStateService foreground = new();
+        using ClipboardCaptureCoordinator capture = new(
+            clipboard,
+            clipboard,
+            captureService: null,
+            foreground,
+            localSettings);
         FakeGlobalHotKeyService hotKey = new();
         FakeAutoStartService autoStart = new();
         FakeAccessibilityPermissionService permission = new();
@@ -55,7 +260,10 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             storagePlatform,
             sync,
             historySettings,
-            systemEvents);
+            systemEvents,
+            applicationUpdateService: null,
+            foreground,
+            localSettings);
 
         try
         {
@@ -88,6 +296,8 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             Assert.True(settings.IsHistorySettingsSectionVisible);
             Assert.True(settings.IsSyncSectionVisible);
             Assert.True(settings.IsRestrictedMode);
+            Assert.True(settings.IsDoubleHotKeyAvailable);
+            Assert.True(settings.IsFullScreenProtectionAvailable);
             Assert.DoesNotContain("Windows", settings.HotKeyStatus, StringComparison.OrdinalIgnoreCase);
             Assert.True(coordinator.SettingsWindowHasOwner);
             Assert.Equal(1, historySettings.SubscriberCount);
@@ -112,6 +322,7 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             Dispatcher.UIThread.RunJobs();
             Assert.True(capture.IsPaused);
             Assert.True(menu.LastPausedState);
+            Assert.False(menu.LastForegroundProtectedState);
         }
         finally
         {
@@ -277,7 +488,9 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             barrier,
             platform,
             sync,
-            new FakeHistorySettingsService());
+            new FakeHistorySettingsService(),
+            foregroundWindowStateService: new FakeForegroundWindowStateService(),
+            localSettings: new FakeDesktopLocalSettingsService());
 
     private sealed class FakeStorageManagementService(List<string> operations) :
         IStorageManagementService
@@ -547,7 +760,7 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
     }
 
     [AvaloniaFact]
-    public void ConflictingPersistedHotKeyFallsBackToDefaultAtStartup()
+    public void ConflictingPersistedHotKeyIsNotReplacedAtStartup()
     {
         if (!OperatingSystem.IsMacOS())
         {
@@ -560,13 +773,24 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             GlobalHotKeyModifiers.NoRepeat,
             0,
             "Command+Option+A");
-        FakeGlobalHotKeyService hotKey = new(customGesture)
+        FakeGlobalHotKeyService hotKey = new()
         {
             FailNextRegistration = true,
         };
+        FakeDesktopLocalSettingsService localSettings = new();
+        localSettings.Update(localSettings.Current with
+        {
+            PrimaryHotKey = customGesture,
+        });
+        FakeForegroundWindowStateService foreground = new();
         FakeDesktopLifetime desktop = new();
         FakeClipboardPort clipboard = new();
-        using ClipboardCaptureCoordinator capture = new(clipboard, clipboard);
+        using ClipboardCaptureCoordinator capture = new(
+            clipboard,
+            clipboard,
+            captureService: null,
+            foreground,
+            localSettings);
         MainViewModel mainViewModel = new();
         MacOSDesktopLifecycleCoordinator coordinator = new(
             desktop,
@@ -579,21 +803,114 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
             new FakePlacementService(),
             new FakeMenuBarService(),
             capture,
-            null);
+            null,
+            foregroundWindowStateService: foreground,
+            localSettings: localSettings);
 
         try
         {
             coordinator.Initialize(DesktopStartupMode.Background);
 
             Assert.Equal(
-                [customGesture, GlobalHotKeyGesture.MacOSDefault],
+                [customGesture],
                 hotKey.RegistrationAttempts);
-            Assert.Equal(GlobalHotKeyGesture.MacOSDefault, hotKey.ConfiguredGesture);
-            Assert.Contains("已恢复默认快捷键", mainViewModel.StatusMessage, StringComparison.Ordinal);
+            Assert.Equal(customGesture, localSettings.Current.PrimaryHotKey);
+            Assert.Contains("已被占用", mainViewModel.StatusMessage, StringComparison.Ordinal);
         }
         finally
         {
             coordinator.Dispose();
+        }
+    }
+
+    private static ForegroundWindowStateResult Normal() => new(
+        ForegroundWindowState.Normal,
+        IsSnapBoard: false,
+        new ForegroundWindowIdentity(10, 20),
+        ForegroundWindowDiagnosticCode.None);
+
+    private static ForegroundWindowStateResult Protected(ForegroundWindowState state) => new(
+        state,
+        IsSnapBoard: false,
+        new ForegroundWindowIdentity(10, 20),
+        ForegroundWindowDiagnosticCode.None);
+
+    [SupportedOSPlatform("macos")]
+    private sealed class LifecycleContext : IDisposable
+    {
+        private readonly ClipboardCaptureCoordinator _capture;
+        private readonly FakeDesktopLifetime _desktop = new();
+        private int _disposed;
+
+        public LifecycleContext(bool configureDoubleGesture)
+        {
+            if (configureDoubleGesture)
+            {
+                LocalSettings.Update(LocalSettings.Current with
+                {
+                    DoubleHotKey = new GlobalHotKeyGesture(
+                        GlobalHotKeyModifiers.Control |
+                        GlobalHotKeyModifiers.Alt |
+                        GlobalHotKeyModifiers.NoRepeat,
+                        0x28,
+                        "Control+Option+K"),
+                });
+            }
+
+            _capture = new ClipboardCaptureCoordinator(
+                Clipboard,
+                Clipboard,
+                captureService: null,
+                Foreground,
+                LocalSettings);
+            Coordinator = new MacOSDesktopLifecycleCoordinator(
+                _desktop,
+                MainViewModel,
+                Clipboard,
+                Clipboard,
+                HotKey,
+                new FakeAutoStartService(),
+                new FakeAccessibilityPermissionService(),
+                new FakePlacementService(),
+                Menu,
+                _capture,
+                singleInstance: null,
+                foregroundWindowStateService: Foreground,
+                localSettings: LocalSettings);
+        }
+
+        public FakeClipboardPort Clipboard { get; } = new();
+
+        public ClipboardCaptureCoordinator Capture => _capture;
+
+        public MacOSDesktopLifecycleCoordinator Coordinator { get; }
+
+        public FakeForegroundWindowStateService Foreground { get; } = new();
+
+        public FakeGlobalHotKeyService HotKey { get; } = new();
+
+        public FakeDesktopLocalSettingsService LocalSettings { get; } = new();
+
+        public MainViewModel MainViewModel { get; } = new();
+
+        public FakeMenuBarService Menu { get; } = new();
+
+        public void Initialize()
+        {
+            Coordinator.Initialize(DesktopStartupMode.Background);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            Coordinator.Dispose();
+            Dispatcher.UIThread.RunJobs();
+            _capture.Dispose();
         }
     }
 
@@ -678,33 +995,38 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
 
     private sealed class FakePasteTarget : IAutomaticPasteTarget;
 
-    private sealed class FakeGlobalHotKeyService : IGlobalHotKeyService
+    private sealed class FakeGlobalHotKeyService :
+        IGlobalHotKeyService,
+        ITwoSlotGlobalHotKeyService
     {
-        public FakeGlobalHotKeyService()
+        private readonly Dictionary<GlobalHotKeySlot, GlobalHotKeyGesture?> _gestures = new()
         {
-        }
-
-        public FakeGlobalHotKeyService(GlobalHotKeyGesture configuredGesture)
-        {
-            ConfiguredGesture = configuredGesture;
-        }
+            [GlobalHotKeySlot.Primary] = null,
+            [GlobalHotKeySlot.Double] = null,
+        };
 
         public event EventHandler? Pressed;
 
-        public GlobalHotKeyGesture? CurrentGesture { get; private set; }
+        public event EventHandler<GlobalHotKeyTriggeredEventArgs>? Triggered;
 
-        public GlobalHotKeyGesture ConfiguredGesture { get; private set; } =
-            GlobalHotKeyGesture.MacOSDefault;
+        public GlobalHotKeyGesture? CurrentGesture => _gestures[GlobalHotKeySlot.Primary];
+
+        public GlobalHotKeyGesture ConfiguredGesture =>
+            _gestures[GlobalHotKeySlot.Primary] ?? GlobalHotKeyGesture.MacOSDefault;
 
         public GlobalHotKeyGesture DefaultGesture => GlobalHotKeyGesture.MacOSDefault;
 
         public string ModifierDisplayNames => "Command、Option、Control 或 Shift";
+
+        public TimeSpan DoubleTriggerInterval => TimeSpan.FromMilliseconds(400);
 
         public bool Unregistered { get; private set; }
 
         public bool FailNextRegistration { get; init; }
 
         public List<GlobalHotKeyGesture> RegistrationAttempts { get; } = [];
+
+        public List<GlobalHotKeySlot> RegisteredSlots { get; } = [];
 
         public GlobalHotKeyGestureCreationResult CreateGesture(
             GlobalHotKeyModifiers modifiers,
@@ -715,10 +1037,30 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
                 9,
                 "Command+Shift+V"));
 
+        public GlobalHotKeyGestureCreationResult CreateGesture(
+            GlobalHotKeySlot slot,
+            GlobalHotKeyModifiers modifiers,
+            string keyName) => CreateGesture(modifiers, keyName);
+
+        public GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot) =>
+            _gestures[slot];
+
+        public GlobalHotKeyGesture? GetConfiguredGesture(GlobalHotKeySlot slot) =>
+            _gestures[slot];
+
         public ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
+            GlobalHotKeyGesture gesture,
+            CancellationToken cancellationToken) => RegisterAsync(
+            GlobalHotKeySlot.Primary,
+            gesture,
+            cancellationToken);
+
+        public ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
+            GlobalHotKeySlot slot,
             GlobalHotKeyGesture gesture,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             RegistrationAttempts.Add(gesture);
             if (FailNextRegistration && RegistrationAttempts.Count == 1)
             {
@@ -727,22 +1069,67 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
                     -9878));
             }
 
-            CurrentGesture = gesture;
-            ConfiguredGesture = gesture;
+            _gestures[slot] = gesture;
+            RegisteredSlots.Add(slot);
+            return ValueTask.FromResult(new GlobalHotKeyRegistrationResult(
+                GlobalHotKeyRegistrationStatus.Registered));
+        }
+
+        public ValueTask<GlobalHotKeyRegistrationResult> ClearAsync(
+            GlobalHotKeySlot slot,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _gestures[slot] = null;
             return ValueTask.FromResult(new GlobalHotKeyRegistrationResult(
                 GlobalHotKeyRegistrationStatus.Registered));
         }
 
         public ValueTask UnregisterAsync(CancellationToken cancellationToken)
         {
-            CurrentGesture = null;
+            cancellationToken.ThrowIfCancellationRequested();
+            _gestures[GlobalHotKeySlot.Primary] = null;
+            _gestures[GlobalHotKeySlot.Double] = null;
             Unregistered = true;
             return ValueTask.CompletedTask;
         }
 
-        public void RaisePressed() => Pressed?.Invoke(this, EventArgs.Empty);
+        public void Raise(GlobalHotKeySlot slot, bool isRepeat = false)
+        {
+            Triggered?.Invoke(this, new GlobalHotKeyTriggeredEventArgs(slot, isRepeat));
+            if (slot == GlobalHotKeySlot.Primary && !isRepeat)
+            {
+                Pressed?.Invoke(this, EventArgs.Empty);
+            }
+        }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class FakeDesktopLocalSettingsService : IDesktopLocalSettingsService
+    {
+        public event EventHandler<DesktopLocalSettingsChangedEventArgs>? Changed;
+
+        public DesktopLocalSettings Current { get; private set; } =
+            DesktopLocalSettings.CreateDefaults(GlobalHotKeyGesture.MacOSDefault);
+
+        public DesktopLocalSettingsUpdateResult Update(DesktopLocalSettings settings)
+        {
+            Current = settings;
+            Changed?.Invoke(this, new DesktopLocalSettingsChangedEventArgs(settings));
+            return new DesktopLocalSettingsUpdateResult(Persisted: true);
+        }
+
+        public DesktopLocalSettingsUpdateResult Update(
+            Func<DesktopLocalSettings, DesktopLocalSettings> update) => Update(update(Current));
+    }
+
+    private sealed class FakeForegroundWindowStateService :
+        IPlatformForegroundWindowStateService
+    {
+        public ForegroundWindowStateResult Result { get; set; } = Normal();
+
+        public ForegroundWindowStateResult GetForegroundWindowState() => Result;
     }
 
     private sealed class FakeAutoStartService : IAutoStartService
@@ -828,11 +1215,25 @@ public sealed class MacOSDesktopLifecycleHeadlessTests
 
         public bool LastPausedState { get; private set; }
 
+        public bool LastForegroundProtectedState { get; private set; }
+
+        public bool LastInternallyPausedState { get; private set; }
+
         public bool Disposed { get; private set; }
 
         public void Initialize(bool recordingPaused) => LastPausedState = recordingPaused;
 
         public void SetRecordingPaused(bool paused) => LastPausedState = paused;
+
+        public void SetRecordingState(
+            bool manuallyPaused,
+            bool foregroundProtected,
+            bool internallyPaused)
+        {
+            LastPausedState = manuallyPaused;
+            LastForegroundProtectedState = foregroundProtected;
+            LastInternallyPausedState = internallyPaused;
+        }
 
         public void RaiseShowMain() => ShowMainWindowRequested?.Invoke(this, EventArgs.Empty);
 

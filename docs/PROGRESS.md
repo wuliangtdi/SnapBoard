@@ -897,7 +897,56 @@ Native AOT：
   - 本次没有实现或宣称 macOS 原生两槽快捷键、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
 ```
 
-## 30. 更新规则
+## 30. 2026-07-30 执行记录：macOS 快速窗口双击快捷键与全屏保护
+
+```text
+日期：2026-07-30
+阶段/任务：docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md 13.4 阶段 B，macOS 追平
+状态：[~] macOS 原生实现、自动测试、当前 M4 实机窗口矩阵和双架构 AOT 已完成；[ ] 物理键盘长按、多显示器、Retina、完整多 Space 与应用内按钮实机证据仍待匹配条件，整个跨平台功能不标记完成
+开发基线：541712d8d82b0a6bf62e61d42700589732fbd61f（开发前 main 与 origin/main 一致）
+分支：codex/macos-quick-window-fullscreen-protection
+环境：macOS 26.2 (25C56)，Apple M4 arm64，单台 1920 x 1080、backingScaleFactor=1 的非 Retina 显示器，.NET SDK 10.0.302
+
+实现内容：
+  - MacOSGlobalHotKeyService 实现 ITwoSlotGlobalHotKeyService，继续提供旧单槽接口兼容；读取 NSEvent.doubleClickInterval 并复用共享 QuickWindowHotKeyController/DoubleHotKeyPressStateMachine，没有新增 macOS 业务状态机。
+  - MacOSHotKeyRegistrar 使用签名固定且 ID=1/2 的 Primary/Double Carbon 注册，按来源发布 press；release 只维护对应槽 held 状态，后续未释放 press 标记为 repeat。冲突、重复组合、清除、先注册新键再释放旧键和失败回滚均由原生边界测试覆盖，只监听两个注册 ID，不使用全局键盘 Hook。
+  - MacOSDesktopLocalSettingsService 通过 NSUserDefaults 当前格式版本 1 整组保存 PrimaryHotKey、DoubleHotKey、ForegroundProtectionScope、DisableHotKeysWhenProtected 和 PauseClipboardCaptureWhenProtected；Primary 默认 Command+Shift+V，Double 默认空，范围默认仅全屏，两个保护开关默认开启。版本键最后提交；不读取、迁移或字段补救 GlobalHotKeyV1 及其他开发期表示。
+  - MacOSForegroundWindowStateService 通过 NSWorkspace 前台 PID、无弹窗 AXIsProcessTrusted、AX focused/main window 位置/尺寸/AXFullScreen/可用时的 AXZoomed、CGWindow 元数据及 NSScreen frame/visibleFrame 判定 Normal、Maximized、FullScreen、Unknown、Unavailable。使用点坐标和当前窗口最大交叠显示器，支持负坐标与 backingScaleFactor，不申请 Screen Recording，不读取窗口标题、游戏名、文档路径或剪贴板正文，并在权限/原生失败时 Unknown/Unavailable 默认放行。
+  - macOS 组合根注册同一份本机设置、两槽快捷键与前台服务；生命周期启动两槽，所有热键来源进入共享控制器，保护只拦截 Primary/Double。菜单栏、MainViewModel 显式命令和单实例 --quick 继续调用 ShowExplicitly。
+  - ClipboardCaptureCoordinator 在 IClipboardContentReader.ReadAsync 前查询同一前台保护服务；Manual、ForegroundProtection、StorageMigration、UpdateInstallation 继续使用独立位。菜单栏新增只读状态行和 tooltip，区分“用户已暂停记录”“全屏保护中，暂不记录”“内部维护中，暂不记录”。
+  - Windows 平台项目没有代码改动；整个解决方案和 Windows 平台测试保持通过。
+
+自动验证：
+  - git fetch/switch/pull/rev-parse 和功能分支创建按要求执行；基线精确为 541712d8d82b0a6bf62e61d42700589732fbd61f。
+  - dotnet restore SnapBoard.slnx --locked-mode 通过；dotnet format SnapBoard.slnx --no-restore 与 --verify-no-changes 通过；Release build 0 警告、0 错误。
+  - 全量 459 项：434 项通过、25 项按平台/外部服务条件跳过、0 项失败。分项目为 Application 17/17、Architecture 2/2、Sync.WebDav 38/38、Linux 1/1、Windows 77 通过/24 跳过、Domain 4/4、Update 16/16、Desktop Headless 102/102、Infrastructure 94 通过/1 跳过、macOS Platform 83/83。
+  - macOS Platform 覆盖两槽 ID/来源、冲突/清除/回滚、press/release repeat 标记、普通键与修饰键主键映射、NSUserDefaults 默认/当前格式/整组拒绝/旧键不读取、五态窗口分类、负坐标多显示器、scale=2、权限/原生失败及自身排除。
+  - Desktop Headless 覆盖 Primary/Double 时序、repeat 不能完成第二次、默认最大化放行/严格范围拦截、进入保护清理待定 Double、菜单/应用命令/--quick 显式放行、手动暂停与前台/内部原因组合；共享 ClipboardCaptureCoordinator 测试继续证明保护在 ReadAsync 前生效。
+  - git diff --check 通过；源代码审计未出现 AXTitle、kCGWindowName、CGRequestScreenCaptureAccess、CGPreflightScreenCaptureAccess、CGEventTap、键盘 Hook 或 Windows 平台文件差异。
+
+真实 macOS 窗口与权限验证：
+  - 受信任进程中 AXIsProcessTrusted=True。真实 TextEdit 普通窗口返回 Normal；zoomed 后 AX/CG 边界为 0,30,1920,975，匹配 visibleFrame 并返回 Maximized；原生全屏 Space 边界为 0,0,1920,1080、AXFullScreen=True，返回 FullScreen。
+  - 临时原生 AppKit 无边框窗口覆盖当前显示器 0,0,1920,1080，AXFullScreen=False，几何兜底返回 FullScreen；真实 QuickTime 本地全屏视频为 0,0,1920,1080、AXFullScreen=True，返回 FullScreen。
+  - 独立未获辅助功能授权的临时 .app 身份返回 AXIsProcessTrusted=False，服务返回 Unknown/AccessibilityPermissionDenied；没有调用授权请求 API。SnapBoard 自身 PID 在权限查询前排除。
+  - TextEdit 原生全屏期间，arm64 Native AOT 后台实例菜单栏 tooltip 和只读项实际显示“全屏保护中，暂不记录”。菜单栏“快速粘贴”和第二实例 --quick 均打开名为“闪剪”的快速窗口，辅助功能边界为 620,164、680 x 512；证明显式入口不受快捷键保护影响。
+  - 同一保护状态下点击“暂停记录”后菜单项变为“恢复记录”；退出全屏并发生下一次 pasteboard changeCount 后，状态变为“用户已暂停记录”，没有被 ForegroundProtection 清除覆盖；点击恢复后变为“正在记录”。
+  - 临时原生探针、未授权 .app、AOT 输出和全部隔离 bootstrap 已从工作区移走；本轮使用的 /tmp 与 /private/tmp 目录已移入废纸篓，可恢复且不进入仓库。
+
+Native AOT：
+  - osx-arm64 self-contained PublishAot 通过：SnapBoard.Desktop 36,169,776 字节，SHA-256 70708382D45B615D0A0D9779B0CEB2C1CDEEA8A59DCD03657E960C45F5B5CC06；SnapBoard.StorageMigrator 8,356,968 字节，SHA-256 92E43EAB7C4A70EB5B8609C43C9E289645B096E01AF8E3156BF34C838BD0A0C2。
+  - osx-x64 同机交叉 PublishAot 与 Rosetta 预检通过：SnapBoard.Desktop 37,178,376 字节，SHA-256 F7F5E4AE7E435A826D87E68229F9A371C2D15376DB01EACB58AA37D1D2D6B301；SnapBoard.StorageMigrator 8,554,488 字节，SHA-256 A687B6898CD49CF9D1E0AD9A2AC317A4FE378B743C1BCD6A4CA229C73FB5798C。
+  - scripts/macos/Verify-NativePublish.sh 对两个 RID 均通过：主程序/helper 分别为 arm64 与 x86_64 Mach-O，helper 无参数退出码 4；发布目录没有 CoreCLR/hostfxr 或 helper 的 dll/deps/runtimeconfig。两个 RID 的主程序均以私有 0700 bootstrap 冷启动，第二实例 --exit 与主实例退出均返回 0。
+  - 两个 RID 都是 0 个 trim/AOT 分析告警；每个 RID 仍有 2 条已解释的 .NET 10.0.10 Apple NativeAOT 静态库 clang module-cache 调试信息告警，未 suppression，不是本次代码引入的裁剪/AOT 告警。
+
+未覆盖与边界：
+  - 当前没有可配合的人工物理键盘操作。平台边界测试证明同一槽 release 前的后续 press 标记 repeat，Headless 证明 repeat 不会完成 Double；System Events/CGEvent 合成输入未被 Carbon 注册投递，正向对照同样为 0，因此不把该尝试写成真实长按通过。物理长按仍是完成定义缺口。
+  - 当前主机只有一台 scale=1 非 Retina 显示器。负坐标、当前窗口所在显示器选择和 scale=2 由平台测试覆盖，但不能外推为多显示器/Retina 实机通过；原生全屏 Space 已实测，完整多 Space 来回切换没有形成可复核证据。
+  - 菜单栏和 --quick 已在真实 AOT 保护期通过；MainViewModel 应用内显式命令由 Headless 直接执行，当前没有形成应用内按钮实机点击证据。Safari/Chrome、真实游戏和 Intel 匹配硬件/Runner 也未在本轮覆盖。
+  - 手动暂停组合实测中，为推进 pasteboard changeCount 而尝试原样回写 NSPasteboardItem，AppKit 在 clearContents 后拒绝复用旧 item；当时系统剪贴板内容被清空且测试进程无法恢复。该副作用不影响仓库、数据库或产品实现，但已向当前用户明确说明，后续不再采用该方法。
+  - 因上述真实输入/硬件/UI 缺口，阶段 B 代码可合入并供后续匹配环境验收，但不满足文档的整个跨平台完成定义，PLAN.md 与本节均保持 [~]。
+```
+
+## 31. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

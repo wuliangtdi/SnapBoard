@@ -18,4 +18,9 @@ public interface IDesktopMenuBarService : IDisposable
     void Initialize(bool recordingPaused);
 
     void SetRecordingPaused(bool paused);
+
+    void SetRecordingState(
+        bool manuallyPaused,
+        bool foregroundProtected,
+        bool internallyPaused);
 }

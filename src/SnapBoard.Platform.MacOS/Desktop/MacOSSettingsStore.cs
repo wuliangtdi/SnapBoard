@@ -78,7 +78,10 @@ internal sealed class MacOSSettingsStore : IMacOSSettingsStore
                     _setObjectForKeySelector,
                     nativeValue,
                     nativeKey);
-                MacOSNativeMethods.SendBool(_defaults, _synchronizeSelector);
+                if (MacOSNativeMethods.SendBool(_defaults, _synchronizeSelector) == 0)
+                {
+                    throw new InvalidOperationException("NSUserDefaults synchronization failed.");
+                }
             }
             finally
             {

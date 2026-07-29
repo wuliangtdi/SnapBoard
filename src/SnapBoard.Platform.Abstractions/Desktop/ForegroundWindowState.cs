@@ -30,6 +30,7 @@ public enum ForegroundWindowDiagnosticCode
     BoundsUnavailable = 10,
     NativeFailure = 11,
     PlatformNotImplemented = 12,
+    AccessibilityPermissionDenied = 13,
 }
 
 public readonly record struct ForegroundWindowIdentity(ulong WindowId, uint ProcessId);

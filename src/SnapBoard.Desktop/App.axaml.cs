@@ -94,7 +94,9 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetService<ISyncService>(),
                     _services.GetService<IHistorySettingsService>(),
                     _services.GetService<IDesktopSystemEventService>(),
-                    _services.GetRequiredService<IApplicationUpdateService>());
+                    _services.GetRequiredService<IApplicationUpdateService>(),
+                    _services.GetRequiredService<IPlatformForegroundWindowStateService>(),
+                    _services.GetRequiredService<IDesktopLocalSettingsService>());
                 _macOSLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 

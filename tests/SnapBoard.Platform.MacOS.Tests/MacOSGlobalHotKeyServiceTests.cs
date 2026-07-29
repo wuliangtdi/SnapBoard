@@ -27,114 +27,232 @@ public sealed class MacOSGlobalHotKeyServiceTests
         Assert.Equal(expectedDisplayName, gesture.DisplayName);
     }
 
-    [Fact]
-    public void KeyMapRejectsMissingModifierAndUnsupportedKey()
+    [Theory]
+    [InlineData("K", GlobalHotKeyModifiers.None, 0x28u, "K")]
+    [InlineData("LeftCtrl", GlobalHotKeyModifiers.Control, 0x3Bu, "Control")]
+    [InlineData("LeftShift", GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Shift, 0x38u, "Control+Shift")]
+    [InlineData("RWin", GlobalHotKeyModifiers.Meta, 0x36u, "Right Command")]
+    public void KeyMapSupportsPlainAndModifierMainKeys(
+        string keyName,
+        GlobalHotKeyModifiers modifiers,
+        uint expectedKeyCode,
+        string expectedDisplayName)
     {
-        Assert.Equal(
-            GlobalHotKeyGestureCreationStatus.MissingModifier,
-            MacOSHotKeyKeyMap.CreateGesture(GlobalHotKeyModifiers.None, "V").Status);
+        GlobalHotKeyGestureCreationResult result =
+            MacOSHotKeyKeyMap.CreateGesture(modifiers, keyName);
+
+        GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
+        Assert.Equal(expectedKeyCode, gesture.VirtualKey);
+        Assert.Equal(modifiers | GlobalHotKeyModifiers.NoRepeat, gesture.Modifiers);
+        Assert.Equal(expectedDisplayName, gesture.DisplayName);
+    }
+
+    [Fact]
+    public void KeyMapRejectsUnsupportedKey()
+    {
         Assert.Equal(
             GlobalHotKeyGestureCreationStatus.UnsupportedKey,
-            MacOSHotKeyKeyMap.CreateGesture(GlobalHotKeyModifiers.Meta, "MediaPlayPause").Status);
+            MacOSHotKeyKeyMap.CreateGesture(
+                GlobalHotKeyModifiers.Meta,
+                "MediaPlayPause").Status);
     }
 
     [Fact]
-    public async Task ConflictRestoresPreviousRegistrationAndConfiguration()
+    public async Task RegistersBothSlotsPersistsThemAndRejectsDuplicateBinding()
     {
         FakeHotKeyRegistrar registrar = new();
-        FakeSettingsStore settings = new();
+        FakeDesktopLocalSettingsService settings = new();
+        await using MacOSGlobalHotKeyService service = new(
+            DirectPlatformMainThreadDispatcher.Instance,
+            registrar,
+            settings,
+            TimeSpan.FromMilliseconds(550));
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x28, "K");
+
+        GlobalHotKeyRegistrationResult primary = await service.RegisterAsync(
+            GlobalHotKeySlot.Primary,
+            GlobalHotKeyGesture.MacOSDefault,
+            CancellationToken.None);
+        GlobalHotKeyRegistrationResult doubleResult = await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            doubleGesture,
+            CancellationToken.None);
+        GlobalHotKeyRegistrationResult duplicate = await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            GlobalHotKeyGesture.MacOSDefault with { DisplayName = "duplicate" },
+            CancellationToken.None);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, primary.Status);
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, doubleResult.Status);
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Duplicate, duplicate.Status);
+        Assert.Equal(GlobalHotKeyGesture.MacOSDefault, settings.Current.PrimaryHotKey);
+        Assert.Equal(doubleGesture, settings.Current.DoubleHotKey);
+        Assert.Equal(TimeSpan.FromMilliseconds(550), service.DoubleTriggerInterval);
+        Assert.Equal(2, registrar.RegisterCount);
+    }
+
+    [Fact]
+    public async Task ConflictPreservesPreviousRegistrationAndConfiguration()
+    {
+        FakeHotKeyRegistrar registrar = new();
+        FakeDesktopLocalSettingsService settings = new();
         await using MacOSGlobalHotKeyService service = new(
             DirectPlatformMainThreadDispatcher.Instance,
             registrar,
             settings);
-        GlobalHotKeyGesture original = GlobalHotKeyGesture.MacOSDefault;
-        GlobalHotKeyGesture replacement = Assert.IsType<GlobalHotKeyGesture>(
-            MacOSHotKeyKeyMap.CreateGesture(
-                GlobalHotKeyModifiers.Meta | GlobalHotKeyModifiers.Alt,
-                "K").Gesture);
+        GlobalHotKeyGesture original = CreateGesture(0x28, "K");
+        GlobalHotKeyGesture replacement = CreateGesture(0x25, "L");
+        await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            original,
+            CancellationToken.None);
+        registrar.Results.Enqueue(new GlobalHotKeyRegistrationResult(
+            GlobalHotKeyRegistrationStatus.Conflict,
+            -9878));
 
-        registrar.Results.Enqueue(0);
-        Assert.Equal(
-            GlobalHotKeyRegistrationStatus.Registered,
-            (await service.RegisterAsync(original, CancellationToken.None)).Status);
-        registrar.Results.Enqueue(-9878);
-        registrar.Results.Enqueue(0);
-
-        GlobalHotKeyRegistrationResult conflict =
-            await service.RegisterAsync(replacement, CancellationToken.None);
+        GlobalHotKeyRegistrationResult conflict = await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            replacement,
+            CancellationToken.None);
 
         Assert.Equal(GlobalHotKeyRegistrationStatus.Conflict, conflict.Status);
-        Assert.Equal(original, registrar.CurrentGesture);
-        Assert.Equal(original, service.ConfiguredGesture);
-        Assert.Contains(original.DisplayName, settings.Values["GlobalHotKeyV1"], StringComparison.Ordinal);
-        Assert.Equal(3, registrar.RegisterCount);
+        Assert.Equal(original, registrar.GetCurrentGesture(GlobalHotKeySlot.Double));
+        Assert.Equal(original, settings.Current.DoubleHotKey);
     }
 
     [Fact]
-    public async Task NativeCallbackIsPumpedOutsideRegistrarAndResourcesAreDisposed()
+    public async Task ClearingDoubleKeepsPrimaryAndReportsSettingsFailure()
     {
         FakeHotKeyRegistrar registrar = new();
-        FakeSettingsStore settings = new();
+        FakeDesktopLocalSettingsService settings = new();
         await using MacOSGlobalHotKeyService service = new(
             DirectPlatformMainThreadDispatcher.Instance,
             registrar,
             settings);
-        TaskCompletionSource pressed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        service.Pressed += (_, _) => pressed.TrySetResult();
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x28, "K");
+        await service.RegisterAsync(
+            GlobalHotKeySlot.Primary,
+            GlobalHotKeyGesture.MacOSDefault,
+            CancellationToken.None);
+        await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            doubleGesture,
+            CancellationToken.None);
+        settings.Persisted = false;
 
-        registrar.RaisePressed();
+        GlobalHotKeyRegistrationResult result = await service.ClearAsync(
+            GlobalHotKeySlot.Double,
+            CancellationToken.None);
 
-        await pressed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, result.Status);
+        Assert.False(result.SettingsPersisted);
+        Assert.Equal(
+            GlobalHotKeyGesture.MacOSDefault,
+            registrar.GetCurrentGesture(GlobalHotKeySlot.Primary));
+        Assert.Null(registrar.GetCurrentGesture(GlobalHotKeySlot.Double));
+        Assert.Null(settings.Current.DoubleHotKey);
+    }
+
+    [Fact]
+    public async Task NativeCallbacksKeepSourceAndRepeatOutsideRegistrar()
+    {
+        FakeHotKeyRegistrar registrar = new();
+        FakeDesktopLocalSettingsService settings = new();
+        await using MacOSGlobalHotKeyService service = new(
+            DirectPlatformMainThreadDispatcher.Instance,
+            registrar,
+            settings);
+        TaskCompletionSource<GlobalHotKeyTriggeredEventArgs> triggered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.Triggered += (_, args) => triggered.TrySetResult(args);
+
+        registrar.RaiseTriggered(GlobalHotKeySlot.Double, isRepeat: true);
+
+        GlobalHotKeyTriggeredEventArgs result =
+            await triggered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(GlobalHotKeySlot.Double, result.Source);
+        Assert.True(result.IsRepeat);
         await service.DisposeAsync();
         Assert.True(registrar.Disposed);
-        Assert.True(settings.Disposed);
+        Assert.Equal(0, settings.DisposeCount);
     }
+
+    private static GlobalHotKeyGesture CreateGesture(uint virtualKey, string displayName) => new(
+        GlobalHotKeyModifiers.NoRepeat,
+        virtualKey,
+        displayName);
 
     private sealed class FakeHotKeyRegistrar : IMacOSHotKeyRegistrar
     {
-        public event Action? Pressed;
+        private readonly Dictionary<GlobalHotKeySlot, GlobalHotKeyGesture> _gestures = [];
 
-        public Queue<int> Results { get; } = new();
+        public event Action<MacOSHotKeyNativeEvent>? Triggered;
 
-        public GlobalHotKeyGesture? CurrentGesture { get; private set; }
+        public Queue<GlobalHotKeyRegistrationResult> Results { get; } = new();
 
         public int RegisterCount { get; private set; }
 
         public bool Disposed { get; private set; }
 
-        public int Register(GlobalHotKeyGesture gesture)
+        public GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot) =>
+            _gestures.TryGetValue(slot, out GlobalHotKeyGesture gesture)
+                ? gesture
+                : null;
+
+        public GlobalHotKeyRegistrationResult Register(
+            GlobalHotKeySlot slot,
+            GlobalHotKeyGesture gesture)
         {
             RegisterCount++;
-            int result = Results.Count == 0 ? 0 : Results.Dequeue();
-            if (result == 0)
+            GlobalHotKeyRegistrationResult result = Results.Count == 0
+                ? new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Registered)
+                : Results.Dequeue();
+            if (result.Status == GlobalHotKeyRegistrationStatus.Registered)
             {
-                CurrentGesture = gesture;
+                _gestures[slot] = gesture;
             }
 
             return result;
         }
 
-        public void Unregister() => CurrentGesture = null;
+        public GlobalHotKeyRegistrationResult Clear(GlobalHotKeySlot slot)
+        {
+            _gestures.Remove(slot);
+            return new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Registered);
+        }
 
-        public void RaisePressed() => Pressed?.Invoke();
+        public void UnregisterAll() => _gestures.Clear();
+
+        public void RaiseTriggered(GlobalHotKeySlot slot, bool isRepeat) =>
+            Triggered?.Invoke(new MacOSHotKeyNativeEvent(slot, isRepeat));
 
         public void Dispose()
         {
             Disposed = true;
-            CurrentGesture = null;
+            _gestures.Clear();
         }
     }
 
-    private sealed class FakeSettingsStore : IMacOSSettingsStore
+    private sealed class FakeDesktopLocalSettingsService : IDesktopLocalSettingsService
     {
-        public Dictionary<string, string> Values { get; } = new(StringComparer.Ordinal);
+        public event EventHandler<DesktopLocalSettingsChangedEventArgs>? Changed;
 
-        public bool Disposed { get; private set; }
+        public DesktopLocalSettings Current { get; private set; } =
+            DesktopLocalSettings.CreateDefaults(GlobalHotKeyGesture.MacOSDefault);
 
-        public string? GetString(string key) => Values.GetValueOrDefault(key);
+        public bool Persisted { get; set; } = true;
 
-        public void SetString(string key, string value) => Values[key] = value;
+        public int DisposeCount { get; private set; }
 
-        public void Dispose() => Disposed = true;
+        public DesktopLocalSettingsUpdateResult Update(DesktopLocalSettings settings) =>
+            Update(_ => settings);
+
+        public DesktopLocalSettingsUpdateResult Update(
+            Func<DesktopLocalSettings, DesktopLocalSettings> update)
+        {
+            Current = update(Current);
+            Changed?.Invoke(this, new DesktopLocalSettingsChangedEventArgs(Current));
+            return new DesktopLocalSettingsUpdateResult(Persisted);
+        }
     }
 }

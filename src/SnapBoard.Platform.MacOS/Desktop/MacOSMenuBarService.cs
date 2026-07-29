@@ -27,6 +27,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
     private readonly IPlatformMainThreadDispatcher _dispatcher;
     private nint _menu;
     private nint _pauseItem;
+    private nint _recordingStatusItem;
     private nint _statusBar;
     private nint _statusItem;
     private nint _target;
@@ -78,6 +79,12 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
     }
 
     public void SetRecordingPaused(bool paused)
+        => SetRecordingState(paused, foregroundProtected: false, internallyPaused: false);
+
+    public void SetRecordingState(
+        bool manuallyPaused,
+        bool foregroundProtected,
+        bool internallyPaused)
     {
         if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _initialized) == 0)
         {
@@ -86,7 +93,10 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
 
         _dispatcher.Invoke(() =>
         {
-            SetRecordingPausedOnMainThread(paused);
+            SetRecordingStateOnMainThread(
+                manuallyPaused,
+                foregroundProtected,
+                internallyPaused);
             return true;
         });
     }
@@ -139,6 +149,11 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
 
         AddMenuItem("打开闪剪", CommandShowMain);
         AddMenuItem("快速粘贴", CommandShowQuick);
+        _recordingStatusItem = AddMenuItem("正在记录", command: 0);
+        MacOSNativeMethods.SendVoidWithByte(
+            _recordingStatusItem,
+            ObjectiveC.GetSelector("setEnabled:"),
+            0);
         _pauseItem = AddMenuItem("暂停记录", CommandTogglePause);
         AddMenuItem("设置...", CommandShowSettings);
         nint separator = MacOSNativeMethods.SendIntPtr(
@@ -174,7 +189,10 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
             _menu);
         SetApplicationIcon();
         MacOSApplicationIdentity.SetApplicationMenuTitle();
-        SetRecordingPausedOnMainThread(recordingPaused);
+        SetRecordingStateOnMainThread(
+            recordingPaused,
+            foregroundProtected: false,
+            internallyPaused: false);
     }
 
     private nint AddMenuItem(string title, int command)
@@ -312,14 +330,26 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
         }
     }
 
-    private void SetRecordingPausedOnMainThread(bool paused)
+    private void SetRecordingStateOnMainThread(
+        bool manuallyPaused,
+        bool foregroundProtected,
+        bool internallyPaused)
     {
         if (_pauseItem == 0)
         {
             return;
         }
 
-        nint title = ObjectiveC.CreateString(paused ? "恢复记录" : "暂停记录");
+        string status = foregroundProtected
+            ? "全屏保护中，暂不记录"
+            : manuallyPaused
+                ? "用户已暂停记录"
+                : internallyPaused
+                    ? "内部维护中，暂不记录"
+                    : "正在记录";
+        nint title = ObjectiveC.CreateString(manuallyPaused ? "恢复记录" : "暂停记录");
+        nint statusTitle = ObjectiveC.CreateString(status);
+        nint toolTip = ObjectiveC.CreateString($"闪剪 - {status}");
         try
         {
             MacOSNativeMethods.SendVoidWithIntPtr(
@@ -329,10 +359,32 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
             MacOSNativeMethods.SendVoidWithInt32(
                 _pauseItem,
                 ObjectiveC.GetSelector("setState:"),
-                paused ? MenuStateOn : MenuStateOff);
+                manuallyPaused ? MenuStateOn : MenuStateOff);
+            if (_recordingStatusItem != 0)
+            {
+                MacOSNativeMethods.SendVoidWithIntPtr(
+                    _recordingStatusItem,
+                    ObjectiveC.GetSelector("setTitle:"),
+                    statusTitle);
+            }
+
+            nint button = _statusItem == 0
+                ? 0
+                : MacOSNativeMethods.SendIntPtr(
+                    _statusItem,
+                    ObjectiveC.GetSelector("button"));
+            if (button != 0)
+            {
+                MacOSNativeMethods.SendVoidWithIntPtr(
+                    button,
+                    ObjectiveC.GetSelector("setToolTip:"),
+                    toolTip);
+            }
         }
         finally
         {
+            ObjectiveC.Release(toolTip);
+            ObjectiveC.Release(statusTitle);
             ObjectiveC.Release(title);
         }
     }
@@ -352,6 +404,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
         _statusBar = 0;
         ObjectiveC.Release(statusItem);
         _pauseItem = 0;
+        _recordingStatusItem = 0;
         ObjectiveC.Release(_menu);
         _menu = 0;
         if (_target != 0)

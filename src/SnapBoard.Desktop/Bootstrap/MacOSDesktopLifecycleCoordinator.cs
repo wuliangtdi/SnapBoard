@@ -30,10 +30,13 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
     private readonly IAutomaticPasteService _automaticPasteService;
     private readonly ClipboardCaptureCoordinator _captureCoordinator;
     private readonly IDesktopApplicationLifetime _desktop;
+    private readonly IPlatformForegroundWindowStateService _foregroundWindowStateService;
     private readonly IGlobalHotKeyService _hotKeyService;
     private readonly MainViewModel _mainViewModel;
     private readonly IDesktopMenuBarService _menuBarService;
+    private readonly IDesktopLocalSettingsService _localSettings;
     private readonly IPlatformWindowPlacementService _placementService;
+    private readonly QuickWindowHotKeyController _quickWindowHotKeyController;
     private readonly MacOSSingleInstanceCoordinator? _singleInstance;
     private readonly IStorageManagementService? _storageManagementService;
     private readonly IStorageMigrationBarrier? _storageMigrationBarrier;
@@ -42,6 +45,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
     private readonly IHistorySettingsService? _historySettingsService;
     private readonly IApplicationUpdateService? _applicationUpdateService;
     private readonly IDesktopSystemEventService? _systemEventService;
+    private readonly ITwoSlotGlobalHotKeyService _twoSlotHotKeyService;
     private readonly IClipboardWriter _writer;
     private MainWindow? _mainWindow;
     private QuickWindow? _quickWindow;
@@ -71,16 +75,31 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         ISyncService? syncService = null,
         IHistorySettingsService? historySettingsService = null,
         IDesktopSystemEventService? systemEventService = null,
-        IApplicationUpdateService? applicationUpdateService = null)
+        IApplicationUpdateService? applicationUpdateService = null,
+        IPlatformForegroundWindowStateService? foregroundWindowStateService = null,
+        IDesktopLocalSettingsService? localSettings = null)
     {
         _desktop = desktop;
         _mainViewModel = mainViewModel;
         _writer = writer;
         _automaticPasteService = automaticPasteService;
         _hotKeyService = hotKeyService;
+        _twoSlotHotKeyService = hotKeyService as ITwoSlotGlobalHotKeyService ??
+            throw new ArgumentException(
+                "The macOS hot-key service must support two slots.",
+                nameof(hotKeyService));
         _autoStartService = autoStartService;
         _accessibilityPermissionService = accessibilityPermissionService;
         _placementService = placementService;
+        _foregroundWindowStateService = foregroundWindowStateService ??
+            throw new ArgumentNullException(nameof(foregroundWindowStateService));
+        _localSettings = localSettings ??
+            throw new ArgumentNullException(nameof(localSettings));
+        _quickWindowHotKeyController = new QuickWindowHotKeyController(
+            _twoSlotHotKeyService.DoubleTriggerInterval,
+            () => _settingsWindow is { IsActive: true },
+            IsHotKeyProtectionActive,
+            ShowQuickWindowCore);
         _menuBarService = menuBarService;
         _captureCoordinator = captureCoordinator;
         _singleInstance = singleInstance;
@@ -117,29 +136,29 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
             _mainViewModel.StatusMessage = $"菜单栏初始化失败：{exception.Message}";
         }
 
-        GlobalHotKeyGesture configuredHotKey = _hotKeyService.ConfiguredGesture;
-        GlobalHotKeyRegistrationResult hotKeyResult = RegisterHotKey(configuredHotKey);
-        bool restoredDefaultHotKey = false;
-        if (hotKeyResult.Status != GlobalHotKeyRegistrationStatus.Registered &&
-            configuredHotKey != _hotKeyService.DefaultGesture)
-        {
-            GlobalHotKeyRegistrationResult fallbackResult =
-                RegisterHotKey(_hotKeyService.DefaultGesture);
-            restoredDefaultHotKey =
-                fallbackResult.Status == GlobalHotKeyRegistrationStatus.Registered;
-        }
-
+        GlobalHotKeyRegistrationResult hotKeyResult = RegisterHotKey(
+            GlobalHotKeySlot.Primary,
+            _localSettings.Current.PrimaryHotKey);
         if (hotKeyResult.Status != GlobalHotKeyRegistrationStatus.Registered)
         {
-            _mainViewModel.StatusMessage = (hotKeyResult.Status, restoredDefaultHotKey) switch
+            _mainViewModel.StatusMessage = hotKeyResult.Status ==
+                GlobalHotKeyRegistrationStatus.Conflict
+                ? "全局快捷键已被占用，可在设置中更换"
+                : "全局快捷键注册失败";
+        }
+
+        if (_localSettings.Current.DoubleHotKey is GlobalHotKeyGesture doubleGesture)
+        {
+            GlobalHotKeyRegistrationResult doubleResult = RegisterHotKey(
+                GlobalHotKeySlot.Double,
+                doubleGesture);
+            if (doubleResult.Status != GlobalHotKeyRegistrationStatus.Registered)
             {
-                (GlobalHotKeyRegistrationStatus.Conflict, true) =>
-                    "全局快捷键已被占用，已恢复默认快捷键",
-                (_, true) => "全局快捷键注册失败，已恢复默认快捷键",
-                (GlobalHotKeyRegistrationStatus.Conflict, false) =>
-                    "全局快捷键已被占用，可在设置中更换",
-                _ => "全局快捷键注册失败",
-            };
+                _mainViewModel.StatusMessage = doubleResult.Status ==
+                    GlobalHotKeyRegistrationStatus.Conflict
+                    ? "连按两次快捷键已被占用，可在设置中更换"
+                    : "连按两次快捷键注册失败";
+            }
         }
 
         _mainViewModel.Start();
@@ -182,6 +201,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
         _isExiting = true;
         _restoreTargetWhenQuickCloses = false;
+        _quickWindowHotKeyController.Reset();
         CancelScheduledResourceRelease();
         UnsubscribeEvents();
         _systemEventService?.Dispose();
@@ -234,7 +254,8 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         _mainViewModel.RecordingPauseToggleRequested += OnRecordingPauseToggleRequested;
         _mainViewModel.ExitRequested += OnExitRequested;
         _captureCoordinator.StateChanged += OnCaptureStateChanged;
-        _hotKeyService.Pressed += OnHotKeyPressed;
+        _twoSlotHotKeyService.Triggered += OnHotKeyTriggered;
+        _localSettings.Changed += OnLocalSettingsChanged;
         _menuBarService.ShowMainWindowRequested += OnShowMainWindowRequested;
         _menuBarService.ShowQuickWindowRequested += OnQuickWindowRequested;
         _menuBarService.RecordingPauseToggleRequested += OnRecordingPauseToggleRequested;
@@ -254,8 +275,10 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         _desktop.ReopenRequested += OnApplicationReopenRequested;
     }
 
-    private GlobalHotKeyRegistrationResult RegisterHotKey(GlobalHotKeyGesture gesture) =>
-        _hotKeyService.RegisterAsync(gesture, CancellationToken.None)
+    private GlobalHotKeyRegistrationResult RegisterHotKey(
+        GlobalHotKeySlot slot,
+        GlobalHotKeyGesture gesture) =>
+        _twoSlotHotKeyService.RegisterAsync(slot, gesture, CancellationToken.None)
             .AsTask()
             .GetAwaiter()
             .GetResult();
@@ -269,7 +292,8 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         _mainViewModel.RecordingPauseToggleRequested -= OnRecordingPauseToggleRequested;
         _mainViewModel.ExitRequested -= OnExitRequested;
         _captureCoordinator.StateChanged -= OnCaptureStateChanged;
-        _hotKeyService.Pressed -= OnHotKeyPressed;
+        _twoSlotHotKeyService.Triggered -= OnHotKeyTriggered;
+        _localSettings.Changed -= OnLocalSettingsChanged;
         _menuBarService.ShowMainWindowRequested -= OnShowMainWindowRequested;
         _menuBarService.ShowQuickWindowRequested -= OnQuickWindowRequested;
         _menuBarService.RecordingPauseToggleRequested -= OnRecordingPauseToggleRequested;
@@ -305,6 +329,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void ShowMainWindow()
     {
+        _quickWindowHotKeyController.Reset();
         CaptureForegroundContext();
         MainWindow window = _mainWindow ?? CreateMainWindow();
         _desktop.MainWindow = window;
@@ -324,6 +349,16 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void ShowQuickWindow()
     {
+        _quickWindowHotKeyController.ShowExplicitly();
+    }
+
+    private void ShowQuickWindowCore()
+    {
+        if (_isExiting)
+        {
+            return;
+        }
+
         CancelScheduledResourceRelease();
         if (_quickWindow is not null)
         {
@@ -355,6 +390,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void ShowSettingsWindow()
     {
+        _quickWindowHotKeyController.Reset();
         CancelScheduledResourceRelease();
         if (_settingsWindow is not null)
         {
@@ -375,7 +411,9 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
                 _syncService,
                 _historySettingsService,
                 _applicationUpdateService,
-                BeginApplicationUpdateInstallAsync),
+                BeginApplicationUpdateInstallAsync,
+                _localSettings,
+                _foregroundWindowStateService),
         };
         window.Closed += OnSettingsWindowClosed;
         _settingsWindow = window;
@@ -624,10 +662,9 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void ToggleRecordingPause()
     {
-        bool paused = !_captureCoordinator.IsManuallyPaused;
-        _captureCoordinator.SetPauseReason(ClipboardCapturePauseReason.Manual, paused);
-        _mainViewModel.UpdateRecordingState(paused);
-        _menuBarService.SetRecordingPaused(paused);
+        _captureCoordinator.SetPauseReason(
+            ClipboardCapturePauseReason.Manual,
+            !_captureCoordinator.IsManuallyPaused);
     }
 
     private void ExitApplication()
@@ -639,12 +676,14 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
         _isExiting = true;
         _restoreTargetWhenQuickCloses = false;
+        _quickWindowHotKeyController.Reset();
         CloseAllWindows();
         _desktop.TryShutdown();
     }
 
     private void CloseAllWindows()
     {
+        _quickWindowHotKeyController.Reset();
         _quickWindow?.Close();
         _settingsWindow?.Close();
         _mainWindow?.Close();
@@ -714,6 +753,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void OnQuickWindowClosed(object? sender, EventArgs e)
     {
+        _quickWindowHotKeyController.Reset();
         IAutomaticPasteTarget? target = _foregroundTarget;
         bool shouldRestore = _restoreTargetWhenQuickCloses;
         _restoreTargetWhenQuickCloses = false;
@@ -743,6 +783,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void OnSettingsWindowClosed(object? sender, EventArgs e)
     {
+        _quickWindowHotKeyController.Reset();
         if (sender is SettingsWindow window)
         {
             if (window.DataContext is IDisposable disposableViewModel)
@@ -783,13 +824,37 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void OnExitRequested(object? sender, EventArgs e) => PostToUi(ExitApplication);
 
-    private void OnHotKeyPressed(object? sender, EventArgs e) => PostToUi(() =>
+    private void OnHotKeyTriggered(
+        object? sender,
+        GlobalHotKeyTriggeredEventArgs e) => PostToUi(() =>
     {
-        if (_settingsWindow is not { IsActive: true })
-        {
-            ShowQuickWindow();
-        }
+        _quickWindowHotKeyController.HandleTrigger(e);
     });
+
+    private bool IsHotKeyProtectionActive()
+    {
+        DesktopLocalSettings settings = _localSettings.Current;
+        if (!settings.DisableGlobalHotKeysWhenProtected)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _foregroundWindowStateService
+                .GetForegroundWindowState()
+                .IsProtected(settings.ProtectionScope);
+        }
+        catch
+        {
+            // 检测失败等同 Unknown，默认放行，不能让全局快捷键永久失效。
+            return false;
+        }
+    }
+
+    private void OnLocalSettingsChanged(
+        object? sender,
+        DesktopLocalSettingsChangedEventArgs e) => _quickWindowHotKeyController.Reset();
 
     private void OnSingleInstanceCommand(SingleInstanceCommand command) =>
         PostToUi(() => ExecuteSingleInstanceCommand(command));
@@ -815,9 +880,12 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
                 ClipboardCapturePauseReason.UpdateInstallation)) != 0;
         _mainViewModel.UpdateRecordingState(
             state.IsManuallyPaused,
-            foregroundProtected: false,
+            state.IsForegroundProtected,
             isInternallyPaused);
-        _menuBarService.SetRecordingPaused(state.IsManuallyPaused);
+        _menuBarService.SetRecordingState(
+            state.IsManuallyPaused,
+            state.IsForegroundProtected,
+            isInternallyPaused);
     });
 
     private async void OnQuickWindowDismissRequested(object? sender, EventArgs e) =>

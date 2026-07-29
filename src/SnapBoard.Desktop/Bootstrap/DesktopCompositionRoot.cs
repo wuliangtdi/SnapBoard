@@ -161,10 +161,20 @@ internal static class DesktopCompositionRoot
             provider.GetRequiredService<MacOSClipboardAdapter>());
         services.AddSingleton<IAutomaticPasteService>(provider =>
             provider.GetRequiredService<MacOSClipboardAdapter>());
-        services.AddSingleton<IGlobalHotKeyService, MacOSGlobalHotKeyService>();
+        services.AddSingleton<MacOSDesktopLocalSettingsService>();
+        services.AddSingleton<IDesktopLocalSettingsService>(provider =>
+            provider.GetRequiredService<MacOSDesktopLocalSettingsService>());
+        services.AddSingleton<MacOSGlobalHotKeyService>();
+        services.AddSingleton<IGlobalHotKeyService>(provider =>
+            provider.GetRequiredService<MacOSGlobalHotKeyService>());
+        services.AddSingleton<ITwoSlotGlobalHotKeyService>(provider =>
+            provider.GetRequiredService<MacOSGlobalHotKeyService>());
         services.AddSingleton<IAutoStartService, MacOSAutoStartService>();
         services.AddSingleton<IAccessibilityPermissionService, MacOSAccessibilityPermissionService>();
         services.AddSingleton<IPlatformWindowPlacementService, MacOSWindowPlacementService>();
+        services.AddSingleton<
+            IPlatformForegroundWindowStateService,
+            MacOSForegroundWindowStateService>();
         services.AddSingleton<IDesktopMenuBarService, MacOSMenuBarService>();
         services.AddSingleton<IDesktopSystemEventService, MacOSDesktopSystemEventService>();
         services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
@@ -176,7 +186,9 @@ internal static class DesktopCompositionRoot
         services.AddSingleton(provider => new ClipboardCaptureCoordinator(
             provider.GetRequiredService<IClipboardMonitor>(),
             provider.GetRequiredService<IClipboardContentReader>(),
-            provider.GetRequiredService<IClipboardCaptureService>()));
+            provider.GetRequiredService<IClipboardCaptureService>(),
+            provider.GetRequiredService<IPlatformForegroundWindowStateService>(),
+            provider.GetRequiredService<IDesktopLocalSettingsService>()));
     }
 
     private static void AddSyncServices(IServiceCollection services)

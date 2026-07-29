@@ -146,9 +146,46 @@ internal static partial class MacOSNativeMethods
     [LibraryImport(ApplicationServices, EntryPoint = "AXIsProcessTrusted")]
     internal static partial byte AXIsProcessTrusted();
 
+    [LibraryImport(ApplicationServices, EntryPoint = "AXUIElementCreateApplication")]
+    internal static partial nint AXUIElementCreateApplication(int processId);
+
+    [LibraryImport(ApplicationServices, EntryPoint = "AXUIElementCopyAttributeValue")]
+    internal static partial int AXUIElementCopyAttributeValue(
+        nint element,
+        nint attribute,
+        out nint value);
+
+    [LibraryImport(ApplicationServices, EntryPoint = "AXUIElementSetMessagingTimeout")]
+    internal static partial int AXUIElementSetMessagingTimeout(nint element, float timeout);
+
+    [LibraryImport(ApplicationServices, EntryPoint = "AXValueGetValue")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static partial bool AXValueGetPoint(
+        nint value,
+        uint valueType,
+        out NativePoint point);
+
+    [LibraryImport(ApplicationServices, EntryPoint = "AXValueGetValue")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static partial bool AXValueGetSize(
+        nint value,
+        uint valueType,
+        out NativeSize size);
+
     [LibraryImport(CoreGraphics, EntryPoint = "CGPreflightPostEventAccess")]
     [return: MarshalAs(UnmanagedType.I1)]
     internal static partial bool CGPreflightPostEventAccess();
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGWindowListCopyWindowInfo")]
+    internal static partial nint CGWindowListCopyWindowInfo(
+        uint option,
+        uint relativeToWindow);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGRectMakeWithDictionaryRepresentation")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static partial bool CGRectMakeWithDictionaryRepresentation(
+        nint dictionary,
+        out NativeRectangle rectangle);
 
     [LibraryImport(CoreGraphics, EntryPoint = "CGEventCreateKeyboardEvent")]
     internal static partial nint CGEventCreateKeyboardEvent(

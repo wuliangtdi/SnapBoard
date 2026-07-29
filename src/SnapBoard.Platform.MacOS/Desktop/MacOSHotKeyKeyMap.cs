@@ -84,27 +84,35 @@ internal static class MacOSHotKeyKeyMap
         GlobalHotKeyModifiers modifiers,
         string keyName)
     {
-        GlobalHotKeyModifiers normalizedModifiers = modifiers & UserModifiers;
-        if (normalizedModifiers == GlobalHotKeyModifiers.None)
-        {
-            return new GlobalHotKeyGestureCreationResult(
-                GlobalHotKeyGestureCreationStatus.MissingModifier);
-        }
-
         if (!TryResolveKey(keyName, out KeyDefinition definition))
         {
             return new GlobalHotKeyGestureCreationResult(
                 GlobalHotKeyGestureCreationStatus.UnsupportedKey);
         }
 
-        normalizedModifiers |= GlobalHotKeyModifiers.NoRepeat;
+        GlobalHotKeyModifiers mainKeyModifier = GetMainKeyModifier(keyName);
+        GlobalHotKeyModifiers normalizedModifiers =
+            (modifiers & UserModifiers) |
+            mainKeyModifier |
+            GlobalHotKeyModifiers.NoRepeat;
+        GlobalHotKeyModifiers displayModifiers = normalizedModifiers & ~mainKeyModifier;
         return new GlobalHotKeyGestureCreationResult(
             GlobalHotKeyGestureCreationStatus.Created,
             new GlobalHotKeyGesture(
                 normalizedModifiers,
                 definition.VirtualKey,
-                FormatDisplayName(normalizedModifiers, definition.DisplayName)));
+                FormatDisplayName(displayModifiers, definition.DisplayName)));
     }
+
+    internal static GlobalHotKeyModifiers GetRequiredMainKeyModifier(
+        uint virtualKey) => virtualKey switch
+        {
+            0x38 or 0x3C => GlobalHotKeyModifiers.Shift,
+            0x3B or 0x3E => GlobalHotKeyModifiers.Control,
+            0x3A or 0x3D => GlobalHotKeyModifiers.Alt,
+            0x36 or 0x37 => GlobalHotKeyModifiers.Meta,
+            _ => GlobalHotKeyModifiers.None,
+        };
 
     private static bool TryResolveKey(string keyName, out KeyDefinition definition)
     {
@@ -136,8 +144,35 @@ internal static class MacOSHotKeyKeyMap
             return true;
         }
 
-        return NamedKeys.TryGetValue(keyName, out definition);
+        if (NamedKeys.TryGetValue(keyName, out definition))
+        {
+            return true;
+        }
+
+        (uint virtualKey, string displayName) = keyName switch
+        {
+            "LeftShift" => (0x38u, "Shift"),
+            "RightShift" => (0x3Cu, "Right Shift"),
+            "LeftCtrl" => (0x3Bu, "Control"),
+            "RightCtrl" => (0x3Eu, "Right Control"),
+            "LeftAlt" or "System" => (0x3Au, "Option"),
+            "RightAlt" => (0x3Du, "Right Option"),
+            "LWin" => (0x37u, "Command"),
+            "RWin" => (0x36u, "Right Command"),
+            _ => (uint.MaxValue, string.Empty),
+        };
+        definition = new KeyDefinition(virtualKey, displayName);
+        return virtualKey != uint.MaxValue;
     }
+
+    private static GlobalHotKeyModifiers GetMainKeyModifier(string keyName) => keyName switch
+    {
+        "LeftShift" or "RightShift" => GlobalHotKeyModifiers.Shift,
+        "LeftCtrl" or "RightCtrl" => GlobalHotKeyModifiers.Control,
+        "LeftAlt" or "RightAlt" or "System" => GlobalHotKeyModifiers.Alt,
+        "LWin" or "RWin" => GlobalHotKeyModifiers.Meta,
+        _ => GlobalHotKeyModifiers.None,
+    };
 
     private static bool TryResolveNumberedKey(
         string keyName,

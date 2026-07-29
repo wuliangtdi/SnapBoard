@@ -84,6 +84,19 @@ internal static partial class MacOSNativeMethods
     [LibraryImport(Carbon, EntryPoint = "UnregisterEventHotKey")]
     internal static partial int UnregisterEventHotKey(nint hotKeyReference);
 
+    [LibraryImport(Carbon, EntryPoint = "GetEventKind")]
+    internal static partial uint GetEventKind(nint eventReference);
+
+    [LibraryImport(Carbon, EntryPoint = "GetEventParameter")]
+    internal static unsafe partial int GetEventParameter(
+        nint eventReference,
+        uint parameterName,
+        uint desiredType,
+        uint* actualType,
+        nuint bufferSize,
+        nuint* actualSize,
+        void* data);
+
     [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
     internal static partial double SendDouble(nint receiver, nint selector);
 
