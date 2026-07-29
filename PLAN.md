@@ -3,8 +3,8 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：`codex/webdav-provider-migration` 已完成共享 WebDAV 服务商迁移状态机、SQLite v8、双平台设置流程、真实 Apache WebDAV 双设备迁移、`osx-arm64` 本机包及 `osx-x64` Rosetta 启动预检；正式 Windows <-> macOS 双机、Nextcloud/Synology、Intel Runner 与正式发布继续收口
-> 实现状态：Windows 与 macOS 已共用安全数据目录迁移、加密同步、历史策略、真实同步 UI 和可恢复的 WebDAV 服务商迁移；设备撤销/密钥轮换、远端回收、长期资源验证及正式发布尚未完成
+> 当前阶段：`codex/automatic-updates` 已完成 Windows、macOS 与 Linux 的分架构稳定版/测试版更新通道、GitHub/官方多源选择、P-256 签名清单验证、设置 UI、下载后安装编排及 Release 产物生成；正式已安装版本升级、远程 Runner、自建官方源和系统代码签名继续收口
+> 实现状态：Windows 与 macOS 已共用安全数据目录迁移、加密同步、历史策略、真实同步 UI、可恢复的 WebDAV 服务商迁移和应用级自动更新；设备撤销/密钥轮换、远端回收、长期资源验证、Developer ID/Windows 代码签名及正式发布尚未完成
 > 本次目标口径：macOS 对等清单的代码实现、自动测试及当前可用环境验证已完成；缺少设备、服务或发布身份的项目作为外部验收继续保留，不阻塞本开发目标关闭，也不代表正式发布门槛已经通过
 > 总体顺序：Windows -> macOS -> Linux
 
@@ -638,7 +638,7 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [ ] 完成 8 小时稳定性和数据库压力测试。
 - [ ] 生成 Windows x64 Native AOT 安装包和便携包。
 - [ ] Git 标签能够自动创建 GitHub Release、上传 Windows 构建、校验和和 SBOM。
-- [ ] 设计自动更新、签名、回滚和数据库备份策略。
+- [x] 设计并实现自动更新、应用级签名、发布回退和数据库保护策略：客户端只内置 P-256 公钥，Release 私钥仅由发布端持有；安装目录与每用户数据目录分离，当前更新不改 Schema，失败版本采用撤下清单并发布更高修复版本的 roll-forward，未来不兼容数据库迁移必须先提供备份/恢复门槛。实际跨版本安装仍按正式发布验证项保留。
 - [ ] 完成用户文档、隐私说明和已知限制。
 
 退出条件：满足第一期全部质量门槛并形成 Windows 正式版。
@@ -672,6 +672,7 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 
 - [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、嵌套迁移器先签名、Hardened Runtime、DMG `/Applications` 链接、PKG `/Applications` 安装位置、payload 与校验和均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，`spctl` 按预期拒绝，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
 - [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：arm64/x64 独立 RID、locked restore、主程序与迁移器 Mach-O/架构/退出码、签名层级和公证步骤已配置，Build/Test 矩阵已加入 `macos-15-intel` 以实际执行 Intel 原生测试；远程 Runner 尚未实际执行。
+- [~] 实现稳定版/测试版自动更新：Velopack 启动钩子、架构隔离通道、GitHub/官方多源、签名清单、包哈希校验、设置页下载和退出安装编排已完成；本机 `osx-arm64` ad-hoc 包与签名 feed 已生成并验证。旧版到新版的已安装 App 升级、Developer ID 正式包和远程 Release 尚未实测。
 - [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：Native AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB，排除按事件线性泄漏；系统唤醒与网络变化的原生注册、回调和 AOT 初始化已自动验证。完整桌面纯后台为 41.4 MiB，首次开窗后关窗约 94-96 MiB，100 轮快速窗口无单调增长，但历史三次 3 秒样本和 12 分 23 秒样本仍曾超过 100 MB，尚未达到 `<= 80 MB` 目标。8 小时、真实睡眠唤醒/断网恢复、多 Space、多显示器、Retina 和全屏待验证。
 - [x] 更新平台支持矩阵和已知限制。
 
@@ -709,7 +710,7 @@ Phase 3 开始时按当时 Avalonia 官方矩阵重新锁定版本。当前最�
 
 #### 3.4 打包与发布
 
-- [ ] 提供 `.deb`、`.rpm` 和 AppImage；Flatpak 需先验证沙箱权限再决定。
+- [~] 提供 `.deb`、`.rpm` 和 AppImage：Release workflow 已生成 `linux-x64` Velopack AppImage/便携包及分架构更新 feed；远程 Runner、真实发行版安装升级、`.deb` 和 `.rpm` 尚未完成。Flatpak 需先验证沙箱权限再决定。
 - [ ] 完成桌面文件、图标、托盘依赖、自动启动和卸载清理。
 - [ ] 构建 `linux-x64` 和可行的 `linux-arm64` Native AOT 包。
 - [ ] GitHub Actions Linux Runner 自动生成各安装包、校验和和 SBOM。

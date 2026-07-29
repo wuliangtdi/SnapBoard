@@ -264,3 +264,52 @@ SQLite Schema v5 增加来源 AUMID、Package Family 和归属依据的显式投
 完整 AOT 桌面同 PID 的 10,000 次事件前后 Physical 为 99,009,688 -> 99,042,456 字节，只增加 32 KiB；100 轮快速窗口打开/关闭没有单调增长，Lifetime Peak 保持 213.1 MiB、FD 始终 45，约 28 分钟混合压力后的低侵入样本为 95.1 MiB。该结果排除了按剪贴板事件或窗口周期线性泄漏，但不能替代 8 小时长稳，也不能把约 95 MiB 的 UI 后台基线宣称为达到 80 MiB 目标。
 
 另一次完整桌面先加载真实外部应用历史和 10,000 次压力，再通过 `--close-windows` 保持菜单栏后台 12 分 23 秒。RSS 从 170,240 KiB（166.25 MiB）回落到 99,264 KiB（96.94 MiB），线程 15 -> 14，FD 51 -> 47，CPU 两端为 0.0%；但 `footprint` 从首个关闭后样本 138 MB 变为 139 MB，Lifetime Peak 256 MB。该样本满足至少 10 分钟的观察时长，但 Physical Footprint 明确失败；8 小时测试未执行。重启一致性与字段明细见 `docs/MACOS_CLIPBOARD_VALIDATION.md` 9.6。
+
+### 6.11 2026-07-29 自动更新增量性能与内存对比
+
+实现提交为 `ddf59862f6909a1ebc870f262efd39f2f555df7b`，基线为
+`c16dc9ae31b69d1842418c1ca79093a3afbb4736`。主机为 Mac mini（Apple M4 10 核、16 GiB）、
+macOS 26.2 (25C56)、arm64、.NET SDK 10.0.302。两边都使用 Release、`osx-arm64`、
+self-contained Native AOT、版本 0.2.0，并为每一轮传入不同的私有
+`--storage-bootstrap-root`，不读取或修改用户真实历史。
+
+基线发布目录约 148 MiB，主程序 34,757,344 字节；更新功能发布目录约 154 MiB，主程序
+35,937,520 字节，增加 1,180,176 字节（3.40%）。最终主程序 SHA-256 为
+`29741fe9c14af05517916d01bcc5018b479e5c165121b9fe665327802b75f795`。两边均为 arm64 Mach-O，
+无 CoreCLR，0 个 trim/AOT 分析告警；两边都有相同的 2 个 .NET Apple NativeAOT 静态库
+clang module-cache 调试信息告警。
+
+测量脚本新增可选隔离存储根参数：
+
+```bash
+scripts/macos/Measure-SnapBoardProcess.sh \
+  /path/to/SnapBoard.Desktop 3 5 5 /private/tmp/isolated-storage
+```
+
+三轮短样本如下。第一轮包含文件、字体和图形缓存冷启动，不等于重启系统后的 OS-cold；后两轮用于
+观察同机暖启动。Physical Footprint、RSS、Lifetime Peak、线程、FD、CPU、能耗和 wakeups 都来自
+同一 PID。
+
+| 版本/轮次 | 启动 | 窗口 Physical | 后台 Physical | Lifetime Peak | 最大线程 | FD | 平均 CPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 基线 1 | 3740.90 ms | 198.06 MiB | 98.47 MiB | 201.27 MiB | 17 | 45 | 0.019% |
+| 基线 2 | 684.33 ms | 198.03 MiB | 98.25 MiB | 201.49 MiB | 17 | 45 | 0.055% |
+| 基线 3 | 718.38 ms | 197.55 MiB | 98.09 MiB | 200.99 MiB | 17 | 45 | 0.021% |
+| 更新 1 | 691.26 ms | 198.36 MiB | 98.61 MiB | 201.91 MiB | 19 | 45 | 0.017% |
+| 更新 2 | 744.60 ms | 197.86 MiB | 98.72 MiB | 201.88 MiB | 19 | 45 | 0.020% |
+| 更新 3 | 717.43 ms | 197.72 MiB | 98.20 MiB | 197.95 MiB | 19 | 45 | 0.017% |
+
+基线后两轮暖启动均值 701.36 ms，更新版后两轮为 731.02 ms，增加 4.2%。三轮窗口 Physical
+平均值基线 197.88 MiB、更新版 197.98 MiB；后台分别为 98.27 MiB 和 98.51 MiB。FD 不变，
+更新版因后台更新延迟任务多 2 个线程。差异很小，但样本数不足以作为无回归统计证明。
+
+另各跑一轮 35 秒可见窗口加 5 秒后台，使更新版跨过首次自动检查的 30 秒延迟。基线为启动
+718.93 ms、窗口 197.67 MiB、后台 99.39 MiB、Lifetime Peak 201.52 MiB、17 线程、45 FD；
+更新版为启动 724.38 ms、窗口 197.53 MiB、后台 99.14 MiB、Lifetime Peak 201.58 MiB、19 线程、
+45 FD。裸 AOT 不是 Velopack 已安装实例，因此该轮覆盖“检查后识别为不可更新”的路径，不会访问或
+下载远端包。
+
+最终重建后第一次运行另出现启动 3082.94 ms、窗口 251.92 MiB、后台 145.27 MiB、Lifetime Peak
+255.63 MiB 的异常冷样本；随后三轮回到上表区间。该异常保留，不按离群点删除，也说明短测不能替代
+长期资源门槛。此次没有执行真实网络下载、已安装版本替换、10 分钟/8 小时长稳或 Windows/Linux
+测量；既有后台 `<= 80 MB` 目标和 8 小时门槛继续保持未完成。

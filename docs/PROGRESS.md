@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-29
-> 当前阶段：共享 WebDAV 服务商迁移、缺失 Checkpoint 安全恢复、macOS 唤醒/网络恢复触发、SQLite v8、Apache 实测、`osx-arm64` 本机包及 `osx-x64` Rosetta 启动预检已落地；正式跨系统 App、物理恢复场景、Nextcloud/Synology、Intel Runner 与正式发布继续收口
+> 当前阶段：共享 WebDAV 服务商迁移与 macOS 对等实现已关闭代码目标；跨平台分架构自动更新、GitHub/官方多源、P-256 签名 feed、设置 UI、安装编排及本机 `osx-arm64` Velopack 包已落地。正式已安装版本升级、自建官方源、远程 Runner、系统代码签名与发布继续收口
 > 本次目标状态：已完成当前可用环境内的实现与验证；其余项目均为缺少对应设备、服务或发布身份的外部验收，继续如实列为待验证，但不阻塞本开发目标关闭
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
@@ -679,7 +679,48 @@ osx-arm64 最终开发包：
   - Windows 默认“进程”页目标显示为“闪剪”；“详细信息”页按已确认方案继续显示内部文件名 SnapBoard.Desktop.exe。
 ```
 
-## 23. 更新规则
+## 23. 2026-07-29 执行记录：签名的多源自动更新
+
+```text
+日期：2026-07-29
+阶段/任务：Windows、macOS 与 Linux 分架构自动更新、GitHub/官方多源和发布签名
+状态：[x] 代码、自动测试、本机 AOT、ad-hoc App/DMG/PKG、Velopack 包与 feed 签名验证完成；[~] 正式安装升级与远程发布待实际环境验证
+开发基线：c16dc9ae31b69d1842418c1ca79093a3afbb4736（main）
+实现提交：ddf59862f6909a1ebc870f262efd39f2f555df7b
+分支：codex/automatic-updates
+环境：macOS 26.2 (25C56)，Apple M4 arm64，16 GiB，.NET SDK 10.0.302，Velopack 1.2.0
+实现内容：
+  - 新增独立 SnapBoard.Update.Velopack 适配项目；Velopack bootstrap 在 Avalonia 和单实例初始化前运行，禁用启动时静默套用更新。
+  - 稳定版/测试版 feed 按 win/osx/linux、x64/arm64 隔离；自动模式合并已配置官方源与 GitHub，单源失败可回退，同版本文件名/SHA-256/长度不一致立即阻断。
+  - 每个 releases.<channel>.json 必须通过 ECDSA P-256/SHA-256 DER 签名；客户端只内置公钥，完整包继续使用签名 feed 内 SHA-256 和长度校验。
+  - 设置页新增自动检查、稳定版/测试版、自动/GitHub/官方来源、手动检查、下载进度和安装并重启；设置只保存在本机，不进入 WebDAV 同步。
+  - 首次自动检查延迟 30 秒，之后每 12 小时；安装前先暂停并排空同步、暂停剪贴板采集，安排退出后替换，安排失败则恢复原状态。
+  - 旧的手工压缩包/DMG 没有 Velopack 安装元数据时明确显示不可自动更新，需先用新版 Setup/AppImage 安装一次。
+发布与密钥：
+  - 仓库只提交 packaging/updates/update-signing-public.pem；本地私钥位于仓库外且权限为 0600，其他电脑和普通用户只需要客户端内置公钥。
+  - GitHub Release job 从 SNAPBOARD_UPDATE_SIGNING_PRIVATE_KEY_PEM Secret 创建临时 0600 私钥文件；脚本先校验私钥与仓库公钥匹配，再签名并复验所有 feed。
+  - vpk 由 .config/dotnet-tools.json 锁定为 1.2.0。Release workflow 为 Windows、Linux 和 macOS 两个 RID 生成架构唯一包名、安装包、便携包和 feed。
+  - Apple Developer ID/公证 Secret 采用全有或全无校验；全部缺失时只生成明确的 ad-hoc/未签名开发包。Windows 代码签名尚未配置。
+自动验证：
+  - locked restore 通过；Release build 0 警告、0 错误；dotnet format、git diff --check、release.yml YAML 解析和两个 shell 脚本语法检查通过。
+  - 全量 329 项：308 项通过、20 项 Windows 原生测试及 1 项真实 WebDAV 测试按当前环境跳过、0 项失败；更新专项 16/16，Application 设置与 Desktop Headless 覆盖同时通过。
+  - Headless/Skia 700 x 720 设置页截图已复核，更新区控件、状态、按钮和滚动布局无重叠或溢出。
+  - 本机最终 osx-arm64 App Bundle、DMG 和 PKG 生成；Bundle ad-hoc codesign deep/strict 通过，Display Name/Name 为“闪剪”，内部可执行文件保持 SnapBoard。
+  - Velopack 0.2.0 生成 full nupkg 31,432,622 字节、Portable.zip 30,409,334 字节、未签名 Setup.pkg 30,407,852 字节；319 字节 feed 的 72 字节 DER 签名由仓库公钥 Verified OK。
+AOT 与性能：
+  - main 基线主程序 34,757,344 字节、发布目录约 148 MiB；最终主程序 35,937,520 字节、约 154 MiB，增加 1,180,176 字节（3.40%），SHA-256 29741FE9C14AF05517916D01BCC5018B479E5C165121B9FE665327802B75F795。
+  - 两边均为 arm64 Native AOT Mach-O、无 CoreCLR、0 个 trim/AOT 分析告警；仅有相同的 2 个已解释 Apple NativeAOT 静态库 module-cache 调试信息告警。
+  - 隔离数据根三轮暖样本：基线暖启动均值 701.36 ms，更新版 731.02 ms；窗口 Physical 平均 197.88/197.98 MiB，后台 98.27/98.51 MiB，FD 均为 45，线程 17/19。
+  - 35 秒可见加 5 秒后台样本跨过自动检查延迟：基线/更新版后台 Physical 为 99.39/99.14 MiB，Lifetime Peak 为 201.52/201.58 MiB。最终重建首轮另出现 251.92 MiB 窗口、145.27 MiB 后台异常冷样本，已保留在 PERFORMANCE.md，不把短测外推为长期通过。
+限制与关闭口径：
+  - 当前官方自建更新 URL 尚未部署；普通构建自动模式只使用 GitHub。未来启用官方源必须提供固定 HTTPS 基地址并执行真实故障切换测试。
+  - 没有在 Windows 已安装版本、Developer ID 正式 macOS App、Linux 发行版或 GitHub Runner 上执行旧版本 -> 新版本下载、退出替换、重启与失败恢复；这些均是实际发布验证，不由本机包生成替代。
+  - 本机没有 Windows 代码签名证书或 macOS Developer ID；SmartScreen、Gatekeeper、公证、staple 与正式安装提示未验证。应用级 feed 签名已通过，但不能替代系统代码签名。
+  - 没有执行真实远端下载、10 分钟/8 小时长稳或更新期间数据库迁移；当前功能不修改 Schema，未来不可逆迁移必须先实现备份/恢复门槛。
+  - 用户已确认当前不具备上述实际环境。本开发目标按“代码、自动测试、当前可用环境验证和限制记录完整”关闭，不等于正式发布门槛通过。
+```
+
+## 24. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

@@ -72,6 +72,14 @@ NuGet restore 开启漏洞审计并将警告视为错误。Microsoft.Data.Sqlite
 
 Dependabot 每周检查 NuGet 和 GitHub Actions。升级原生依赖后必须重新执行三个平台的 AOT、数据库版本和基本 CRUD 测试。
 
-## 10. 报告漏洞
+## 10. 应用更新信任与密钥
+
+- 每个 `releases.<rid>-<channel>.json` 更新清单都必须使用 ECDSA P-256/SHA-256 生成独立 DER 签名。客户端先用内置公钥验证清单，再由 Velopack 按已签名清单中的 SHA-256 和长度校验完整包；签名无效、包哈希不符或两个可信源对同一版本给出不同文件时必须停止更新。
+- 仓库只提交 `packaging/updates/update-signing-public.pem`。所有用户和所有电脑安装的是同一个公钥，验证更新不需要也不允许取得私钥；私钥只属于发布者。
+- 本地发布私钥位于仓库外，权限固定为 `0600`。GitHub Release workflow 只从 `SNAPBOARD_UPDATE_SIGNING_PRIVATE_KEY_PEM` Secret 创建临时 `0600` 文件，签名后删除。脚本会拒绝组/其他用户可读的私钥，并在签名前验证私钥与仓库公钥匹配。
+- 更新清单签名解决“是否由 SnapBoard 发布者发布”的应用级信任。Windows 代码签名证书和 macOS Developer ID/公证解决操作系统发行身份、SmartScreen/Gatekeeper 和安装提示，两套密钥互不替代。缺少系统证书不阻止本地开发包验证更新协议，但不得把 ad-hoc/未签名包称为正式发布。
+- 更新程序只替换应用安装目录，不把 SQLite、Blob、恢复材料或凭据放入安装包。当前更新功能不引入数据库 Schema 迁移；未来任何不可逆 Schema 变化必须先实现数据备份、恢复和旧版本兼容门槛。
+
+## 11. 报告漏洞
 
 GitHub 仓库创建后启用 Private Vulnerability Reporting。正式发布前在 README 和 `SECURITY.md` 补充受支持版本和私密联系渠道，禁止要求报告者在公开 Issue 中粘贴敏感剪贴板样本。
