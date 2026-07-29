@@ -178,6 +178,136 @@
 
                 <StackPanel Margin="0,12,0,0"
                             Spacing="10"
+                            IsVisible="{Binding IsUpdateSectionVisible}">
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="应用更新" />
+                    <Border Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <StackPanel Margin="20,17,20,18" Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="6"
+                                        Background="{DynamicResource SelectionSurfaceBrush}">
+                                    <materialIcons:MaterialIcon Width="20"
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                Kind="Refresh" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="自动更新" />
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="{Binding ApplicationUpdateVersionText}" />
+                                </StackPanel>
+                                <ToggleSwitch Grid.Column="2"
+                                              Classes="settings-toggle"
+                                              VerticalAlignment="Center"
+                                              IsChecked="{Binding AreAutomaticUpdateChecksEnabled, Mode=TwoWay}"
+                                              OffContent="关闭"
+                                              OnContent="开启" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Spacing="5">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="更新通道" />
+                                    <ComboBox x:Name="UpdateChannelComboBox"
+                                              Classes="settings-input"
+                                              ItemsSource="{Binding UpdateChannelOptions}"
+                                              SelectedItem="{Binding SelectedUpdateChannel, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="5">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Text="下载源" />
+                                    <ComboBox x:Name="UpdateSourceComboBox"
+                                              Classes="settings-input"
+                                              ItemsSource="{Binding UpdateSourceOptions}"
+                                              SelectedItem="{Binding SelectedUpdateSource, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <ProgressBar x:Name="ApplicationUpdateProgressBar"
+                                         Height="5"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         IsVisible="{Binding IsApplicationUpdateProgressVisible}"
+                                         Value="{Binding ApplicationUpdateProgress}" />
+
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                <TextBlock VerticalAlignment="Center"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding ApplicationUpdateStatusText}"
+                                           TextWrapping="Wrap" />
+                                <Button Grid.Column="1"
+                                        Classes="secondary-command"
+                                        Command="{Binding SaveApplicationUpdateSettingsCommand}"
+                                        IsEnabled="{Binding !IsUpdateBusy}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="ContentSaveOutline" />
+                                        <TextBlock VerticalAlignment="Center" Text="保存" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CheckForApplicationUpdatesButton"
+                                        Grid.Column="2"
+                                        Classes="secondary-command"
+                                        Command="{Binding CheckForApplicationUpdatesCommand}"
+                                        IsEnabled="{Binding !IsUpdateBusy}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="Refresh" />
+                                        <TextBlock VerticalAlignment="Center" Text="检查" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="DownloadApplicationUpdateButton"
+                                        Grid.Column="3"
+                                        Classes="primary-command"
+                                        Command="{Binding DownloadApplicationUpdateCommand}"
+                                        IsEnabled="{Binding !IsUpdateBusy}"
+                                        IsVisible="{Binding IsApplicationUpdateDownloadVisible}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="ArrowRightBold" />
+                                        <TextBlock VerticalAlignment="Center" Text="下载" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="InstallApplicationUpdateButton"
+                                        Grid.Column="3"
+                                        Classes="primary-command"
+                                        Command="{Binding InstallApplicationUpdateCommand}"
+                                        IsEnabled="{Binding !IsUpdateBusy}"
+                                        IsVisible="{Binding IsApplicationUpdateInstallVisible}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="CheckCircle" />
+                                        <TextBlock VerticalAlignment="Center" Text="安装并重启" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Margin="0,12,0,0"
+                            Spacing="10"
                             IsVisible="{Binding IsStorageSectionVisible}">
                     <TextBlock FontSize="13"
                                FontWeight="SemiBold"

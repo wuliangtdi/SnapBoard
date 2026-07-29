@@ -372,7 +372,8 @@
           "SnapBoard.Platform.MacOS": "[1.0.0, )",
           "SnapBoard.Platform.Windows": "[1.0.0, )",
           "SnapBoard.Sync.Contracts": "[1.0.0, )",
-          "SnapBoard.Sync.WebDav": "[1.0.0, )"
+          "SnapBoard.Sync.WebDav": "[1.0.0, )",
+          "SnapBoard.Update.Velopack": "[1.0.0, )"
         }
       },
       "snapboard.domain": {
@@ -420,6 +421,13 @@
         "dependencies": {
           "SnapBoard.Application": "[1.0.0, )",
           "SnapBoard.Sync.Contracts": "[1.0.0, )"
+        }
+      },
+      "snapboard.update.velopack": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Application": "[1.0.0, )",
+          "Velopack": "[1.2.0, )"
         }
       },
       "Avalonia": {
@@ -545,6 +553,12 @@
           "SQLitePCLRaw.lib.e_sqlite3": "2.1.12",
           "SQLitePCLRaw.provider.e_sqlite3": "2.1.12"
         }
+      },
+      "Velopack": {
+        "type": "CentralTransitive",
+        "requested": "[1.2.0, )",
+        "resolved": "1.2.0",
+        "contentHash": "Rz67gJL619fSBS6omaSINUxyDuwhIxkm5mmubf7uLd5Qgi6LLKaKCha+QFP6n+Bw/UjA0vutnH4JQfYzn6ANtw=="
       }
     }
   }

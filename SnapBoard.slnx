@@ -11,6 +11,7 @@
     <Project Path="src/SnapBoard.StorageMigrator/SnapBoard.StorageMigrator.csproj" />
     <Project Path="src/SnapBoard.Sync.Contracts/SnapBoard.Sync.Contracts.csproj" />
     <Project Path="src/SnapBoard.Sync.WebDav/SnapBoard.Sync.WebDav.csproj" />
+    <Project Path="src/SnapBoard.Update.Velopack/SnapBoard.Update.Velopack.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SnapBoard.Application.Tests/SnapBoard.Application.Tests.csproj" />
@@ -23,6 +24,7 @@
     <Project Path="tests/SnapBoard.Platform.MacOS.Tests/SnapBoard.Platform.MacOS.Tests.csproj" />
     <Project Path="tests/SnapBoard.Platform.Windows.Tests/SnapBoard.Platform.Windows.Tests.csproj" />
     <Project Path="tests/SnapBoard.Sync.WebDav.Tests/SnapBoard.Sync.WebDav.Tests.csproj" />
+    <Project Path="tests/SnapBoard.Update.Velopack.Tests/SnapBoard.Update.Velopack.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/SnapBoard.MacOSClipboardProbe/SnapBoard.MacOSClipboardProbe.csproj" />

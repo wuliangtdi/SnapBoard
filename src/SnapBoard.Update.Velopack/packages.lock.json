@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "f5VCIE7AJpd5YvzNTeMGVzQIgyE9tX+AreTYwQF+REbu+DZo/2Ae+jNSwhPEYrVz6RRkd7y8ubXjk6Nn6Ka+Cg=="
+      },
+      "Velopack": {
+        "type": "Direct",
+        "requested": "[1.2.0, )",
+        "resolved": "1.2.0",
+        "contentHash": "Rz67gJL619fSBS6omaSINUxyDuwhIxkm5mmubf7uLd5Qgi6LLKaKCha+QFP6n+Bw/UjA0vutnH4JQfYzn6ANtw=="
+      },
+      "snapboard.application": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Domain": "[1.0.0, )",
+          "SnapBoard.Platform.Abstractions": "[1.0.0, )",
+          "SnapBoard.Sync.Contracts": "[1.0.0, )"
+        }
+      },
+      "snapboard.domain": {
+        "type": "Project"
+      },
+      "snapboard.platform.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Domain": "[1.0.0, )"
+        }
+      },
+      "snapboard.sync.contracts": {
+        "type": "Project"
+      }
+    }
+  }
+}

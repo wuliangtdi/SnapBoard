@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Clipboard;
@@ -10,6 +11,7 @@ using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
 using SnapBoard.Platform.Windows.Clipboard;
+using SnapBoard.Update.Velopack;
 
 namespace SnapBoard.Desktop.HeadlessTests;
 
@@ -51,6 +53,12 @@ public sealed class DesktopCompositionRootTests
         {
             Assert.Null(monitor);
         }
+
+        Assert.IsType<VelopackApplicationUpdateService>(
+            provider.GetRequiredService<IApplicationUpdateService>());
+        Assert.Same(
+            provider.GetRequiredService<IApplicationUpdateService>(),
+            provider.GetRequiredService<IApplicationUpdateService>());
     }
 
     private static void AssertSyncMigrationServices(ServiceProvider provider)

@@ -345,6 +345,13 @@
           "SnapBoard.Sync.Contracts": "[1.0.0, )"
         }
       },
+      "snapboard.update.velopack": {
+        "type": "Project",
+        "dependencies": {
+          "SnapBoard.Application": "[1.0.0, )",
+          "Velopack": "[1.2.0, )"
+        }
+      },
       "BitMiracle.LibTiff.NET": {
         "type": "CentralTransitive",
         "requested": "[2.4.660, )",
@@ -390,6 +397,12 @@
           "SQLitePCLRaw.lib.e_sqlite3": "2.1.12",
           "SQLitePCLRaw.provider.e_sqlite3": "2.1.12"
         }
+      },
+      "Velopack": {
+        "type": "CentralTransitive",
+        "requested": "[1.2.0, )",
+        "resolved": "1.2.0",
+        "contentHash": "Rz67gJL619fSBS6omaSINUxyDuwhIxkm5mmubf7uLd5Qgi6LLKaKCha+QFP6n+Bw/UjA0vutnH4JQfYzn6ANtw=="
       }
     },
     "net10.0/linux-x64": {

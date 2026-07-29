@@ -7,9 +7,10 @@ executable_path=${1:-}
 runs=${2:-3}
 sample_seconds=${3:-10}
 background_seconds=${4:-3}
+storage_bootstrap_root=${5:-}
 
 if [[ -z "$executable_path" || ! -x "$executable_path" ]]; then
-    print -u2 "usage: $0 <executable-path> [runs=3] [sample-seconds=10] [background-seconds=3]"
+    print -u2 "usage: $0 <executable-path> [runs=3] [sample-seconds=10] [background-seconds=3] [storage-bootstrap-root]"
     exit 2
 fi
 
@@ -22,10 +23,12 @@ fi
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/snapboard-measure.XXXXXX")
 probe_path="$temporary_dir/snapboard_process_probe"
 process_id=""
+current_launch_args=()
 
 function cleanup {
     if [[ -n "$process_id" ]] && kill -0 "$process_id" 2>/dev/null; then
-        "$executable_path" --exit >/dev/null 2>&1 || kill -TERM "$process_id" 2>/dev/null || true
+        "$executable_path" --exit "${current_launch_args[@]}" >/dev/null 2>&1 ||
+            kill -TERM "$process_id" 2>/dev/null || true
         wait "$process_id" 2>/dev/null || true
     fi
 
@@ -47,9 +50,16 @@ xcrun clang \
 print "run,startup_ms,max_window_phys_mib,max_window_rss_mib,background_phys_mib,background_rss_mib,phys_return_mib,lifetime_peak_phys_mib,max_threads,max_file_descriptors,avg_cpu_percent,energy_mj,interrupt_wakeups"
 
 for run in $(seq 1 "$runs"); do
+    current_launch_args=()
+    if [[ -n "$storage_bootstrap_root" ]]; then
+        run_storage_root="$storage_bootstrap_root/run-$run"
+        mkdir -p "$run_storage_root"
+        current_launch_args=(--storage-bootstrap-root "$run_storage_root")
+    fi
+
     process_log="$temporary_dir/run-$run.log"
     start_ns=$($probe_path now 0)
-    "$executable_path" >"$process_log" 2>&1 &
+    "$executable_path" "${current_launch_args[@]}" >"$process_log" 2>&1 &
     process_id=$!
 
     window_deadline=$((SECONDS + 15))
@@ -97,7 +107,7 @@ for run in $(seq 1 "$runs"); do
         (( second < sample_seconds )) && sleep 1
     done
 
-    "$executable_path" --close-windows
+    "$executable_path" --close-windows "${current_launch_args[@]}"
     close_deadline=$((SECONDS + 10))
     while "$probe_path" window "$process_id"; do
         if (( SECONDS >= close_deadline )); then
@@ -138,7 +148,7 @@ for run in $(seq 1 "$runs"); do
 
     print "$run,$startup_ms,$max_phys_mib,$max_rss_mib,$background_phys_mib,$background_rss_mib,$phys_return_mib,$max_peak_mib,$max_threads,$max_file_descriptors,$avg_cpu,$energy_mj,$wakeup_delta"
 
-    "$executable_path" --exit
+    "$executable_path" --exit "${current_launch_args[@]}"
     wait "$process_id"
     process_id=""
     sleep 1

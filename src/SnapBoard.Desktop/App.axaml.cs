@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
@@ -52,7 +53,8 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetService<IStorageMigrationBarrier>(),
                     _services.GetService<IStoragePlatformService>(),
                     _services.GetService<ISyncService>(),
-                    _services.GetService<IHistorySettingsService>());
+                    _services.GetService<IHistorySettingsService>(),
+                    _services.GetRequiredService<IApplicationUpdateService>());
                 _windowsLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 
@@ -87,7 +89,8 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetService<IStoragePlatformService>(),
                     _services.GetService<ISyncService>(),
                     _services.GetService<IHistorySettingsService>(),
-                    _services.GetService<IDesktopSystemEventService>());
+                    _services.GetService<IDesktopSystemEventService>(),
+                    _services.GetRequiredService<IApplicationUpdateService>());
                 _macOSLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 

@@ -45,6 +45,7 @@
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\SnapBoard.Sync.Contracts\SnapBoard.Sync.Contracts.csproj" />
     <ProjectReference Include="..\SnapBoard.Sync.WebDav\SnapBoard.Sync.WebDav.csproj" />
+    <ProjectReference Include="..\SnapBoard.Update.Velopack\SnapBoard.Update.Velopack.csproj" />
   </ItemGroup>
 
   <Target Name="CopyStorageMigratorForBuild"

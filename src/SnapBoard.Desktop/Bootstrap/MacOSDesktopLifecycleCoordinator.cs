@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
 using SnapBoard.Platform.Abstractions.Clipboard;
@@ -39,6 +40,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
     private readonly IStoragePlatformService? _storagePlatformService;
     private readonly ISyncService? _syncService;
     private readonly IHistorySettingsService? _historySettingsService;
+    private readonly IApplicationUpdateService? _applicationUpdateService;
     private readonly IDesktopSystemEventService? _systemEventService;
     private readonly IClipboardWriter _writer;
     private MainWindow? _mainWindow;
@@ -68,7 +70,8 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         IStoragePlatformService? storagePlatformService = null,
         ISyncService? syncService = null,
         IHistorySettingsService? historySettingsService = null,
-        IDesktopSystemEventService? systemEventService = null)
+        IDesktopSystemEventService? systemEventService = null,
+        IApplicationUpdateService? applicationUpdateService = null)
     {
         _desktop = desktop;
         _mainViewModel = mainViewModel;
@@ -87,6 +90,7 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
         _syncService = syncService;
         _historySettingsService = historySettingsService;
         _systemEventService = systemEventService;
+        _applicationUpdateService = applicationUpdateService;
     }
 
     internal bool HasMainWindow => _mainWindow is not null;
@@ -369,7 +373,9 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
                 _storagePlatformService,
                 BeginStorageMigrationAsync,
                 _syncService,
-                _historySettingsService),
+                _historySettingsService,
+                _applicationUpdateService,
+                BeginApplicationUpdateInstallAsync),
         };
         window.Closed += OnSettingsWindowClosed;
         _settingsWindow = window;
@@ -465,6 +471,40 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
                 {
                     _syncService?.ResumeAfterPause();
                 }
+            }
+
+            throw;
+        }
+    }
+
+    private async ValueTask BeginApplicationUpdateInstallAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_applicationUpdateService is null)
+        {
+            throw new InvalidOperationException("Application updates are unavailable.");
+        }
+
+        bool captureWasPaused = _captureCoordinator.IsPaused;
+        bool syncPauseRequested = false;
+        try
+        {
+            if (_syncService is not null)
+            {
+                syncPauseRequested = true;
+                await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            _captureCoordinator.SetPaused(paused: true);
+            _applicationUpdateService.ScheduleInstallAndRestart();
+            PostToUi(ExitApplication);
+        }
+        catch
+        {
+            _captureCoordinator.SetPaused(captureWasPaused);
+            if (syncPauseRequested)
+            {
+                _syncService?.ResumeAfterPause();
             }
 
             throw;

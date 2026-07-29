@@ -69,6 +69,7 @@ public partial class SettingsWindow : Window
             await viewModel.InitializeHistorySettingsAsync();
             await viewModel.InitializeStorageAsync();
             await viewModel.InitializeSyncAsync();
+            await viewModel.InitializeApplicationUpdateAsync();
         }
     }
 

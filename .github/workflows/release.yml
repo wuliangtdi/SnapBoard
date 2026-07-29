@@ -39,6 +39,9 @@ jobs:
       - name: Restore locked dependencies
         run: dotnet restore SnapBoard.slnx --locked-mode
 
+      - name: Restore pinned packaging tools
+        run: dotnet tool restore
+
       - name: Publish Native AOT
         shell: bash
         run: |
@@ -76,6 +79,42 @@ jobs:
             throw "The storage migrator did not run as a standalone executable. Exit code: $($process.ExitCode)"
           }
 
+      - name: Create self-updating package
+        shell: bash
+        run: |
+          version="0.0.0-dev"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          channel="${{ matrix.rid }}-stable"
+          if [[ "$version" == *-* ]]; then
+            channel="${{ matrix.rid }}-beta"
+          fi
+          output_dir="artifacts/velopack/${{ matrix.rid }}"
+          mkdir -p "$output_dir"
+          common_args=(
+            pack
+            --outputDir "$output_dir"
+            --channel "$channel"
+            --runtime "${{ matrix.rid }}"
+            --packId "com.wuliangtdi.snapboard.${{ matrix.rid }}"
+            --packVersion "$version"
+            --packDir "artifacts/publish/${{ matrix.rid }}"
+            --packTitle "闪剪"
+            --packAuthors "wuliangtdi"
+            --delta None
+          )
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            dotnet tool run vpk -- "${common_args[@]}" \
+              --mainExe SnapBoard.Desktop.exe \
+              --icon src/SnapBoard.Desktop/Assets/snapboard.ico
+          else
+            dotnet tool run vpk -- "${common_args[@]}" \
+              --mainExe SnapBoard.Desktop \
+              --icon src/SnapBoard.Desktop/Assets/snapboard-app-icon.png \
+              --categories Utility
+          fi
+
       - name: Create Windows archive
         if: runner.os == 'Windows'
         shell: pwsh
@@ -98,6 +137,7 @@ jobs:
           path: |
             artifacts/${{ matrix.archive }}
             artifacts/${{ matrix.archive }}.sha256
+            artifacts/velopack/${{ matrix.rid }}/**
           if-no-files-found: error
 
   macos-package:
@@ -132,8 +172,10 @@ jobs:
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 
+      - name: Restore pinned packaging tools
+        run: dotnet tool restore
+
       - name: Validate Apple release credentials
-        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           required=(
@@ -142,14 +184,21 @@ jobs:
             KEYCHAIN_PASSWORD NOTARY_APPLE_ID NOTARY_PASSWORD NOTARY_TEAM_ID
           )
           missing=()
+          configured=0
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
               missing+=("$name")
+            else
+              configured=$((configured + 1))
             fi
           done
-          if (( ${#missing[@]} != 0 )); then
-            printf 'Missing required Apple release secret: %s\n' "${missing[@]}" >&2
+          if (( configured == 0 )); then
+            echo "Apple signing credentials are not configured; producing ad-hoc/unsigned packages."
+          elif (( ${#missing[@]} != 0 )); then
+            printf 'Apple release secrets must be all-or-none. Missing: %s\n' "${missing[@]}" >&2
             exit 1
+          else
+            echo "Apple signing, installer signing, and notarization are enabled."
           fi
 
       - name: Import Apple signing identities
@@ -219,6 +268,43 @@ jobs:
           codesign --verify --strict --verbose=2 "$helper"
           codesign --verify --deep --strict --verbose=2 "$output_root/SnapBoard.app"
 
+      - name: Create self-updating macOS package
+        shell: bash
+        run: |
+          version="0.0.0-dev"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          channel="${{ matrix.rid }}-stable"
+          if [[ "$version" == *-* ]]; then
+            channel="${{ matrix.rid }}-beta"
+          fi
+          output_dir="artifacts/velopack/${{ matrix.rid }}"
+          mkdir -p "$output_dir"
+          vpk_args=(
+            pack
+            --outputDir "$output_dir"
+            --channel "$channel"
+            --runtime "${{ matrix.rid }}"
+            --packId "com.wuliangtdi.snapboard.${{ matrix.rid }}"
+            --packVersion "$version"
+            --packDir "artifacts/macos/${{ matrix.rid }}/SnapBoard.app"
+            --mainExe SnapBoard
+            --packTitle "闪剪"
+            --packAuthors "wuliangtdi"
+            --bundleId com.wuliangtdi.snapboard
+            --delta None
+          )
+          if [[ -n "$APP_SIGN_IDENTITY" ]]; then
+            vpk_args+=(
+              --signAppIdentity "$APP_SIGN_IDENTITY"
+              --signInstallIdentity "$INSTALLER_SIGN_IDENTITY"
+              --signEntitlements packaging/macos/SnapBoard.entitlements
+              --notaryProfile snapboard-ci
+            )
+          fi
+          dotnet tool run vpk -- "${vpk_args[@]}"
+
       - name: Remove temporary signing keychain
         if: always() && env.APP_CERTIFICATE != ''
         shell: bash
@@ -232,12 +318,15 @@ jobs:
             artifacts/macos/${{ matrix.rid }}/SnapBoard-${{ matrix.rid }}.pkg
             artifacts/macos/${{ matrix.rid }}/SnapBoard-${{ matrix.rid }}.sha256
             artifacts/macos/${{ matrix.rid }}/package-result-${{ matrix.rid }}.txt
+            artifacts/velopack/${{ matrix.rid }}/**
           if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [package, macos-package]
     runs-on: ubuntu-latest
+    env:
+      UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.SNAPBOARD_UPDATE_SIGNING_PRIVATE_KEY_PEM }}
 
     steps:
       - uses: actions/checkout@v6
@@ -247,6 +336,19 @@ jobs:
           pattern: release-*
           path: artifacts
           merge-multiple: true
+
+      - name: Sign and verify update feeds
+        shell: bash
+        run: |
+          if [[ -z "$UPDATE_SIGNING_PRIVATE_KEY" ]]; then
+            echo "Missing required secret: SNAPBOARD_UPDATE_SIGNING_PRIVATE_KEY_PEM" >&2
+            exit 1
+          fi
+          private_key="$RUNNER_TEMP/snapboard-update-signing-private-key.pem"
+          trap 'rm -f "$private_key"' EXIT
+          printf '%s\n' "$UPDATE_SIGNING_PRIVATE_KEY" > "$private_key"
+          chmod 0600 "$private_key"
+          scripts/updates/Sign-UpdateFeeds.sh artifacts "$private_key"
 
       - name: Create GitHub Release
         env:

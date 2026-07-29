@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Platform.Abstractions.Clipboard;
 
@@ -30,6 +31,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private readonly IHistorySettingsService? _historySettingsService;
     private readonly IClipboardSourceApplicationMetadataResolver? _sourceMetadataResolver;
     private readonly ISyncService? _syncService;
+    private readonly IApplicationUpdateService? _updateService;
     private readonly object _historyReloadGate = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
@@ -56,7 +58,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
 
     public MainViewModel(IClipboardHistoryService historyService)
-        : this(historyService, null, null, null, initializeServices: true)
+        : this(historyService, null, null, null, null, initializeServices: true)
     {
     }
 
@@ -66,6 +68,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         : this(
             historyService,
             sourceMetadataResolver ?? throw new ArgumentNullException(nameof(sourceMetadataResolver)),
+            null,
             null,
             null,
             initializeServices: true)
@@ -82,6 +85,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             sourceMetadataResolver ?? throw new ArgumentNullException(nameof(sourceMetadataResolver)),
             syncService ?? throw new ArgumentNullException(nameof(syncService)),
             historySettingsService,
+            null,
             initializeServices: true)
     {
     }
@@ -91,6 +95,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         IClipboardSourceApplicationMetadataResolver? sourceMetadataResolver,
         ISyncService? syncService,
         IHistorySettingsService? historySettingsService,
+        IApplicationUpdateService? updateService,
         bool initializeServices)
     {
         _ = initializeServices;
@@ -100,6 +105,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _sourceMetadataResolver = sourceMetadataResolver;
         _syncService = syncService;
         _historySettingsService = historySettingsService;
+        _updateService = updateService;
         _designItems = [];
         _historyService.HistoryChanged += OnHistoryChanged;
         if (_syncService is not null)
@@ -113,11 +119,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         IClipboardHistoryService historyService,
         IClipboardSourceApplicationMetadataResolver? sourceMetadataResolver,
         ISyncService? syncService,
-        IHistorySettingsService? historySettingsService) => new(
+        IHistorySettingsService? historySettingsService,
+        IApplicationUpdateService? updateService) => new(
             historyService,
             sourceMetadataResolver,
             syncService,
             historySettingsService,
+            updateService,
             initializeServices: true);
 
     [ObservableProperty]
@@ -728,6 +736,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             try
             {
                 _syncService?.Start();
+                _updateService?.Start();
             }
             catch (InvalidOperationException)
             {

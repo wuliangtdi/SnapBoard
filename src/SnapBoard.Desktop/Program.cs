@@ -3,6 +3,7 @@ using SnapBoard.Desktop.Bootstrap;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.Windows.Desktop;
+using SnapBoard.Update.Velopack;
 
 namespace SnapBoard.Desktop;
 
@@ -19,6 +20,8 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        VelopackBootstrap.Run(args);
+
         if (OperatingSystem.IsWindows())
         {
             SingleInstanceCommand command = GetSingleInstanceCommand(args);

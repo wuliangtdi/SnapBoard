@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
 using SnapBoard.Platform.Abstractions.Clipboard;
@@ -42,6 +43,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;
     private readonly IGlobalHotKeyService _hotKeyService;
     private readonly IHistorySettingsService? _historySettingsService;
+    private readonly IApplicationUpdateService? _applicationUpdateService;
     private readonly MainViewModel _mainViewModel;
     private readonly IPlatformWindowPlacementService _placementService;
     private readonly WindowsSingleInstanceCoordinator? _singleInstance;
@@ -77,7 +79,8 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         IStorageMigrationBarrier? storageMigrationBarrier = null,
         IStoragePlatformService? storagePlatformService = null,
         ISyncService? syncService = null,
-        IHistorySettingsService? historySettingsService = null)
+        IHistorySettingsService? historySettingsService = null,
+        IApplicationUpdateService? applicationUpdateService = null)
     {
         _application = application;
         _desktop = desktop;
@@ -94,6 +97,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         _storagePlatformService = storagePlatformService;
         _syncService = syncService;
         _historySettingsService = historySettingsService;
+        _applicationUpdateService = applicationUpdateService;
     }
 
     public void Initialize(DesktopStartupMode startupMode)
@@ -268,7 +272,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 storagePlatformService: _storagePlatformService,
                 requestStorageMigration: BeginStorageMigrationAsync,
                 syncService: _syncService,
-                historySettingsService: _historySettingsService),
+                historySettingsService: _historySettingsService,
+                applicationUpdateService: _applicationUpdateService,
+                requestUpdateInstall: BeginApplicationUpdateInstallAsync),
         };
         window.Closed += OnSettingsWindowClosed;
         _settingsWindow = window;
@@ -363,6 +369,40 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 {
                     _syncService?.ResumeAfterPause();
                 }
+            }
+
+            throw;
+        }
+    }
+
+    private async ValueTask BeginApplicationUpdateInstallAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_applicationUpdateService is null)
+        {
+            throw new InvalidOperationException("Application updates are unavailable.");
+        }
+
+        bool captureWasPaused = _captureCoordinator.IsPaused;
+        bool syncPauseRequested = false;
+        try
+        {
+            if (_syncService is not null)
+            {
+                syncPauseRequested = true;
+                await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            _captureCoordinator.SetPaused(paused: true);
+            _applicationUpdateService.ScheduleInstallAndRestart();
+            PostToUi(ExitApplication);
+        }
+        catch
+        {
+            _captureCoordinator.SetPaused(captureWasPaused);
+            if (syncPauseRequested)
+            {
+                _syncService?.ResumeAfterPause();
             }
 
             throw;

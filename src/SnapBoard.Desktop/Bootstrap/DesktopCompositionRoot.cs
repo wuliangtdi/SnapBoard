@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Infrastructure.Persistence;
 using SnapBoard.Infrastructure.Sync;
@@ -18,6 +19,7 @@ using SnapBoard.Platform.Windows.Clipboard;
 using SnapBoard.Platform.Windows.Desktop;
 using SnapBoard.Platform.Windows.Security;
 using SnapBoard.Sync.WebDav;
+using SnapBoard.Update.Velopack;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
@@ -31,11 +33,14 @@ internal static class DesktopCompositionRoot
     {
         ServiceCollection services = new();
         AddClipboardHistoryServices(services, storageStartup);
+        services.AddSingleton<IApplicationUpdateSettingsService, ApplicationUpdateSettingsService>();
+        services.AddSingleton<IApplicationUpdateService, VelopackApplicationUpdateService>();
         services.AddSingleton(provider => MainViewModel.CreateForServices(
             provider.GetRequiredService<IClipboardHistoryService>(),
             provider.GetService<IClipboardSourceApplicationMetadataResolver>(),
             provider.GetService<ISyncService>(),
-            provider.GetService<IHistorySettingsService>()));
+            provider.GetService<IHistorySettingsService>(),
+            provider.GetRequiredService<IApplicationUpdateService>()));
 
         if (OperatingSystem.IsWindows())
         {

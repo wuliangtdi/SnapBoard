@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Storage;
 using SnapBoard.Sync.Contracts;
@@ -15,6 +16,14 @@ namespace SnapBoard.Desktop.ViewModels;
 public sealed record RetentionPeriodOption(string DisplayName, int Days, bool IsCustom = false);
 
 public sealed record SyncFrequencyOption(string DisplayName, int IntervalSeconds);
+
+public sealed record ApplicationUpdateChannelOption(
+    string DisplayName,
+    ApplicationUpdateChannel Channel);
+
+public sealed record ApplicationUpdateSourceOption(
+    string DisplayName,
+    ApplicationUpdateSource Source);
 
 public sealed record ProviderMigrationDeviceViewItem(
     string DeviceId,
@@ -45,6 +54,20 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         new("30 分钟", 30 * 60),
         new("1 小时", 60 * 60),
     ];
+    private static readonly ApplicationUpdateChannelOption StableUpdateChannel = new(
+        "稳定版",
+        ApplicationUpdateChannel.Stable);
+    private static readonly IReadOnlyList<ApplicationUpdateChannelOption> AvailableUpdateChannels =
+    [
+        StableUpdateChannel,
+        new("测试版", ApplicationUpdateChannel.Beta),
+    ];
+    private static readonly ApplicationUpdateSourceOption AutomaticUpdateSource = new(
+        "自动选择",
+        ApplicationUpdateSource.Automatic);
+    private static readonly ApplicationUpdateSourceOption GitHubUpdateSource = new(
+        "GitHub",
+        ApplicationUpdateSource.GitHub);
     private readonly IAutoStartService _autoStartService;
     private readonly IAccessibilityPermissionService? _accessibilityPermissionService;
     private readonly IGlobalHotKeyService _hotKeyService;
@@ -54,6 +77,8 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private readonly IStoragePlatformService? _storagePlatformService;
     private readonly ISyncService? _syncService;
     private readonly ISyncProviderMigrationService? _providerMigrationService;
+    private readonly IApplicationUpdateService? _applicationUpdateService;
+    private readonly Func<CancellationToken, ValueTask>? _requestUpdateInstall;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
     private GlobalHotKeyGesture _pendingHotKey;
@@ -61,6 +86,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private bool _historySettingsInitialized;
     private bool _syncSettingsInitialized;
     private bool _storageInitialized;
+    private bool _updateInitialized;
     private int _disposed;
 
     public SettingsViewModel(
@@ -71,7 +97,9 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IStoragePlatformService? storagePlatformService = null,
         Func<string, CancellationToken, ValueTask>? requestStorageMigration = null,
         ISyncService? syncService = null,
-        IHistorySettingsService? historySettingsService = null)
+        IHistorySettingsService? historySettingsService = null,
+        IApplicationUpdateService? applicationUpdateService = null,
+        Func<CancellationToken, ValueTask>? requestUpdateInstall = null)
     {
         _hotKeyService = hotKeyService;
         _autoStartService = autoStartService;
@@ -82,6 +110,8 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         _syncService = syncService;
         _providerMigrationService = syncService as ISyncProviderMigrationService;
         _historySettingsService = historySettingsService;
+        _applicationUpdateService = applicationUpdateService;
+        _requestUpdateInstall = requestUpdateInstall;
         _uiContext = SynchronizationContext.Current;
         _pendingHotKey = hotKeyService.ConfiguredGesture;
         HotKeyDisplayName = _pendingHotKey.DisplayName;
@@ -95,6 +125,15 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IsSyncSectionVisible = syncService is not null;
         IsProviderMigrationSectionVisible = _providerMigrationService is not null;
         IsHistorySettingsSectionVisible = historySettingsService is not null;
+        IsUpdateSectionVisible = applicationUpdateService is not null;
+        UpdateSourceOptions = applicationUpdateService?.IsOfficialSourceConfigured == true
+            ?
+            [
+                AutomaticUpdateSource,
+                new ApplicationUpdateSourceOption("官方源", ApplicationUpdateSource.Official),
+                GitHubUpdateSource,
+            ]
+            : [AutomaticUpdateSource, GitHubUpdateSource];
         if (_historySettingsService is not null)
         {
             _historySettingsService.Changed += OnHistorySettingsChanged;
@@ -112,6 +151,13 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         {
             _providerMigrationService.ProviderMigrationChanged += OnProviderMigrationChanged;
             ApplyProviderMigration(_providerMigrationService.ProviderMigration);
+        }
+
+        if (_applicationUpdateService is not null)
+        {
+            _applicationUpdateService.StatusChanged += OnApplicationUpdateStatusChanged;
+            ApplyApplicationUpdateSettings(_applicationUpdateService.Settings);
+            ApplyApplicationUpdateStatus(_applicationUpdateService.Status);
         }
 
         _initializing = true;
@@ -364,6 +410,189 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public string DefaultHotKeyToolTip { get; }
 
     public string SettingsScopeDescription { get; }
+
+    [ObservableProperty]
+    public partial bool IsUpdateSectionVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsUpdateBusy { get; set; }
+
+    [ObservableProperty]
+    public partial bool AreAutomaticUpdateChecksEnabled { get; set; } = true;
+
+    [ObservableProperty]
+    public partial ApplicationUpdateChannelOption SelectedUpdateChannel { get; set; } =
+        StableUpdateChannel;
+
+    [ObservableProperty]
+    public partial ApplicationUpdateSourceOption SelectedUpdateSource { get; set; } =
+        AutomaticUpdateSource;
+
+    [ObservableProperty]
+    public partial string ApplicationUpdateStatusText { get; set; } = "尚未检查更新";
+
+    [ObservableProperty]
+    public partial string ApplicationUpdateVersionText { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial double ApplicationUpdateProgress { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsApplicationUpdateProgressVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsApplicationUpdateDownloadVisible { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsApplicationUpdateInstallVisible { get; set; }
+
+    public IReadOnlyList<ApplicationUpdateChannelOption> UpdateChannelOptions { get; } =
+        AvailableUpdateChannels;
+
+    public IReadOnlyList<ApplicationUpdateSourceOption> UpdateSourceOptions { get; }
+
+    public async Task InitializeApplicationUpdateAsync()
+    {
+        if (_applicationUpdateService is null || _updateInitialized)
+        {
+            return;
+        }
+
+        _updateInitialized = true;
+        IsUpdateBusy = true;
+        try
+        {
+            await _applicationUpdateService.InitializeAsync(_lifetime.Token);
+            ApplyApplicationUpdateSettings(_applicationUpdateService.Settings);
+            ApplyApplicationUpdateStatus(_applicationUpdateService.Status);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is
+            InvalidDataException or InvalidOperationException or IOException)
+        {
+            _updateInitialized = false;
+            ApplicationUpdateStatusText = "无法读取更新设置";
+        }
+        finally
+        {
+            IsUpdateBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveApplicationUpdateSettingsAsync()
+    {
+        if (_applicationUpdateService is null || IsUpdateBusy)
+        {
+            return;
+        }
+
+        IsUpdateBusy = true;
+        try
+        {
+            ApplicationUpdateSettings settings = new(
+                AreAutomaticUpdateChecksEnabled,
+                SelectedUpdateChannel.Channel,
+                SelectedUpdateSource.Source);
+            await _applicationUpdateService.UpdateSettingsAsync(settings, _lifetime.Token);
+            ApplicationUpdateStatusText = "更新设置已保存到本机";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or InvalidDataException or InvalidOperationException or IOException)
+        {
+            ApplicationUpdateStatusText = "更新设置保存失败，原设置保持不变";
+        }
+        finally
+        {
+            IsUpdateBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckForApplicationUpdatesAsync()
+    {
+        if (_applicationUpdateService is null || IsUpdateBusy)
+        {
+            return;
+        }
+
+        IsUpdateBusy = true;
+        try
+        {
+            await _applicationUpdateService.CheckForUpdatesAsync(_lifetime.Token);
+            ApplyApplicationUpdateStatus(_applicationUpdateService.Status);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            IsUpdateBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DownloadApplicationUpdateAsync()
+    {
+        if (_applicationUpdateService is null || IsUpdateBusy)
+        {
+            return;
+        }
+
+        IsUpdateBusy = true;
+        try
+        {
+            await _applicationUpdateService.DownloadUpdateAsync(_lifetime.Token);
+            ApplyApplicationUpdateStatus(_applicationUpdateService.Status);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            IsUpdateBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task InstallApplicationUpdateAsync()
+    {
+        if (_applicationUpdateService is null || IsUpdateBusy)
+        {
+            return;
+        }
+
+        IsUpdateBusy = true;
+        try
+        {
+            if (_requestUpdateInstall is not null)
+            {
+                await _requestUpdateInstall(_lifetime.Token);
+            }
+            else
+            {
+                _applicationUpdateService.ScheduleInstallAndRestart();
+            }
+
+            ApplicationUpdateStatusText = "正在退出并安装更新";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+            ApplyApplicationUpdateStatus(_applicationUpdateService.Status);
+        }
+        finally
+        {
+            IsUpdateBusy = false;
+        }
+    }
 
     public async Task InitializeHistorySettingsAsync()
     {
@@ -1259,6 +1488,73 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         SyncProviderMigrationSnapshot snapshot) =>
         PostToUi(() => ApplyProviderMigration(snapshot));
 
+    private void OnApplicationUpdateStatusChanged(
+        object? sender,
+        ApplicationUpdateStatus status) =>
+        PostToUi(() => ApplyApplicationUpdateStatus(status));
+
+    private void ApplyApplicationUpdateSettings(ApplicationUpdateSettings settings)
+    {
+        AreAutomaticUpdateChecksEnabled = settings.AutomaticChecks;
+        SelectedUpdateChannel = UpdateChannelOptions.FirstOrDefault(
+                option => option.Channel == settings.Channel) ??
+            StableUpdateChannel;
+        SelectedUpdateSource = UpdateSourceOptions.FirstOrDefault(
+                option => option.Source == settings.Source) ??
+            AutomaticUpdateSource;
+    }
+
+    private void ApplyApplicationUpdateStatus(ApplicationUpdateStatus status)
+    {
+        ApplicationUpdateVersionText = status.AvailableVersion is null
+            ? $"当前版本 {status.CurrentVersion}"
+            : $"{status.CurrentVersion} → {status.AvailableVersion}";
+        ApplicationUpdateProgress = status.DownloadProgress;
+        IsApplicationUpdateProgressVisible =
+            status.State == ApplicationUpdateState.Downloading;
+        IsApplicationUpdateDownloadVisible =
+            status.State == ApplicationUpdateState.UpdateAvailable;
+        IsApplicationUpdateInstallVisible =
+            status.State == ApplicationUpdateState.ReadyToInstall;
+        string source = string.IsNullOrWhiteSpace(status.ActiveSource)
+            ? string.Empty
+            : $"（{status.ActiveSource}）";
+        ApplicationUpdateStatusText = status.State switch
+        {
+            ApplicationUpdateState.Unavailable => status.Failure switch
+            {
+                ApplicationUpdateFailure.NotInstalled =>
+                    "当前安装方式不支持自动更新；请先使用新版安装包安装一次",
+                ApplicationUpdateFailure.UnsupportedPlatform => "当前系统不支持自动更新",
+                _ => "自动更新当前不可用",
+            },
+            ApplicationUpdateState.Idle => "尚未检查更新",
+            ApplicationUpdateState.Checking => "正在检查更新",
+            ApplicationUpdateState.UpToDate => "已是最新版本",
+            ApplicationUpdateState.UpdateAvailable => $"发现可用更新{source}",
+            ApplicationUpdateState.Downloading => $"正在下载更新 {status.DownloadProgress}%{source}",
+            ApplicationUpdateState.ReadyToInstall => $"更新已下载完成{source}",
+            ApplicationUpdateState.Installing => "正在准备安装更新",
+            ApplicationUpdateState.Failed => FormatApplicationUpdateFailure(status.Failure),
+            _ => "自动更新当前不可用",
+        };
+    }
+
+    private static string FormatApplicationUpdateFailure(ApplicationUpdateFailure failure) =>
+        failure switch
+        {
+            ApplicationUpdateFailure.OfficialSourceUnavailable => "官方更新源尚未配置",
+            ApplicationUpdateFailure.Network => "暂时无法连接更新源",
+            ApplicationUpdateFailure.InvalidSignature => "更新签名验证失败，已拒绝下载",
+            ApplicationUpdateFailure.SourceConflict => "可信更新源内容不一致，已停止更新",
+            ApplicationUpdateFailure.InvalidPackage => "安装包校验失败，已拒绝安装",
+            ApplicationUpdateFailure.Busy => "另一个更新操作正在进行",
+            ApplicationUpdateFailure.NotInstalled =>
+                "当前安装方式不支持自动更新；请先使用新版安装包安装一次",
+            ApplicationUpdateFailure.UnsupportedPlatform => "当前系统不支持自动更新",
+            _ => "检查更新失败",
+        };
+
     private void ApplyProviderMigrationResult(SyncProviderMigrationResult result)
     {
         ApplyProviderMigration(result.Snapshot);
@@ -1592,6 +1888,11 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         if (_historySettingsService is not null)
         {
             _historySettingsService.Changed -= OnHistorySettingsChanged;
+        }
+
+        if (_applicationUpdateService is not null)
+        {
+            _applicationUpdateService.StatusChanged -= OnApplicationUpdateStatusChanged;
         }
 
         _lifetime.Cancel();

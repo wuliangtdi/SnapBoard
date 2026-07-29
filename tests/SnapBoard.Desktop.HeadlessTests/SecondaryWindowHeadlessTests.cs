@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
+using SnapBoard.Application.Updates;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
 using SnapBoard.Platform.Abstractions.Desktop;
@@ -54,7 +55,8 @@ public sealed class SecondaryWindowHeadlessTests
             storagePlatformService: new FakeStoragePlatformService(),
             requestStorageMigration: static (_, _) => ValueTask.CompletedTask,
             syncService: syncService,
-            historySettingsService: new FakeHistorySettingsService());
+            historySettingsService: new FakeHistorySettingsService(),
+            applicationUpdateService: new FakeApplicationUpdateService());
         await viewModel.InitializeStorageAsync();
         viewModel.SyncActiveSpaceId = "11111111-1111-1111-1111-111111111111";
         viewModel.SyncRecoveryMaterialPath =
@@ -81,6 +83,12 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<Button>("SaveHistorySettingsButton"));
             Assert.IsType<ComboBox>(window.FindControl<ComboBox>("SyncFrequencyComboBox"));
             Assert.IsType<Button>(window.FindControl<Button>("SaveSyncFrequencyButton"));
+            Assert.IsType<ComboBox>(window.FindControl<ComboBox>("UpdateChannelComboBox"));
+            Assert.IsType<ComboBox>(window.FindControl<ComboBox>("UpdateSourceComboBox"));
+            Assert.IsType<Button>(
+                window.FindControl<Button>("CheckForApplicationUpdatesButton"));
+            Assert.IsType<Button>(
+                window.FindControl<Button>("DownloadApplicationUpdateButton"));
             TextBox providerEndpoint = Assert.IsType<TextBox>(
                 window.FindControl<TextBox>("ProviderMigrationTargetEndpointTextBox"));
             StackPanel providerSection = Assert.IsType<StackPanel>(
@@ -1127,5 +1135,52 @@ public sealed class SecondaryWindowHeadlessTests
                 ],
                 TotalObjects: 8,
                 TotalBytes: 4096);
+    }
+
+    private sealed class FakeApplicationUpdateService : IApplicationUpdateService
+    {
+        public event EventHandler<ApplicationUpdateStatus>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public ApplicationUpdateSettings Settings => ApplicationUpdateSettings.Default;
+
+        public ApplicationUpdateStatus Status { get; } = new(
+            ApplicationUpdateState.UpdateAvailable,
+            "1.0.0",
+            "1.1.0",
+            ActiveSource: "GitHub");
+
+        public bool IsOfficialSourceConfigured => false;
+
+        public ValueTask InitializeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public void Start()
+        {
+        }
+
+        public ValueTask UpdateSettingsAsync(
+            ApplicationUpdateSettings settings,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask CheckForUpdatesAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask DownloadUpdateAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public void ScheduleInstallAndRestart()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }
