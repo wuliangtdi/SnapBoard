@@ -296,9 +296,10 @@
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Text="{Binding DoubleHotKeyStatus}"
                                        TextWrapping="Wrap" />
-                            <TextBlock FontSize="11"
+                            <TextBlock x:Name="HotKeyCaptureHint"
+                                       FontSize="11"
                                        Foreground="{DynamicResource TertiaryTextBrush}"
-                                       Text="单次快捷键需要修饰键；连按两次快捷键可使用单个按键。两组不能相同。"
+                                       Text="两个快捷键都可使用单个按键（包括 Ctrl、Alt、Shift、Win）或组合键；两组不能相同。"
                                        TextWrapping="Wrap" />
                         </StackPanel>
 

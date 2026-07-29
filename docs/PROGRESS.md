@@ -840,7 +840,35 @@ Native AOT：
   - 本次没有实现或宣称 macOS 原生两槽快捷键、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
 ```
 
-## 28. 更新规则
+## 28. 2026-07-29 执行记录：Windows 两槽任意单键与修饰键录入
+
+```text
+日期：2026-07-29
+阶段/任务：按用户确认放开 Windows Primary/Double 两槽录入限制
+状态：[x] Windows 与共享语义、自动验证和 win-x64 Native AOT 完成；[ ] macOS 原生双槽阶段仍待实施
+开发基线：659f8233f56e17817d432e0dc5bfda3cc90266a8（开发前 main 与 origin/main 一致）
+实现内容：
+  - Windows Primary 和 Double 统一允许普通单键、单个 Ctrl/Alt/Shift/Win、只含修饰键的组合，以及修饰键加普通主键；现有 Primary 默认值保持不变，Double 仍默认未设置。
+  - 设置页在修饰键 KeyUp 时完成单键/纯修饰键组合录入；若松开前继续按普通键，则录入常规组合。两个录入器统一提示“请按下一个按键或组合键，Esc 取消”，辅助文案不再要求 Primary 必须包含修饰键。
+  - 纯修饰键组合把最后按下的修饰键作为 RegisterHotKey 的主虚拟键，其余键作为修饰标志；主虚拟键对应的重复修饰标志会被移除。所有 Windows 绑定仍强制 MOD_NOREPEAT。
+  - Windows 当前 HKCU 持久化格式继续使用版本 2，序列化结构未变化；校验规则改为两槽一致，不增加旧格式兼容、迁移或字段补救代码，也不生成同步事件。
+  - 没有引入全局键盘 Hook 或监听全部输入。RegisterHotKey 无法表达的 A+B 式多个普通主键同时组合仍不支持。
+自动验证：
+  - dotnet restore --locked-mode、dotnet format --verify-no-changes、Release build 均通过；build 为 0 警告、0 错误。
+  - 全量 417 项：395 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Windows Platform 97/97，Desktop Headless 94/94。
+  - Windows 快捷键/本机设置定向用例 35/35，Headless 快捷键录入用例 20/20；覆盖普通单键、单修饰键、纯修饰键组合、常规组合、两槽 MOD_NOREPEAT、持久化重启恢复和精确界面文案。
+  - Windows 实机直接调用 RegisterHotKey 验证 VK_SHIFT、VK_CONTROL、VK_MENU、VK_LWIN、VK_RWIN 在无用户修饰标志且带 MOD_NOREPEAT 时均可注册并完整注销；未留下测试注册。
+Native AOT：
+  - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。
+  - SnapBoard.Desktop.exe 40,385,536 字节，SHA-256 683DE41E5C24608019BFC32F2007467D9F26CC8E926C92BAAE9E2749AE22CAFA。
+  - SnapBoard.StorageMigrator.exe 4,513,280 字节，SHA-256 5B6A6F441EE97C08E74FF98B7E685998B1637535A7FC5CB816AC33E83C8AFB98，保持独立 AOT；发布目录中没有对应 .dll、.deps.json 或 .runtimeconfig.json。
+限制：
+  - 纯修饰键组合遵循录入顺序，最后按下的键是原生触发主键；被 Windows 保留或已由其他程序注册的按键仍会按既有冲突路径拒绝，并保留原两槽状态。
+  - 多个普通主键同时组成的 A+B 式全局组合需要监听全部键盘输入，不在本功能范围内。
+  - 本次没有实现或宣称 macOS 原生两槽快捷键、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
+```
+
+## 29. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

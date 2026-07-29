@@ -12,10 +12,15 @@ namespace SnapBoard.Desktop.Views;
 
 public partial class SettingsWindow : Window
 {
+    private readonly HashSet<Key> _pressedModifierKeys = [];
+    private GlobalHotKeyModifiers _capturedModifierFlags;
+    private string? _modifierMainKeyName;
+
     public SettingsWindow()
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
     }
@@ -24,6 +29,7 @@ public partial class SettingsWindow : Window
     {
         if (DataContext is SettingsViewModel viewModel)
         {
+            ResetModifierCapture();
             viewModel.BeginHotKeyCapture();
             HotKeyCaptureButton.Focus();
         }
@@ -33,6 +39,7 @@ public partial class SettingsWindow : Window
     {
         if (DataContext is SettingsViewModel viewModel)
         {
+            ResetModifierCapture();
             viewModel.BeginDoubleHotKeyCapture();
             DoubleHotKeyCaptureButton.Focus();
         }
@@ -47,26 +54,67 @@ public partial class SettingsWindow : Window
 
         if (e.Key == Key.Escape)
         {
+            ResetModifierCapture();
             viewModel.CancelHotKeyCapture();
             e.Handled = true;
             return;
         }
 
-        if (IsModifierKey(e.Key))
+        if (TryMapModifierKey(
+                e.Key,
+                out GlobalHotKeyModifiers modifier,
+                out string modifierKeyName))
         {
-            // 单独按下修饰键时保持录入状态，等待用户继续按主键。
+            if (_pressedModifierKeys.Add(e.Key))
+            {
+                _capturedModifierFlags |= modifier;
+                _modifierMainKeyName = modifierKeyName;
+            }
+
             e.Handled = true;
             return;
         }
 
+        ResetModifierCapture();
         viewModel.CaptureHotKey(MapModifiers(e.KeyModifiers), e.Key.ToString());
         e.Handled = true;
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel { IsCapturingHotKey: true } viewModel ||
+            !TryMapModifierKey(
+                e.Key,
+                out GlobalHotKeyModifiers releasedModifier,
+                out _))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        _pressedModifierKeys.Remove(e.Key);
+        GlobalHotKeyModifiers remainingModifiers =
+            MapModifiers(e.KeyModifiers) & ~releasedModifier;
+        if (_pressedModifierKeys.Count != 0 ||
+            remainingModifiers != GlobalHotKeyModifiers.None)
+        {
+            return;
+        }
+
+        GlobalHotKeyModifiers modifiers = _capturedModifierFlags;
+        string? modifierKeyName = _modifierMainKeyName;
+        ResetModifierCapture();
+        if (modifierKeyName is not null)
+        {
+            viewModel.CaptureHotKey(modifiers, modifierKeyName);
+        }
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {
         if (DataContext is SettingsViewModel viewModel)
         {
+            ResetModifierCapture();
             viewModel.CancelHotKeyCapture();
         }
     }
@@ -300,15 +348,31 @@ public partial class SettingsWindow : Window
         return result;
     }
 
-    private static bool IsModifierKey(Key key) => key is
-        Key.LeftCtrl or
-        Key.RightCtrl or
-        Key.LeftAlt or
-        Key.RightAlt or
-        Key.LeftShift or
-        Key.RightShift or
-        Key.LWin or
-        Key.RWin or
-        Key.System or
-        Key.None;
+    private void ResetModifierCapture()
+    {
+        _pressedModifierKeys.Clear();
+        _capturedModifierFlags = GlobalHotKeyModifiers.None;
+        _modifierMainKeyName = null;
+    }
+
+    private static bool TryMapModifierKey(
+        Key key,
+        out GlobalHotKeyModifiers modifier,
+        out string keyName)
+    {
+        (modifier, keyName) = key switch
+        {
+            Key.LeftCtrl => (GlobalHotKeyModifiers.Control, "LeftCtrl"),
+            Key.RightCtrl => (GlobalHotKeyModifiers.Control, "RightCtrl"),
+            Key.LeftAlt => (GlobalHotKeyModifiers.Alt, "LeftAlt"),
+            Key.RightAlt => (GlobalHotKeyModifiers.Alt, "RightAlt"),
+            Key.System => (GlobalHotKeyModifiers.Alt, "System"),
+            Key.LeftShift => (GlobalHotKeyModifiers.Shift, "LeftShift"),
+            Key.RightShift => (GlobalHotKeyModifiers.Shift, "RightShift"),
+            Key.LWin => (GlobalHotKeyModifiers.Windows, "LWin"),
+            Key.RWin => (GlobalHotKeyModifiers.Windows, "RWin"),
+            _ => (GlobalHotKeyModifiers.None, string.Empty),
+        };
+        return modifier != GlobalHotKeyModifiers.None;
+    }
 }

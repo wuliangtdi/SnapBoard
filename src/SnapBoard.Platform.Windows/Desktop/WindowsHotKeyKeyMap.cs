@@ -13,22 +13,16 @@ internal static class WindowsHotKeyKeyMap
 
     public static GlobalHotKeyGestureCreationResult CreateGesture(
         GlobalHotKeyModifiers modifiers,
-        string keyName,
-        bool requireModifier = true)
+        string keyName)
     {
         GlobalHotKeyModifiers normalizedModifiers = modifiers & UserModifiers;
-        if (requireModifier && normalizedModifiers == GlobalHotKeyModifiers.None)
-        {
-            return new GlobalHotKeyGestureCreationResult(
-                GlobalHotKeyGestureCreationStatus.MissingModifier);
-        }
-
         if (!TryResolveVirtualKey(keyName, out uint virtualKey, out string displayName))
         {
             return new GlobalHotKeyGestureCreationResult(
                 GlobalHotKeyGestureCreationStatus.UnsupportedKey);
         }
 
+        normalizedModifiers &= ~GetMainKeyModifier(keyName);
         normalizedModifiers |= GlobalHotKeyModifiers.NoRepeat;
         return new GlobalHotKeyGestureCreationResult(
             GlobalHotKeyGestureCreationStatus.Created,
@@ -87,6 +81,9 @@ internal static class WindowsHotKeyKeyMap
 
         (int resolvedVirtualKey, displayName) = keyName switch
         {
+            "LeftShift" or "RightShift" => (0x10, "Shift"),
+            "LeftCtrl" or "RightCtrl" => (0x11, "Ctrl"),
+            "LeftAlt" or "RightAlt" or "System" => (0x12, "Alt"),
             "Back" => (0x08, "Backspace"),
             "Tab" => (0x09, "Tab"),
             "Clear" => (0x0C, "Clear"),
@@ -108,6 +105,8 @@ internal static class WindowsHotKeyKeyMap
             "Insert" => (0x2D, "Insert"),
             "Delete" => (0x2E, "Delete"),
             "Help" => (0x2F, "Help"),
+            "LWin" => (0x5B, "Win"),
+            "RWin" => (0x5C, "Right Win"),
             "Apps" => (0x5D, "Menu"),
             "Sleep" => (0x5F, "Sleep"),
             "Multiply" => (0x6A, "Num *"),
@@ -155,6 +154,15 @@ internal static class WindowsHotKeyKeyMap
         virtualKey = (uint)resolvedVirtualKey;
         return virtualKey != 0;
     }
+
+    private static GlobalHotKeyModifiers GetMainKeyModifier(string keyName) => keyName switch
+    {
+        "LeftShift" or "RightShift" => GlobalHotKeyModifiers.Shift,
+        "LeftCtrl" or "RightCtrl" => GlobalHotKeyModifiers.Control,
+        "LeftAlt" or "RightAlt" or "System" => GlobalHotKeyModifiers.Alt,
+        "LWin" or "RWin" => GlobalHotKeyModifiers.Windows,
+        _ => GlobalHotKeyModifiers.None,
+    };
 
     private static bool TryResolveNumberedKey(
         string keyName,

@@ -1022,7 +1022,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     {
         IsCapturingDoubleHotKey = false;
         IsCapturingHotKey = true;
-        HotKeyStatus = $"请按下包含 {_hotKeyService.ModifierDisplayNames} 的组合键，Esc 取消";
+        HotKeyStatus = "请按下一个按键或组合键，Esc 取消";
     }
 
     public void BeginDoubleHotKeyCapture()
@@ -1111,8 +1111,6 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
         string status = result.Status switch
         {
-            GlobalHotKeyGestureCreationStatus.MissingModifier when isDouble =>
-                "请按下一个非修饰键，或带修饰键的组合键",
             GlobalHotKeyGestureCreationStatus.MissingModifier =>
                 $"快捷键必须包含 {_hotKeyService.ModifierDisplayNames}，请重新按下",
             _ => "该按键暂不支持注册为全局快捷键，请重新按下",

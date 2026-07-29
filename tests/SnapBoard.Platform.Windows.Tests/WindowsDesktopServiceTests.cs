@@ -51,7 +51,10 @@ public sealed class WindowsHotKeyRegistrarTests
     {
         FakeWindowsHotKeyNative native = new();
         WindowsHotKeyRegistrar registrar = new(native);
-        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        GlobalHotKeyGesture doubleGesture = new(
+            GlobalHotKeyModifiers.NoRepeat,
+            0x11,
+            "Ctrl");
 
         registrar.Register(123, GlobalHotKeySlot.Primary, GlobalHotKeyGesture.WindowsDefault);
         registrar.Register(123, GlobalHotKeySlot.Double, doubleGesture);
@@ -69,8 +72,10 @@ public sealed class WindowsHotKeyRegistrarTests
                 Assert.Equal(
                     WindowsHotKeyRegistrar.DoubleRegistrationIdentifier,
                     doubleRegistration.Identifier);
-                Assert.True((((GlobalHotKeyModifiers)doubleRegistration.Modifiers) &
-                    GlobalHotKeyModifiers.NoRepeat) != 0);
+                Assert.Equal(
+                    GlobalHotKeyModifiers.NoRepeat,
+                    (GlobalHotKeyModifiers)doubleRegistration.Modifiers);
+                Assert.Equal(0x11u, doubleRegistration.VirtualKey);
             });
         Assert.True(WindowsHotKeyRegistrar.TryGetSlot(
             WindowsHotKeyRegistrar.PrimaryRegistrationIdentifier,
@@ -228,7 +233,10 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
     {
         FakeWindowsRegistryStore registry = new();
         WindowsDesktopLocalSettingsService first = new(registry);
-        GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
+        GlobalHotKeyGesture primary = new(
+            GlobalHotKeyModifiers.NoRepeat,
+            0x11,
+            "Ctrl");
         GlobalHotKeyGesture doubleGesture = new(
             GlobalHotKeyModifiers.NoRepeat,
             0x4B,
@@ -433,23 +441,11 @@ public sealed class WindowsHotKeyKeyMapTests
     }
 
     [Fact]
-    public void RejectsGestureWithoutModifier()
+    public void CreatesModifierlessGestureWithNoRepeat()
     {
         GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
             GlobalHotKeyModifiers.None,
             "K");
-
-        Assert.Equal(GlobalHotKeyGestureCreationStatus.MissingModifier, result.Status);
-        Assert.Null(result.Gesture);
-    }
-
-    [Fact]
-    public void CreatesModifierlessDoubleGestureWithNoRepeat()
-    {
-        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
-            GlobalHotKeyModifiers.None,
-            "K",
-            requireModifier: false);
 
         Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
         GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
@@ -458,15 +454,57 @@ public sealed class WindowsHotKeyKeyMapTests
         Assert.Equal("K", gesture.DisplayName);
     }
 
+    [Theory]
+    [InlineData("LeftCtrl", 0x11u, "Ctrl")]
+    [InlineData("RightCtrl", 0x11u, "Ctrl")]
+    [InlineData("LeftAlt", 0x12u, "Alt")]
+    [InlineData("RightAlt", 0x12u, "Alt")]
+    [InlineData("LeftShift", 0x10u, "Shift")]
+    [InlineData("RightShift", 0x10u, "Shift")]
+    [InlineData("LWin", 0x5Bu, "Win")]
+    [InlineData("RWin", 0x5Cu, "Right Win")]
+    public void CreatesSingleModifierGesture(
+        string keyName,
+        uint expectedVirtualKey,
+        string expectedDisplayName)
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.None,
+            keyName);
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
+        GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
+        Assert.Equal(expectedVirtualKey, gesture.VirtualKey);
+        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, gesture.Modifiers);
+        Assert.Equal(expectedDisplayName, gesture.DisplayName);
+    }
+
     [Fact]
-    public void RejectsModifierAsMainKey()
+    public void MainModifierIsRemovedFromModifierFlags()
     {
         GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
             GlobalHotKeyModifiers.Control,
+            "LeftCtrl");
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
+        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, result.Gesture?.Modifiers);
+        Assert.Equal("Ctrl", result.Gesture?.DisplayName);
+    }
+
+    [Fact]
+    public void CreatesModifierOnlyChordUsingLastModifierAsMainKey()
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Shift,
             "LeftShift");
 
-        Assert.Equal(GlobalHotKeyGestureCreationStatus.UnsupportedKey, result.Status);
-        Assert.Null(result.Gesture);
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
+        GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
+        Assert.Equal(0x10u, gesture.VirtualKey);
+        Assert.Equal(
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
+            gesture.Modifiers);
+        Assert.Equal("Ctrl+Shift", gesture.DisplayName);
     }
 }
 
@@ -500,10 +538,14 @@ public sealed class WindowsDesktopNativeIntegrationTests
     {
         FakeWindowsRegistryStore registry = new();
         WindowsDesktopLocalSettingsService settings = new(registry);
-        GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
         await using WindowsGlobalHotKeyService service = new(
             new WindowsHotKeyRegistrar(new FakeWindowsHotKeyNative()),
             settings);
+        GlobalHotKeyGestureCreationResult primaryCreation = service.CreateGesture(
+            GlobalHotKeyModifiers.None,
+            "LeftCtrl");
+        GlobalHotKeyGesture primary =
+            Assert.IsType<GlobalHotKeyGesture>(primaryCreation.Gesture);
         GlobalHotKeyGestureCreationResult creation = service.CreateGesture(
             GlobalHotKeySlot.Double,
             GlobalHotKeyModifiers.None,

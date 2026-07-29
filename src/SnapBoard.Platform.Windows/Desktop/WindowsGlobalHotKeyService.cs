@@ -88,10 +88,7 @@ public sealed class WindowsGlobalHotKeyService :
         GlobalHotKeySlot slot,
         GlobalHotKeyModifiers modifiers,
         string keyName) => Enum.IsDefined(slot)
-        ? WindowsHotKeyKeyMap.CreateGesture(
-            modifiers,
-            keyName,
-            requireModifier: slot == GlobalHotKeySlot.Primary)
+        ? WindowsHotKeyKeyMap.CreateGesture(modifiers, keyName)
         : new GlobalHotKeyGestureCreationResult(
             GlobalHotKeyGestureCreationStatus.UnsupportedKey);
 
@@ -133,9 +130,7 @@ public sealed class WindowsGlobalHotKeyService :
         CancellationToken cancellationToken)
     {
         if (!Enum.IsDefined(slot) ||
-            !WindowsDesktopLocalSettingsService.IsValidGesture(
-                gesture,
-                requireModifier: slot == GlobalHotKeySlot.Primary))
+            !WindowsDesktopLocalSettingsService.IsValidGesture(gesture))
         {
             return new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Failed);
         }

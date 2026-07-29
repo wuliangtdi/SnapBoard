@@ -82,14 +82,11 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
         return new DesktopLocalSettingsUpdateResult(persisted);
     }
 
-    internal static bool IsValidGesture(
-        GlobalHotKeyGesture gesture,
-        bool requireModifier = true)
+    internal static bool IsValidGesture(GlobalHotKeyGesture gesture)
     {
         GlobalHotKeyModifiers modifiers = gesture.Modifiers;
         return gesture.VirtualKey is > 0 and <= 0xFE &&
             (modifiers & ~ValidModifiers) == 0 &&
-            (!requireModifier || (modifiers & UserModifiers) != 0) &&
             modifiers.HasFlag(GlobalHotKeyModifiers.NoRepeat) &&
             gesture.DisplayName.Length is > 0 and <= MaximumDisplayNameLength &&
             !string.IsNullOrWhiteSpace(gesture.DisplayName) &&
@@ -105,7 +102,6 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
             if (_registry.GetString(SettingsSubKey, VersionValueName) == CurrentVersion &&
                 TryParseGesture(
                     _registry.GetString(SettingsSubKey, PrimaryHotKeyValueName),
-                    requireModifier: true,
                     out GlobalHotKeyGesture primary) &&
                 TryParseOptionalGesture(
                     _registry.GetString(SettingsSubKey, DoubleHotKeyValueName),
@@ -178,10 +174,10 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
     }
 
     private static bool IsValid(DesktopLocalSettings settings) =>
-        IsValidGesture(settings.PrimaryHotKey, requireModifier: true) &&
+        IsValidGesture(settings.PrimaryHotKey) &&
         Enum.IsDefined(settings.ProtectionScope) &&
         (settings.DoubleHotKey is null ||
-            (IsValidGesture(settings.DoubleHotKey.Value, requireModifier: false) &&
+            (IsValidGesture(settings.DoubleHotKey.Value) &&
                 !settings.DoubleHotKey.Value.HasSameBinding(settings.PrimaryHotKey)));
 
     private static bool TryParseOptionalGesture(
@@ -196,7 +192,6 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
 
         if (TryParseGesture(
                 value,
-                requireModifier: false,
                 out GlobalHotKeyGesture parsed))
         {
             gesture = parsed;
@@ -209,7 +204,6 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
 
     private static bool TryParseGesture(
         string? value,
-        bool requireModifier,
         out GlobalHotKeyGesture gesture)
     {
         gesture = default;
@@ -238,7 +232,7 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
             (GlobalHotKeyModifiers)modifiers,
             virtualKey,
             parts[2]);
-        if (!IsValidGesture(parsed, requireModifier))
+        if (!IsValidGesture(parsed))
         {
             return false;
         }
