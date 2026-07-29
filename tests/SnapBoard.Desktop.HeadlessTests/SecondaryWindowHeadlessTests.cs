@@ -489,8 +489,30 @@ public sealed class SecondaryWindowHeadlessTests
             await viewModel.ApplyDoubleHotKeyCommand.ExecuteAsync(null);
             Assert.Equal(0x11u, hotKeyService.ConfiguredDoubleGesture?.VirtualKey);
             Assert.Equal(
-                GlobalHotKeyModifiers.NoRepeat,
+                GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
                 hotKeyService.ConfiguredDoubleGesture?.Modifiers);
+
+            viewModel.BeginHotKeyCapture();
+            window.FindControl<Button>("HotKeyCaptureButton")!.Focus();
+            window.KeyPress(
+                Key.LeftShift,
+                RawInputModifiers.Shift,
+                PhysicalKey.ShiftLeft,
+                string.Empty);
+            window.KeyRelease(
+                Key.LeftShift,
+                RawInputModifiers.None,
+                PhysicalKey.ShiftLeft,
+                string.Empty);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(viewModel.IsCapturingHotKey);
+            Assert.Equal("Shift", viewModel.HotKeyDisplayName);
+            await viewModel.ApplyHotKeyCommand.ExecuteAsync(null);
+            Assert.Equal(0x10u, hotKeyService.ConfiguredGesture.VirtualKey);
+            Assert.Equal(
+                GlobalHotKeyModifiers.Shift | GlobalHotKeyModifiers.NoRepeat,
+                hotKeyService.ConfiguredGesture.Modifiers);
 
             viewModel.BeginHotKeyCapture();
             window.FindControl<Button>("HotKeyCaptureButton")!.Focus();
@@ -516,10 +538,11 @@ public sealed class SecondaryWindowHeadlessTests
     }
 
     [AvaloniaFact]
-    public void SettingsWindowCapturesModifierOnlyChordOnRelease()
+    public async Task SettingsWindowCapturesAndAppliesModifierOnlyChordOnRelease()
     {
+        FakeGlobalHotKeyService hotKeyService = new();
         using SettingsViewModel viewModel = new(
-            new FakeGlobalHotKeyService(),
+            hotKeyService,
             new FakeAutoStartService());
         SettingsWindow window = new() { DataContext = viewModel };
 
@@ -554,6 +577,13 @@ public sealed class SecondaryWindowHeadlessTests
 
             Assert.False(viewModel.IsCapturingHotKey);
             Assert.Equal("Ctrl+Shift", viewModel.DoubleHotKeyDisplayName);
+            await viewModel.ApplyDoubleHotKeyCommand.ExecuteAsync(null);
+            Assert.Equal(0x10u, hotKeyService.ConfiguredDoubleGesture?.VirtualKey);
+            Assert.Equal(
+                GlobalHotKeyModifiers.Control |
+                GlobalHotKeyModifiers.Shift |
+                GlobalHotKeyModifiers.NoRepeat,
+                hotKeyService.ConfiguredDoubleGesture?.Modifiers);
         }
         finally
         {
@@ -1226,24 +1256,25 @@ public sealed class SecondaryWindowHeadlessTests
                     GlobalHotKeyGestureCreationStatus.UnsupportedKey);
             }
 
-            userModifiers &= ~mainModifier;
+            userModifiers |= mainModifier;
+            GlobalHotKeyModifiers displayModifiers = userModifiers & ~mainModifier;
             List<string> displayParts = [];
-            if (userModifiers.HasFlag(GlobalHotKeyModifiers.Control))
+            if (displayModifiers.HasFlag(GlobalHotKeyModifiers.Control))
             {
                 displayParts.Add("Ctrl");
             }
 
-            if (userModifiers.HasFlag(GlobalHotKeyModifiers.Alt))
+            if (displayModifiers.HasFlag(GlobalHotKeyModifiers.Alt))
             {
                 displayParts.Add("Alt");
             }
 
-            if (userModifiers.HasFlag(GlobalHotKeyModifiers.Shift))
+            if (displayModifiers.HasFlag(GlobalHotKeyModifiers.Shift))
             {
                 displayParts.Add("Shift");
             }
 
-            if (userModifiers.HasFlag(GlobalHotKeyModifiers.Windows))
+            if (displayModifiers.HasFlag(GlobalHotKeyModifiers.Windows))
             {
                 displayParts.Add("Win");
             }

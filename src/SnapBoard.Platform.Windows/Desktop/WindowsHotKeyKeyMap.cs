@@ -15,22 +15,36 @@ internal static class WindowsHotKeyKeyMap
         GlobalHotKeyModifiers modifiers,
         string keyName)
     {
-        GlobalHotKeyModifiers normalizedModifiers = modifiers & UserModifiers;
         if (!TryResolveVirtualKey(keyName, out uint virtualKey, out string displayName))
         {
             return new GlobalHotKeyGestureCreationResult(
                 GlobalHotKeyGestureCreationStatus.UnsupportedKey);
         }
 
-        normalizedModifiers &= ~GetMainKeyModifier(keyName);
-        normalizedModifiers |= GlobalHotKeyModifiers.NoRepeat;
+        GlobalHotKeyModifiers mainKeyModifier = GetMainKeyModifier(keyName);
+        GlobalHotKeyModifiers registrationModifiers =
+            (modifiers & UserModifiers) |
+            mainKeyModifier |
+            GlobalHotKeyModifiers.NoRepeat;
+        GlobalHotKeyModifiers displayModifiers =
+            registrationModifiers & ~mainKeyModifier;
         return new GlobalHotKeyGestureCreationResult(
             GlobalHotKeyGestureCreationStatus.Created,
             new GlobalHotKeyGesture(
-                normalizedModifiers,
+                registrationModifiers,
                 virtualKey,
-                FormatDisplayName(normalizedModifiers, displayName)));
+                FormatDisplayName(displayModifiers, displayName)));
     }
+
+    internal static GlobalHotKeyModifiers GetRequiredMainKeyModifier(
+        uint virtualKey) => virtualKey switch
+        {
+            0x10 or 0xA0 or 0xA1 => GlobalHotKeyModifiers.Shift,
+            0x11 or 0xA2 or 0xA3 => GlobalHotKeyModifiers.Control,
+            0x12 or 0xA4 or 0xA5 => GlobalHotKeyModifiers.Alt,
+            0x5B or 0x5C => GlobalHotKeyModifiers.Windows,
+            _ => GlobalHotKeyModifiers.None,
+        };
 
     private static bool TryResolveVirtualKey(
         string keyName,

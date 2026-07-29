@@ -847,17 +847,18 @@ Native AOT：
 阶段/任务：按用户确认放开 Windows Primary/Double 两槽录入限制
 状态：[x] Windows 与共享语义、自动验证和 win-x64 Native AOT 完成；[ ] macOS 原生双槽阶段仍待实施
 开发基线：659f8233f56e17817d432e0dc5bfda3cc90266a8（开发前 main 与 origin/main 一致）
+后续纠正：本节当时只验证 RegisterHotKey 返回成功，没有验证 WM_HOTKEY 实际投递；主修饰键标志被移除会形成“保存成功但永不触发”的死绑定，最终修复与完整证据见第 29 节。
 实现内容：
   - Windows Primary 和 Double 统一允许普通单键、单个 Ctrl/Alt/Shift/Win、只含修饰键的组合，以及修饰键加普通主键；现有 Primary 默认值保持不变，Double 仍默认未设置。
   - 设置页在修饰键 KeyUp 时完成单键/纯修饰键组合录入；若松开前继续按普通键，则录入常规组合。两个录入器统一提示“请按下一个按键或组合键，Esc 取消”，辅助文案不再要求 Primary 必须包含修饰键。
-  - 纯修饰键组合把最后按下的修饰键作为 RegisterHotKey 的主虚拟键，其余键作为修饰标志；主虚拟键对应的重复修饰标志会被移除。所有 Windows 绑定仍强制 MOD_NOREPEAT。
+  - 当时错误地从 RegisterHotKey 标志中移除了主虚拟键对应的修饰标志；第 29 节已改为注册时保留、仅在显示名称中去重。所有 Windows 绑定仍强制 MOD_NOREPEAT。
   - Windows 当前 HKCU 持久化格式继续使用版本 2，序列化结构未变化；校验规则改为两槽一致，不增加旧格式兼容、迁移或字段补救代码，也不生成同步事件。
   - 没有引入全局键盘 Hook 或监听全部输入。RegisterHotKey 无法表达的 A+B 式多个普通主键同时组合仍不支持。
 自动验证：
   - dotnet restore --locked-mode、dotnet format --verify-no-changes、Release build 均通过；build 为 0 警告、0 错误。
   - 全量 417 项：395 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Windows Platform 97/97，Desktop Headless 94/94。
   - Windows 快捷键/本机设置定向用例 35/35，Headless 快捷键录入用例 20/20；覆盖普通单键、单修饰键、纯修饰键组合、常规组合、两槽 MOD_NOREPEAT、持久化重启恢复和精确界面文案。
-  - Windows 实机直接调用 RegisterHotKey 验证 VK_SHIFT、VK_CONTROL、VK_MENU、VK_LWIN、VK_RWIN 在无用户修饰标志且带 MOD_NOREPEAT 时均可注册并完整注销；未留下测试注册。
+  - Windows 实机当时只确认 VK_SHIFT、VK_CONTROL、VK_MENU、VK_LWIN、VK_RWIN 在无用户修饰标志时 RegisterHotKey 返回成功并可注销；随后证明这种注册不会投递 WM_HOTKEY，因此该条不能作为功能通过证据。
 Native AOT：
   - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。
   - SnapBoard.Desktop.exe 40,385,536 字节，SHA-256 683DE41E5C24608019BFC32F2007467D9F26CC8E926C92BAAE9E2749AE22CAFA。
@@ -868,7 +869,35 @@ Native AOT：
   - 本次没有实现或宣称 macOS 原生两槽快捷键、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
 ```
 
-## 29. 更新规则
+## 29. 2026-07-29 执行记录：Windows 修饰键主键原生投递修复
+
+```text
+日期：2026-07-29
+阶段/任务：完整修复 Ctrl/Alt/Shift/Win 作为 Windows 两槽主键时保存成功但不触发的问题
+状态：[x] Windows 原生注册、持久化、录入语义、自动验证和 win-x64 Native AOT 完成；[ ] macOS 原生双槽阶段仍待实施
+开发基线：fa6765de6fc6ed3761285727a1415d955d2d6e73（开发前 main 与 origin/main 一致）
+根因与修复：
+  - 旧实现为了避免显示名称重复，从 RegisterHotKey 的 fsModifiers 中删除了主虚拟键对应的修饰标志。例如 Alt 被保存为 MOD_NOREPEAT + VK_MENU；Windows 会接受注册，但实际按 Alt 不投递 WM_HOTKEY。
+  - 当前实现将“原生注册标志”和“显示名称去重”分开：Ctrl/Alt/Shift/左或右 Win 作为主键时，同时保留对应 MOD_CONTROL/MOD_ALT/MOD_SHIFT/MOD_WIN、MOD_NOREPEAT 和原始 vk；只在界面显示文本中去掉重复修饰键名称。
+  - 本机设置当前格式版本升为 3。版本 1、2、未知版本或缺少主键必需修饰标志的配置整组拒绝并重置为版本 3 默认值；按已确认策略不读取、转换、迁移或字段级补救旧配置，也不生成同步事件。
+  - 仍只使用 RegisterHotKey，没有增加全局键盘 Hook，也不监听其他用户键盘输入；普通单键、单个修饰键、纯修饰键组合和常规组合继续由同一两槽模型处理。
+自动与原生验证：
+  - dotnet restore --locked-mode、dotnet format --verify-no-changes 和 Release build 均通过；build 为 0 警告、0 错误。
+  - 全量 421 项：399 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Windows Platform 101/101，Desktop Headless 94/94。
+  - Windows 原生 message-only window 分别注册并真实收到 LeftCtrl、LeftAlt、LeftShift、LeftWin、RightWin 和 Ctrl+Shift 的 WM_HOTKEY；不再把 RegisterHotKey 返回成功当作投递证据。
+  - 原生 Alt 长按序列包含初次 KeyDown 和多次重复 KeyDown，只产生一次触发；KeyUp 后再次按下才产生第二次触发，证明 MOD_NOREPEAT 对修饰键主键同样有效。
+  - 平台测试覆盖无效旧表示拒绝、两槽持久化重启恢复和正确注册标志；Headless 覆盖单修饰键与纯修饰键组合的录入、应用及显示去重。既有双击时序、冲突原子回滚、全屏保护、记录前置保护和暂停原因组合测试继续全量通过。
+Native AOT：
+  - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。
+  - SnapBoard.Desktop.exe 40,386,048 字节，SHA-256 92111BD9FC7BBF62EAC4CB5D92881C49C0AD070B4ED2B5C06A7947E01F8E4589。
+  - SnapBoard.StorageMigrator.exe 4,513,280 字节，SHA-256 EFF6E6B01A8C6B9463759C960EAAD889EEB538D566192309526E837FC8104485，保持独立 AOT；发布目录中没有对应 .dll、.deps.json 或 .runtimeconfig.json。
+限制：
+  - 原生消息和长按由 Windows 输入注入驱动真实 RegisterHotKey 消息窗口，不替代不同物理键盘驱动的人工长按复核；新 AOT 实例已留给当前 Windows 用户直接验收。
+  - 多个普通主键同时组成的 A+B 式组合仍无法由 RegisterHotKey 表达，且根据“不监听全部键盘输入”的安全边界不以全局 Hook 实现。
+  - 本次没有实现或宣称 macOS 原生两槽快捷键、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
+```
+
+## 30. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

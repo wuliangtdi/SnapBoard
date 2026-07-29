@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Windows.Desktop;
@@ -52,7 +53,7 @@ public sealed class WindowsHotKeyRegistrarTests
         FakeWindowsHotKeyNative native = new();
         WindowsHotKeyRegistrar registrar = new(native);
         GlobalHotKeyGesture doubleGesture = new(
-            GlobalHotKeyModifiers.NoRepeat,
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
             0x11,
             "Ctrl");
 
@@ -73,7 +74,7 @@ public sealed class WindowsHotKeyRegistrarTests
                     WindowsHotKeyRegistrar.DoubleRegistrationIdentifier,
                     doubleRegistration.Identifier);
                 Assert.Equal(
-                    GlobalHotKeyModifiers.NoRepeat,
+                    GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
                     (GlobalHotKeyModifiers)doubleRegistration.Modifiers);
                 Assert.Equal(0x11u, doubleRegistration.VirtualKey);
             });
@@ -234,7 +235,7 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
         FakeWindowsRegistryStore registry = new();
         WindowsDesktopLocalSettingsService first = new(registry);
         GlobalHotKeyGesture primary = new(
-            GlobalHotKeyModifiers.NoRepeat,
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
             0x11,
             "Ctrl");
         GlobalHotKeyGesture doubleGesture = new(
@@ -253,6 +254,35 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
 
         Assert.True(update.Persisted);
         Assert.Equal(expected, restarted.Current);
+    }
+
+    [Fact]
+    public void ModifierOnlyGesturesSurviveRestartWithRequiredRegistrationFlags()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService first = new(registry);
+        GlobalHotKeyGesture primary = new(
+            GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+            0x12,
+            "Alt");
+        GlobalHotKeyGesture doubleGesture = new(
+            GlobalHotKeyModifiers.Control |
+            GlobalHotKeyModifiers.Shift |
+            GlobalHotKeyModifiers.NoRepeat,
+            0x10,
+            "Ctrl+Shift");
+
+        DesktopLocalSettingsUpdateResult update = first.Update(
+            first.Current with
+            {
+                PrimaryHotKey = primary,
+                DoubleHotKey = doubleGesture,
+            });
+        WindowsDesktopLocalSettingsService restarted = new(registry);
+
+        Assert.True(update.Persisted);
+        Assert.Equal(primary, restarted.Current.PrimaryHotKey);
+        Assert.Equal(doubleGesture, restarted.Current.DoubleHotKey);
     }
 
     [Fact]
@@ -286,11 +316,11 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
         registry.Seed(
             WindowsDesktopLocalSettingsService.SettingsSubKey,
             WindowsDesktopLocalSettingsService.VersionValueName,
-            "1");
+            "2");
 
         WindowsDesktopLocalSettingsService current = new(registry);
 
-        Assert.Equal("2", WindowsDesktopLocalSettingsService.CurrentVersion);
+        Assert.Equal("3", WindowsDesktopLocalSettingsService.CurrentVersion);
         Assert.Equal(GlobalHotKeyGesture.WindowsDefault, current.Current.PrimaryHotKey);
         Assert.Null(current.Current.DoubleHotKey);
         Assert.Equal(
@@ -325,6 +355,21 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
             restarted.Current.ProtectionScope);
         Assert.True(restarted.Current.DisableGlobalHotKeysWhenProtected);
         Assert.True(restarted.Current.PauseClipboardCaptureWhenProtected);
+    }
+
+    [Fact]
+    public void ModifierMainKeyWithoutItsRequiredFlagIsRejected()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService service = new(registry);
+        GlobalHotKeyGesture invalid = new(
+            GlobalHotKeyModifiers.NoRepeat,
+            0x12,
+            "Alt");
+
+        Assert.False(WindowsDesktopLocalSettingsService.IsValidGesture(invalid));
+        Assert.Throws<ArgumentException>(() => service.Update(
+            service.Current with { DoubleHotKey = invalid }));
     }
 
     [Fact]
@@ -455,18 +500,19 @@ public sealed class WindowsHotKeyKeyMapTests
     }
 
     [Theory]
-    [InlineData("LeftCtrl", 0x11u, "Ctrl")]
-    [InlineData("RightCtrl", 0x11u, "Ctrl")]
-    [InlineData("LeftAlt", 0x12u, "Alt")]
-    [InlineData("RightAlt", 0x12u, "Alt")]
-    [InlineData("LeftShift", 0x10u, "Shift")]
-    [InlineData("RightShift", 0x10u, "Shift")]
-    [InlineData("LWin", 0x5Bu, "Win")]
-    [InlineData("RWin", 0x5Cu, "Right Win")]
+    [InlineData("LeftCtrl", 0x11u, "Ctrl", GlobalHotKeyModifiers.Control)]
+    [InlineData("RightCtrl", 0x11u, "Ctrl", GlobalHotKeyModifiers.Control)]
+    [InlineData("LeftAlt", 0x12u, "Alt", GlobalHotKeyModifiers.Alt)]
+    [InlineData("RightAlt", 0x12u, "Alt", GlobalHotKeyModifiers.Alt)]
+    [InlineData("LeftShift", 0x10u, "Shift", GlobalHotKeyModifiers.Shift)]
+    [InlineData("RightShift", 0x10u, "Shift", GlobalHotKeyModifiers.Shift)]
+    [InlineData("LWin", 0x5Bu, "Win", GlobalHotKeyModifiers.Windows)]
+    [InlineData("RWin", 0x5Cu, "Right Win", GlobalHotKeyModifiers.Windows)]
     public void CreatesSingleModifierGesture(
         string keyName,
         uint expectedVirtualKey,
-        string expectedDisplayName)
+        string expectedDisplayName,
+        GlobalHotKeyModifiers expectedModifier)
     {
         GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
             GlobalHotKeyModifiers.None,
@@ -475,19 +521,23 @@ public sealed class WindowsHotKeyKeyMapTests
         Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
         GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
         Assert.Equal(expectedVirtualKey, gesture.VirtualKey);
-        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, gesture.Modifiers);
+        Assert.Equal(
+            expectedModifier | GlobalHotKeyModifiers.NoRepeat,
+            gesture.Modifiers);
         Assert.Equal(expectedDisplayName, gesture.DisplayName);
     }
 
     [Fact]
-    public void MainModifierIsRemovedFromModifierFlags()
+    public void MainModifierIsKeptForRegistrationAndRemovedOnlyFromDisplay()
     {
         GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
             GlobalHotKeyModifiers.Control,
             "LeftCtrl");
 
         Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
-        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, result.Gesture?.Modifiers);
+        Assert.Equal(
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
+            result.Gesture?.Modifiers);
         Assert.Equal("Ctrl", result.Gesture?.DisplayName);
     }
 
@@ -502,7 +552,9 @@ public sealed class WindowsHotKeyKeyMapTests
         GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
         Assert.Equal(0x10u, gesture.VirtualKey);
         Assert.Equal(
-            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
+            GlobalHotKeyModifiers.Control |
+            GlobalHotKeyModifiers.Shift |
+            GlobalHotKeyModifiers.NoRepeat,
             gesture.Modifiers);
         Assert.Equal("Ctrl+Shift", gesture.DisplayName);
     }
@@ -615,6 +667,153 @@ public sealed class WindowsDesktopNativeIntegrationTests
     }
 
     [WindowsFact]
+    public async Task ModifierMainKeysAndModifierOnlyChordDeliverNativeMessages()
+    {
+        NativeModifierHotKeyCase[] cases =
+        [
+            new(
+                "LeftCtrl",
+                GlobalHotKeyModifiers.None,
+                [0x11],
+                GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.NoRepeat,
+                "Ctrl"),
+            new(
+                "LeftAlt",
+                GlobalHotKeyModifiers.None,
+                [0x12],
+                GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+                "Alt"),
+            new(
+                "LeftShift",
+                GlobalHotKeyModifiers.None,
+                [0x10],
+                GlobalHotKeyModifiers.Shift | GlobalHotKeyModifiers.NoRepeat,
+                "Shift"),
+            new(
+                "LWin",
+                GlobalHotKeyModifiers.None,
+                [0x5B],
+                GlobalHotKeyModifiers.Windows | GlobalHotKeyModifiers.NoRepeat,
+                "Win"),
+            new(
+                "RWin",
+                GlobalHotKeyModifiers.None,
+                [0x5C],
+                GlobalHotKeyModifiers.Windows | GlobalHotKeyModifiers.NoRepeat,
+                "Right Win"),
+            new(
+                "LeftShift",
+                GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Shift,
+                [0x11, 0x10],
+                GlobalHotKeyModifiers.Control |
+                GlobalHotKeyModifiers.Shift |
+                GlobalHotKeyModifiers.NoRepeat,
+                "Ctrl+Shift"),
+        ];
+
+        foreach (NativeModifierHotKeyCase testCase in cases)
+        {
+            await using WindowsGlobalHotKeyService service = CreateHotKeyService();
+            GlobalHotKeyGestureCreationResult creation = service.CreateGesture(
+                GlobalHotKeySlot.Double,
+                testCase.Modifiers,
+                testCase.KeyName);
+            GlobalHotKeyGesture gesture =
+                Assert.IsType<GlobalHotKeyGesture>(creation.Gesture);
+            Assert.Equal(testCase.ExpectedModifiers, gesture.Modifiers);
+            Assert.Equal(testCase.ExpectedDisplayName, gesture.DisplayName);
+            TaskCompletionSource triggered = new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            service.Triggered += (_, e) =>
+            {
+                if (e.Source == GlobalHotKeySlot.Double)
+                {
+                    triggered.TrySetResult();
+                }
+            };
+            GlobalHotKeyRegistrationResult registration = await service.RegisterAsync(
+                GlobalHotKeySlot.Double,
+                gesture,
+                CancellationToken.None);
+
+            Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, registration.Status);
+            try
+            {
+                SendChord(testCase.VirtualKeys);
+                await triggered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                ReleaseKeys(testCase.VirtualKeys);
+                await service.ClearAsync(
+                    GlobalHotKeySlot.Double,
+                    CancellationToken.None);
+            }
+        }
+    }
+
+    [WindowsFact]
+    public async Task HeldModifierMainKeyDoesNotProduceASecondNativeTrigger()
+    {
+        await using WindowsGlobalHotKeyService service = CreateHotKeyService();
+        GlobalHotKeyGestureCreationResult creation = service.CreateGesture(
+            GlobalHotKeySlot.Double,
+            GlobalHotKeyModifiers.None,
+            "LeftAlt");
+        GlobalHotKeyGesture gesture =
+            Assert.IsType<GlobalHotKeyGesture>(creation.Gesture);
+        TaskCompletionSource firstTrigger = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource secondTrigger = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int triggerCount = 0;
+        service.Triggered += (_, e) =>
+        {
+            if (e.Source != GlobalHotKeySlot.Double)
+            {
+                return;
+            }
+
+            int count = Interlocked.Increment(ref triggerCount);
+            if (count == 1)
+            {
+                firstTrigger.TrySetResult();
+            }
+            else if (count == 2)
+            {
+                secondTrigger.TrySetResult();
+            }
+        };
+        GlobalHotKeyRegistrationResult registration = await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            gesture,
+            CancellationToken.None);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, registration.Status);
+        try
+        {
+            SendKey(0x12, keyUp: false);
+            await firstTrigger.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            SendKey(0x12, keyUp: false);
+            await Task.Delay(150);
+            Assert.Equal(1, Volatile.Read(ref triggerCount));
+
+            SendKey(0x12, keyUp: true);
+            SendKey(0x12, keyUp: false);
+            SendKey(0x12, keyUp: true);
+            await secondTrigger.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(2, Volatile.Read(ref triggerCount));
+        }
+        finally
+        {
+            SendKey(0x12, keyUp: true);
+            await service.ClearAsync(
+                GlobalHotKeySlot.Double,
+                CancellationToken.None);
+        }
+    }
+
+    [WindowsFact]
     public async Task TwoMessageWindowsReportHotKeyConflictAndReleaseRegistration()
     {
         GlobalHotKeyGesture gesture = new(
@@ -681,10 +880,52 @@ public sealed class WindowsDesktopNativeIntegrationTests
         new WindowsHotKeyRegistrar(new WindowsHotKeyNative()),
         new WindowsDesktopLocalSettingsService(new FakeWindowsRegistryStore()));
 
+    private static void SendChord(IReadOnlyList<byte> virtualKeys)
+    {
+        foreach (byte virtualKey in virtualKeys)
+        {
+            SendKey(virtualKey, keyUp: false);
+        }
+
+        ReleaseKeys(virtualKeys);
+    }
+
+    private static void ReleaseKeys(IReadOnlyList<byte> virtualKeys)
+    {
+        for (int index = virtualKeys.Count - 1; index >= 0; index--)
+        {
+            SendKey(virtualKeys[index], keyUp: true);
+        }
+    }
+
+    private static void SendKey(byte virtualKey, bool keyUp) =>
+        WindowsHotKeyTestInput.KeybdEvent(
+            virtualKey,
+            scanCode: 0,
+            keyUp ? WindowsNativeConstants.KeyEventKeyUp : 0,
+            extraInfo: 0);
+
     private static GlobalHotKeyGesture CreateGesture(uint virtualKey, string displayName) => new(
         GlobalHotKeyModifiers.Control |
         GlobalHotKeyModifiers.Alt |
         GlobalHotKeyModifiers.NoRepeat,
         virtualKey,
         displayName);
+
+    private sealed record NativeModifierHotKeyCase(
+        string KeyName,
+        GlobalHotKeyModifiers Modifiers,
+        byte[] VirtualKeys,
+        GlobalHotKeyModifiers ExpectedModifiers,
+        string ExpectedDisplayName);
+}
+
+internal static partial class WindowsHotKeyTestInput
+{
+    [LibraryImport("user32.dll", EntryPoint = "keybd_event")]
+    internal static partial void KeybdEvent(
+        byte virtualKey,
+        byte scanCode,
+        uint flags,
+        nuint extraInfo);
 }

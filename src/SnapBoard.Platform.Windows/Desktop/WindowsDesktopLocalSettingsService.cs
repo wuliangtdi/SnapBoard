@@ -14,7 +14,7 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
     internal const string ProtectionScopeValueName = "ForegroundProtectionScope";
     internal const string DisableHotKeysValueName = "DisableHotKeysWhenProtected";
     internal const string PauseCaptureValueName = "PauseClipboardCaptureWhenProtected";
-    internal const string CurrentVersion = "2";
+    internal const string CurrentVersion = "3";
 
     private const int MaximumSerializedGestureLength = 256;
     private const int MaximumDisplayNameLength = 128;
@@ -85,9 +85,13 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
     internal static bool IsValidGesture(GlobalHotKeyGesture gesture)
     {
         GlobalHotKeyModifiers modifiers = gesture.Modifiers;
+        GlobalHotKeyModifiers requiredMainKeyModifier =
+            WindowsHotKeyKeyMap.GetRequiredMainKeyModifier(gesture.VirtualKey);
         return gesture.VirtualKey is > 0 and <= 0xFE &&
             (modifiers & ~ValidModifiers) == 0 &&
             modifiers.HasFlag(GlobalHotKeyModifiers.NoRepeat) &&
+            (requiredMainKeyModifier == GlobalHotKeyModifiers.None ||
+                modifiers.HasFlag(requiredMainKeyModifier)) &&
             gesture.DisplayName.Length is > 0 and <= MaximumDisplayNameLength &&
             !string.IsNullOrWhiteSpace(gesture.DisplayName) &&
             !gesture.DisplayName.Contains('|', StringComparison.Ordinal);
