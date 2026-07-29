@@ -3,7 +3,7 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：`codex/windows-quick-window-fullscreen-protection` 已完成快速窗口双击快捷键与全屏保护的阶段 A（Windows 与共享层）；阶段 B 的 macOS 原生快捷键注册、前台窗口检测与实机验收待从最新 `main` 继续
+> 当前阶段：快速窗口双击快捷键与全屏保护的阶段 A（Windows 与共享层）已合入 `main`（当前提交 `1b90aee`）；阶段 B 的 macOS 原生快捷键注册、前台窗口检测与实机验收待从最新 `main` 继续
 > 实现状态：Windows 已具备共享两槽快捷键语义、双击状态机、HKCU 本机设置、Normal/Maximized/FullScreen 前台检测、默认仅全屏保护、可选最大化保护、快捷键与剪贴板记录保护及可组合暂停原因；macOS 仅复用共享接口、状态机、ViewModel 与 UI 语义，未宣称原生能力完成
 > 本次目标口径：仅完成 `docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md` 第 13.4 节阶段 A；整个跨平台功能保持未完成，待阶段 B 的 macOS 原生实现和对应平台验证通过后再关闭
 > 总体顺序：Windows -> macOS -> Linux

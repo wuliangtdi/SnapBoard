@@ -750,8 +750,8 @@ AOT 与性能：
 日期：2026-07-29
 阶段/任务：docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md 第 13.4 节阶段 A（Windows 与共享层）
 状态：[x] Windows 与共享层实现、自动验证、win-x64 Native AOT 和当前 Windows 实机验证完成；[ ] macOS 原生阶段 B 待从最新 main 继续
-开发基线：c8f449cf25ad8ead2dfbd1eade65b2b19fec9202（main / origin/main）
-分支：codex/settings-sidebar-navigation
+开发基线：c8f449cf25ad8ead2dfbd1eade65b2b19fec9202（最低要求基线）；阶段 A 起点 `fffa342`
+开发分支：codex/settings-sidebar-navigation，已快进合入 `main`
 实现内容：
   - Platform.Abstractions 增加 Primary/Double 两槽模型、来源事件、本机设置快照和前台窗口 Normal/Maximized/FullScreen/Unknown/Unavailable 语义；现有单次快捷键接口继续保留，避免破坏 macOS 编译边界。
   - 共享 DoubleHotKeyPressStateMachine 使用单调 TimeProvider；第一次只进入等待，第二次完成后立即复位，超时后的当前按键成为下一轮第一次，重复按键、配置变化、窗口保护、捕获、退出和显式入口都会清理待定状态。
