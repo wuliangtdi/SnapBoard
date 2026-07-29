@@ -1,4 +1,3 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -72,16 +71,42 @@ public sealed class SecondaryWindowHeadlessTests
             viewModel.SyncRecoveryMaterialPath =
                 @"C:\SnapBoardData\recovery\sync-space-11111111111111111111111111111111-v1.recovery";
 
-            Assert.Equal(new Avalonia.Size(700, 720), window.ClientSize);
+            Assert.Equal(new Avalonia.Size(960, 720), window.ClientSize);
             Assert.Equal("闪剪", window.Title);
             Assert.NotNull(window.Icon);
             Assert.NotNull(window.FindControl<Button>("HotKeyCaptureButton"));
+            ListBox navigation = Assert.IsType<ListBox>(
+                window.FindControl<ListBox>("SettingsNavigationList"));
+            ListBoxItem permissionsNavigationItem = Assert.IsType<ListBoxItem>(
+                window.FindControl<ListBoxItem>("PermissionsNavigationItem"));
+            ScrollViewer contentScroller = Assert.IsType<ScrollViewer>(
+                window.FindControl<ScrollViewer>("SettingsContentScrollViewer"));
+            StackPanel generalSection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("GeneralSettingsSection"));
+            StackPanel historySection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("HistorySettingsSection"));
+            StackPanel syncSection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("SyncSettingsSection"));
+            StackPanel storageSection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("StorageSettingsSection"));
+            StackPanel updateSection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("ApplicationUpdateSettingsSection"));
+            StackPanel permissionSection = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("PermissionSettingsSection"));
             TextBox syncEndpoint = Assert.IsType<TextBox>(
                 window.FindControl<TextBox>("SyncEndpointTextBox"));
             Button configureSync = Assert.IsType<Button>(
                 window.FindControl<Button>("ConfigureSyncButton"));
             Button saveHistory = Assert.IsType<Button>(
                 window.FindControl<Button>("SaveHistorySettingsButton"));
+            ListBox syncPaneNavigation = Assert.IsType<ListBox>(
+                window.FindControl<ListBox>("SyncSettingsPaneList"));
+            StackPanel syncOverviewPane = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("SyncOverviewPane"));
+            StackPanel syncConfigurationPane = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("SyncConfigurationPane"));
+            StackPanel syncMigrationPane = Assert.IsType<StackPanel>(
+                window.FindControl<StackPanel>("SyncMigrationPane"));
             Assert.IsType<ComboBox>(window.FindControl<ComboBox>("SyncFrequencyComboBox"));
             Assert.IsType<Button>(window.FindControl<Button>("SaveSyncFrequencyButton"));
             Assert.IsType<ComboBox>(window.FindControl<ComboBox>("UpdateChannelComboBox"));
@@ -98,16 +123,21 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<Button>("StartOrProvideProviderMigrationButton"));
             Assert.IsType<ItemsControl>(
                 window.FindControl<ItemsControl>("ProviderMigrationDevicesItems"));
-            Avalonia.Point configureOrigin = configureSync.TranslatePoint(default, window)!.Value;
-            Avalonia.Point providerOrigin = providerSection.TranslatePoint(default, window)!.Value;
-            Assert.True(
-                providerOrigin.Y > configureOrigin.Y + configureSync.Bounds.Height,
-                "Provider migration must render after the save-and-validate action.");
             Assert.Equal(@"C:\SnapBoardData", viewModel.CurrentStorageDirectory);
             Assert.Contains("1 MiB", viewModel.StorageUsageText, StringComparison.Ordinal);
+            Assert.Equal((int)SettingsSection.General, navigation.SelectedIndex);
+            Assert.True(generalSection.IsVisible);
+            Assert.False(historySection.IsVisible);
+            Assert.False(syncSection.IsVisible);
+            Assert.False(storageSection.IsVisible);
+            Assert.False(updateSection.IsVisible);
+            Assert.False(permissionSection.IsVisible);
+            Assert.False(viewModel.IsPermissionSectionVisible);
+            Assert.True(permissionsNavigationItem.IsVisible);
+            Assert.False(permissionsNavigationItem.IsEnabled);
             using var frame = window.CaptureRenderedFrame();
             Assert.NotNull(frame);
-            Assert.Equal(700, frame.PixelSize.Width);
+            Assert.Equal(960, frame.PixelSize.Width);
             Assert.Equal(720, frame.PixelSize.Height);
 
             string? capturePath =
@@ -118,10 +148,14 @@ public sealed class SecondaryWindowHeadlessTests
                 frame.Save(capturePath, PngBitmapEncoderOptions.Default);
             }
 
-            Assert.True(syncEndpoint.IsVisible);
-            Assert.True(saveHistory.IsVisible);
-            saveHistory.BringIntoView();
+            navigation.SelectedIndex = (int)SettingsSection.HistoryAndPrivacy;
             Dispatcher.UIThread.RunJobs();
+            Assert.Equal(
+                (int)SettingsSection.HistoryAndPrivacy,
+                viewModel.SelectedSettingsSectionIndex);
+            Assert.False(generalSection.IsVisible);
+            Assert.True(historySection.IsVisible);
+            Assert.True(saveHistory.IsVisible);
             using var historyFrame = window.CaptureRenderedFrame();
             Assert.NotNull(historyFrame);
             string? historyCapturePath =
@@ -132,11 +166,17 @@ public sealed class SecondaryWindowHeadlessTests
                 historyFrame.Save(historyCapturePath, PngBitmapEncoderOptions.Default);
             }
 
-            configureSync.BringIntoView();
+            navigation.SelectedIndex = (int)SettingsSection.Sync;
             Dispatcher.UIThread.RunJobs();
+            Assert.Equal((int)SettingsSection.Sync, viewModel.SelectedSettingsSectionIndex);
+            Assert.True(syncSection.IsVisible);
+            Assert.Equal((int)SyncSettingsPane.Overview, syncPaneNavigation.SelectedIndex);
+            Assert.True(syncOverviewPane.IsVisible);
+            Assert.False(syncConfigurationPane.IsVisible);
+            Assert.False(syncMigrationPane.IsVisible);
             using var syncFrame = window.CaptureRenderedFrame();
             Assert.NotNull(syncFrame);
-            Assert.Equal(700, syncFrame.PixelSize.Width);
+            Assert.Equal(960, syncFrame.PixelSize.Width);
             Assert.Equal(720, syncFrame.PixelSize.Height);
             string? syncCapturePath =
                 Environment.GetEnvironmentVariable("SNAPBOARD_SETTINGS_SYNC_CAPTURE_PATH");
@@ -146,12 +186,39 @@ public sealed class SecondaryWindowHeadlessTests
                 syncFrame.Save(syncCapturePath, PngBitmapEncoderOptions.Default);
             }
 
-            providerSection.BringIntoView();
+            syncPaneNavigation.SelectedIndex = (int)SyncSettingsPane.Configuration;
             Dispatcher.UIThread.RunJobs();
+            Assert.Equal(
+                (int)SyncSettingsPane.Configuration,
+                viewModel.SelectedSyncSettingsPaneIndex);
+            Assert.False(syncOverviewPane.IsVisible);
+            Assert.True(syncConfigurationPane.IsVisible);
+            Assert.False(syncMigrationPane.IsVisible);
+            Assert.True(syncEndpoint.IsVisible);
+            Assert.True(configureSync.IsVisible);
+            using var syncConfigurationFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(syncConfigurationFrame);
+            string? syncConfigurationCapturePath = Environment.GetEnvironmentVariable(
+                "SNAPBOARD_SETTINGS_SYNC_CONFIGURATION_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(syncConfigurationCapturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(syncConfigurationCapturePath)!);
+                syncConfigurationFrame.Save(
+                    syncConfigurationCapturePath,
+                    PngBitmapEncoderOptions.Default);
+            }
+
+            syncPaneNavigation.SelectedIndex = (int)SyncSettingsPane.Migration;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(
+                (int)SyncSettingsPane.Migration,
+                viewModel.SelectedSyncSettingsPaneIndex);
+            Assert.False(syncOverviewPane.IsVisible);
+            Assert.False(syncConfigurationPane.IsVisible);
+            Assert.True(syncMigrationPane.IsVisible);
+            Assert.True(providerSection.IsVisible);
             Assert.True(providerEndpoint.IsVisible);
             Assert.True(startProviderMigration.IsVisible);
-            providerEndpoint.BringIntoView();
-            Dispatcher.UIThread.RunJobs();
             using var providerMigrationInputFrame = window.CaptureRenderedFrame();
             Assert.NotNull(providerMigrationInputFrame);
             string? providerMigrationInputCapturePath = Environment.GetEnvironmentVariable(
@@ -170,7 +237,6 @@ public sealed class SecondaryWindowHeadlessTests
             viewModel.ProviderMigrationTargetUsername = "target-user";
             viewModel.ProviderMigrationTargetPassword = "target-secret";
             await viewModel.StartOrProvideProviderMigrationCommand.ExecuteAsync(null);
-            providerSection.BringIntoView();
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(2, viewModel.ProviderMigrationDevices.Count);
             using var providerMigrationFrame = window.CaptureRenderedFrame();
@@ -184,11 +250,92 @@ public sealed class SecondaryWindowHeadlessTests
                     providerMigrationCapturePath,
                     PngBitmapEncoderOptions.Default);
             }
+
+            syncPaneNavigation.SelectedIndex = (int)SyncSettingsPane.Configuration;
+            Dispatcher.UIThread.RunJobs();
+            contentScroller.Offset = new Avalonia.Vector(0, 200);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(contentScroller.Offset.Y > 0);
+            navigation.SelectedIndex = (int)SettingsSection.Storage;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(0, contentScroller.Offset.Y);
+            Assert.True(storageSection.IsVisible);
+            Assert.False(syncSection.IsVisible);
+            using var storageFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(storageFrame);
+            string? storageCapturePath = Environment.GetEnvironmentVariable(
+                "SNAPBOARD_SETTINGS_STORAGE_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(storageCapturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(storageCapturePath)!);
+                storageFrame.Save(storageCapturePath, PngBitmapEncoderOptions.Default);
+            }
+
+            navigation.SelectedIndex = (int)SettingsSection.Updates;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(updateSection.IsVisible);
+            Assert.False(storageSection.IsVisible);
+            using var updateFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(updateFrame);
+            string? updateCapturePath = Environment.GetEnvironmentVariable(
+                "SNAPBOARD_SETTINGS_UPDATE_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(updateCapturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(updateCapturePath)!);
+                updateFrame.Save(updateCapturePath, PngBitmapEncoderOptions.Default);
+            }
+
+            navigation.SelectedIndex = (int)SettingsSection.General;
+            window.Width = 820;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(820, window.ClientSize.Width);
+            using var narrowFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(narrowFrame);
+            Assert.Equal(820, narrowFrame.PixelSize.Width);
+            Assert.Equal(720, narrowFrame.PixelSize.Height);
+            string? narrowCapturePath = Environment.GetEnvironmentVariable(
+                "SNAPBOARD_SETTINGS_NARROW_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(narrowCapturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(narrowCapturePath)!);
+                narrowFrame.Save(narrowCapturePath, PngBitmapEncoderOptions.Default);
+            }
         }
         finally
         {
             window.Close();
         }
+    }
+
+    [Fact]
+    public void SettingsNavigationPreservesPendingValuesAndCancelsActiveShortcutCapture()
+    {
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            syncService: new FakeSyncService(configured: true),
+            historySettingsService: new FakeHistorySettingsService());
+        viewModel.BeginHotKeyCapture();
+        Assert.True(viewModel.CaptureHotKey(
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Alt,
+            "K"));
+        viewModel.SyncEndpoint = "https://pending.example.test/dav/";
+        viewModel.SelectedSyncSettingsPaneIndex = (int)SyncSettingsPane.Configuration;
+        viewModel.BeginDoubleHotKeyCapture();
+
+        viewModel.SelectedSettingsSectionIndex = (int)SettingsSection.HistoryAndPrivacy;
+
+        Assert.False(viewModel.IsCapturingHotKey);
+        Assert.True(viewModel.HasPendingHotKeyChange);
+        Assert.Equal("Ctrl+Alt+K", viewModel.HotKeyDisplayName);
+        Assert.Equal("https://pending.example.test/dav/", viewModel.SyncEndpoint);
+
+        viewModel.SelectedSettingsSectionIndex = (int)SettingsSection.Sync;
+
+        Assert.Equal(
+            (int)SyncSettingsPane.Configuration,
+            viewModel.SelectedSyncSettingsPaneIndex);
+        Assert.Equal("https://pending.example.test/dav/", viewModel.SyncEndpoint);
     }
 
     [Fact]
@@ -237,8 +384,20 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<ToggleSwitch>("DisableHotKeysWhenProtectedToggle"));
             ToggleSwitch captureProtection = Assert.IsType<ToggleSwitch>(
                 window.FindControl<ToggleSwitch>("PauseCaptureWhenProtectedToggle"));
+            ListBox protectionScope = Assert.IsType<ListBox>(
+                window.FindControl<ListBox>("ForegroundProtectionScopeSelector"));
             Assert.True(hotKeyProtection.IsChecked is true);
             Assert.True(captureProtection.IsChecked is true);
+            Assert.Equal((int)ForegroundProtectionScope.FullScreenOnly, protectionScope.SelectedIndex);
+            Assert.Equal(
+                "保护范围",
+                window.FindControl<TextBlock>("ProtectionScopeHeading")?.Text);
+            Assert.Equal(
+                "保护期间停用全局快捷键",
+                window.FindControl<TextBlock>("DisableHotKeysWhenProtectedHeading")?.Text);
+            Assert.Equal(
+                "保护期间停止记录复制内容",
+                window.FindControl<TextBlock>("PauseCaptureWhenProtectedHeading")?.Text);
             Assert.Equal("未设置", viewModel.DoubleHotKeyDisplayName);
             Assert.False(viewModel.HasConfiguredDoubleHotKey);
         }
@@ -314,7 +473,7 @@ public sealed class SecondaryWindowHeadlessTests
     }
 
     [Fact]
-    public void ProtectionTogglesPersistImmediatelyAndUnknownStateUsesConservativeText()
+    public void ProtectionSettingsPersistImmediatelyAndUnknownStateUsesConservativeText()
     {
         FakeDesktopLocalSettingsService localSettings = new();
         FakeForegroundWindowStateService foreground = new()
@@ -331,13 +490,48 @@ public sealed class SecondaryWindowHeadlessTests
             localSettings: localSettings,
             foregroundWindowStateService: foreground);
 
+        viewModel.SelectedForegroundProtectionScopeIndex =
+            (int)ForegroundProtectionScope.FullScreenAndMaximized;
         viewModel.IsDisableGlobalHotKeysWhenProtected = false;
         viewModel.IsPauseClipboardCaptureWhenProtected = false;
 
-        Assert.Equal(2, localSettings.UpdateCount);
+        Assert.Equal(3, localSettings.UpdateCount);
+        Assert.Equal(
+            ForegroundProtectionScope.FullScreenAndMaximized,
+            localSettings.Current.ProtectionScope);
         Assert.False(localSettings.Current.DisableGlobalHotKeysWhenProtected);
         Assert.False(localSettings.Current.PauseClipboardCaptureWhenProtected);
         Assert.Equal("当前平台暂时无法判断前台窗口状态", viewModel.ForegroundWindowStatus);
+    }
+
+    [Fact]
+    public void MaximizedStatusReflectsSelectedProtectionScope()
+    {
+        FakeDesktopLocalSettingsService localSettings = new();
+        FakeForegroundWindowStateService foreground = new()
+        {
+            Result = new ForegroundWindowStateResult(
+                ForegroundWindowState.Maximized,
+                IsSnapBoard: false,
+                new ForegroundWindowIdentity(1, 2),
+                ForegroundWindowDiagnosticCode.None),
+        };
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            localSettings: localSettings,
+            foregroundWindowStateService: foreground);
+
+        Assert.Equal(
+            "当前检测到窗口最大化，按当前范围不启用保护",
+            viewModel.ForegroundWindowStatus);
+
+        viewModel.SelectedForegroundProtectionScopeIndex =
+            (int)ForegroundProtectionScope.FullScreenAndMaximized;
+
+        Assert.Equal(
+            "当前检测到窗口最大化，已进入保护范围",
+            viewModel.ForegroundWindowStatus);
     }
 
     private static GlobalHotKeyGesture Gesture(string displayName, uint virtualKey) => new(
@@ -376,6 +570,7 @@ public sealed class SecondaryWindowHeadlessTests
         Assert.Equal(target, viewModel.SelectedStorageDirectory);
         Assert.Contains("权限", viewModel.StorageTargetDetails, StringComparison.Ordinal);
         Assert.StartsWith("未更改位置", viewModel.StorageStatus, StringComparison.Ordinal);
+        viewModel.SelectedSettingsSectionIndex = (int)SettingsSection.Storage;
 
         SettingsWindow window = new() { DataContext = viewModel };
         try
@@ -391,7 +586,7 @@ public sealed class SecondaryWindowHeadlessTests
             Assert.Contains("权限", status.Text, StringComparison.Ordinal);
             using var frame = window.CaptureRenderedFrame();
             Assert.NotNull(frame);
-            Assert.Equal(700, frame.PixelSize.Width);
+            Assert.Equal(960, frame.PixelSize.Width);
             Assert.Equal(720, frame.PixelSize.Height);
         }
         finally

@@ -11,9 +11,10 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
     internal const string VersionValueName = "ConfigurationVersion";
     internal const string PrimaryHotKeyValueName = "PrimaryHotKey";
     internal const string DoubleHotKeyValueName = "DoubleHotKey";
+    internal const string ProtectionScopeValueName = "ForegroundProtectionScope";
     internal const string DisableHotKeysValueName = "DisableHotKeysWhenProtected";
     internal const string PauseCaptureValueName = "PauseClipboardCaptureWhenProtected";
-    internal const string CurrentVersion = "1";
+    internal const string CurrentVersion = "2";
 
     private const int MaximumSerializedGestureLength = 256;
     private const int MaximumDisplayNameLength = 128;
@@ -106,6 +107,9 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
                 TryParseOptionalGesture(
                     _registry.GetString(SettingsSubKey, DoubleHotKeyValueName),
                     out GlobalHotKeyGesture? doubleGesture) &&
+                TryParseProtectionScope(
+                    _registry.GetString(SettingsSubKey, ProtectionScopeValueName),
+                    out ForegroundProtectionScope protectionScope) &&
                 TryParseBoolean(
                     _registry.GetString(SettingsSubKey, DisableHotKeysValueName),
                     out bool disableHotKeys) &&
@@ -116,6 +120,7 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
                 DesktopLocalSettings settings = new(
                     primary,
                     doubleGesture,
+                    protectionScope,
                     disableHotKeys,
                     pauseCapture);
                 if (IsValid(settings))
@@ -150,6 +155,10 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
                     : string.Empty);
             _registry.SetString(
                 SettingsSubKey,
+                ProtectionScopeValueName,
+                SerializeProtectionScope(settings.ProtectionScope));
+            _registry.SetString(
+                SettingsSubKey,
                 DisableHotKeysValueName,
                 SerializeBoolean(settings.DisableGlobalHotKeysWhenProtected));
             _registry.SetString(
@@ -167,6 +176,7 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
 
     private static bool IsValid(DesktopLocalSettings settings) =>
         IsValidGesture(settings.PrimaryHotKey) &&
+        Enum.IsDefined(settings.ProtectionScope) &&
         (settings.DoubleHotKey is null ||
             (IsValidGesture(settings.DoubleHotKey.Value) &&
                 !settings.DoubleHotKey.Value.HasSameBinding(settings.PrimaryHotKey)));
@@ -246,11 +256,33 @@ public sealed class WindowsDesktopLocalSettingsService : IDesktopLocalSettingsSe
         return false;
     }
 
+    private static bool TryParseProtectionScope(
+        string? value,
+        out ForegroundProtectionScope scope)
+    {
+        if (int.TryParse(
+                value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int parsed) &&
+            Enum.IsDefined((ForegroundProtectionScope)parsed))
+        {
+            scope = (ForegroundProtectionScope)parsed;
+            return true;
+        }
+
+        scope = default;
+        return false;
+    }
+
     private static string SerializeGesture(GlobalHotKeyGesture gesture) => string.Create(
         CultureInfo.InvariantCulture,
         $"{(uint)gesture.Modifiers}|{gesture.VirtualKey}|{gesture.DisplayName}");
 
     private static string SerializeBoolean(bool value) => value ? "1" : "0";
+
+    private static string SerializeProtectionScope(ForegroundProtectionScope scope) =>
+        ((int)scope).ToString(CultureInfo.InvariantCulture);
 
     private static bool IsRegistryFailure(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or System.Security.SecurityException;

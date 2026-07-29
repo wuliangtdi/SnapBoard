@@ -23,7 +23,10 @@ internal static partial class WindowsNativeConstants
     public const uint WindowMessageQuit = 0x0012;
     public const uint WindowMessageHotKeyCommand = 0x8001;
 
+    public const int WindowLongStyle = -16;
     public const int WindowLongUserData = -21;
+    public const uint WindowStyleCaption = 0x00C00000;
+    public const uint WindowStyleThickFrame = 0x00040000;
     public static readonly nint MessageOnlyWindowParent = new(-3);
 
     public const uint GlobalMemoryMoveable = 0x0002;

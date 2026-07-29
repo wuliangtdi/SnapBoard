@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Platform.Abstractions.Desktop;
 
@@ -81,6 +82,21 @@ public partial class SettingsWindow : Window
             await viewModel.InitializeSyncAsync();
             await viewModel.InitializeApplicationUpdateAsync();
         }
+    }
+
+    private void OnSettingsNavigationSelectionChanged(
+        object? sender,
+        SelectionChangedEventArgs e) => QueueContentScrollReset();
+
+    private void OnSyncSettingsPaneSelectionChanged(
+        object? sender,
+        SelectionChangedEventArgs e) => QueueContentScrollReset();
+
+    private void QueueContentScrollReset()
+    {
+        Dispatcher.UIThread.Post(
+            () => SettingsContentScrollViewer.Offset = default,
+            DispatcherPriority.Background);
     }
 
     private async void OnCopySyncSpaceIdClicked(object? sender, RoutedEventArgs e)

@@ -40,7 +40,7 @@ public sealed class WindowsDesktopLifecycleHeadlessTests
 
         using LifecycleContext context = new(configureDoubleGesture: true);
         context.Initialize();
-        context.Foreground.Result = Protected(ForegroundWindowState.Maximized);
+        context.Foreground.Result = Protected(ForegroundWindowState.FullScreen);
 
         context.HotKey.Raise(GlobalHotKeySlot.Primary);
         context.HotKey.Raise(GlobalHotKeySlot.Double);
@@ -68,6 +68,55 @@ public sealed class WindowsDesktopLifecycleHeadlessTests
         context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.Exit);
         context.HotKey.Raise(GlobalHotKeySlot.Primary);
         Dispatcher.UIThread.RunJobs();
+        Assert.False(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void MaximizedForegroundAllowsBothSlotsByDefault()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+        context.Foreground.Result = Protected(ForegroundWindowState.Maximized);
+
+        context.HotKey.Raise(GlobalHotKeySlot.Primary);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Coordinator.HasQuickWindow);
+
+        context.Coordinator.ExecuteSingleInstanceCommand(SingleInstanceCommand.CloseWindows);
+        Dispatcher.UIThread.RunJobs();
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(context.Coordinator.HasQuickWindow);
+    }
+
+    [AvaloniaFact]
+    public void StrictScopeSuppressesBothSlotsForMaximizedForeground()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using LifecycleContext context = new(configureDoubleGesture: true);
+        context.Initialize();
+        context.LocalSettings.Update(context.LocalSettings.Current with
+        {
+            ProtectionScope = ForegroundProtectionScope.FullScreenAndMaximized,
+        });
+        context.Foreground.Result = Protected(ForegroundWindowState.Maximized);
+
+        context.HotKey.Raise(GlobalHotKeySlot.Primary);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        context.HotKey.Raise(GlobalHotKeySlot.Double);
+        Dispatcher.UIThread.RunJobs();
+
         Assert.False(context.Coordinator.HasQuickWindow);
     }
 

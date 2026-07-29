@@ -4,9 +4,9 @@
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="SnapBoard.Desktop.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
-        Width="700"
+        Width="960"
         Height="720"
-        MinWidth="660"
+        MinWidth="820"
         MinHeight="600"
         CanResize="True"
         Background="{DynamicResource AppBackgroundBrush}"
@@ -43,14 +43,120 @@
             </Grid>
         </Border>
 
-        <ScrollViewer Grid.Row="1"
-                      Background="{DynamicResource SubtleSurfaceBrush}"
-                      HorizontalScrollBarVisibility="Disabled"
-                      VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="30,24,30,28" Spacing="10">
-                <TextBlock FontSize="13"
+        <Grid Grid.Row="1"
+              Background="{DynamicResource SubtleSurfaceBrush}"
+              ColumnDefinitions="184,*">
+            <Border Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="0,0,1,0">
+                <StackPanel Margin="14,20,12,20" Spacing="8">
+                    <TextBlock Margin="10,0,0,4"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="设置分类" />
+                    <ListBox x:Name="SettingsNavigationList"
+                             Classes="settings-navigation"
+                             SelectedIndex="{Binding SelectedSettingsSectionIndex, Mode=TwoWay}"
+                             SelectionChanged="OnSettingsNavigationSelectionChanged">
+                        <ListBoxItem x:Name="GeneralNavigationItem"
+                                     Classes="settings-navigation-item">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <materialIcons:MaterialIcon Width="19"
+                                                            Height="19"
+                                                            VerticalAlignment="Center"
+                                                            Kind="CogOutline" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="常规" />
+                            </Grid>
+                        </ListBoxItem>
+                        <ListBoxItem x:Name="HistoryNavigationItem"
+                                     Classes="settings-navigation-item"
+                                     IsEnabled="{Binding IsHistorySettingsSectionVisible}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <materialIcons:MaterialIcon Width="19"
+                                                            Height="19"
+                                                            VerticalAlignment="Center"
+                                                            Kind="History" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="历史与隐私" />
+                            </Grid>
+                        </ListBoxItem>
+                        <ListBoxItem x:Name="SyncNavigationItem"
+                                     Classes="settings-navigation-item"
+                                     IsEnabled="{Binding IsSyncSectionVisible}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <materialIcons:MaterialIcon Width="19"
+                                                            Height="19"
+                                                            VerticalAlignment="Center"
+                                                            Kind="CloudSyncOutline" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="同步" />
+                            </Grid>
+                        </ListBoxItem>
+                        <ListBoxItem x:Name="StorageNavigationItem"
+                                     Classes="settings-navigation-item"
+                                     IsEnabled="{Binding IsStorageSectionVisible}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <materialIcons:MaterialIcon Width="19"
+                                                            Height="19"
+                                                            VerticalAlignment="Center"
+                                                            Kind="DatabaseOutline" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="本地数据" />
+                            </Grid>
+                        </ListBoxItem>
+                        <ListBoxItem x:Name="UpdatesNavigationItem"
+                                     Classes="settings-navigation-item"
+                                     IsEnabled="{Binding IsUpdateSectionVisible}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <materialIcons:MaterialIcon Width="19"
+                                                            Height="19"
+                                                            VerticalAlignment="Center"
+                                                            Kind="Update" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="应用更新" />
+                            </Grid>
+                        </ListBoxItem>
+                        <ListBoxItem x:Name="PermissionsNavigationItem"
+                                     Classes="settings-navigation-item"
+                                     IsEnabled="{Binding IsPermissionSectionVisible}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <materialIcons:MaterialIcon Width="19"
+                                                            Height="19"
+                                                            VerticalAlignment="Center"
+                                                            Kind="ShieldKeyOutline" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="权限" />
+                            </Grid>
+                        </ListBoxItem>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+
+            <ScrollViewer x:Name="SettingsContentScrollViewer"
+                          Grid.Column="1"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="28,20,28,28" Spacing="10">
+                    <StackPanel x:Name="GeneralSettingsSection"
+                                Spacing="10"
+                                IsVisible="{Binding IsGeneralSettingsSectionSelected}">
+                <TextBlock FontSize="18"
                            FontWeight="SemiBold"
-                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Foreground="{DynamicResource PrimaryTextBrush}"
                            Text="常规" />
 
                 <Border Background="{DynamicResource SurfaceBrush}"
@@ -250,8 +356,42 @@
                     <StackPanel Margin="20,16,20,16" Spacing="14">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                             <StackPanel Spacing="3">
-                                <TextBlock FontWeight="SemiBold"
-                                           Text="全屏或窗口最大化时停用快捷键"
+                                <TextBlock x:Name="ProtectionScopeHeading"
+                                           FontWeight="SemiBold"
+                                           Text="保护范围"
+                                           TextWrapping="Wrap" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="仅全屏包含独占全屏和覆盖整块显示器的无边框全屏"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Border Grid.Column="1"
+                                    Padding="4"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource HoverSurfaceBrush}"
+                                    CornerRadius="6">
+                                <ListBox x:Name="ForegroundProtectionScopeSelector"
+                                         Classes="settings-segmented-navigation"
+                                         IsEnabled="{Binding IsFullScreenProtectionAvailable}"
+                                         SelectedIndex="{Binding SelectedForegroundProtectionScopeIndex, Mode=TwoWay}">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBoxItem Classes="settings-segment"
+                                                 Content="仅全屏（推荐）" />
+                                    <ListBoxItem Classes="settings-segment"
+                                                 Content="全屏和最大化" />
+                                </ListBox>
+                            </Border>
+                        </Grid>
+                        <Border Height="1" Background="{DynamicResource DividerBrush}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                            <StackPanel Spacing="3">
+                                <TextBlock x:Name="DisableHotKeysWhenProtectedHeading"
+                                           FontWeight="SemiBold"
+                                           Text="保护期间停用全局快捷键"
                                            TextWrapping="Wrap" />
                                 <TextBlock FontSize="12"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
@@ -270,8 +410,9 @@
                         <Border Height="1" Background="{DynamicResource DividerBrush}" />
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                             <StackPanel Spacing="3">
-                                <TextBlock FontWeight="SemiBold"
-                                           Text="全屏或窗口最大化时停止记录复制内容"
+                                <TextBlock x:Name="PauseCaptureWhenProtectedHeading"
+                                           FontWeight="SemiBold"
+                                           Text="保护期间停止记录复制内容"
                                            TextWrapping="Wrap" />
                                 <TextBlock FontSize="12"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
@@ -299,12 +440,14 @@
                     </StackPanel>
                 </Border>
 
-                <StackPanel Margin="0,12,0,0"
+                    </StackPanel>
+
+                <StackPanel x:Name="ApplicationUpdateSettingsSection"
                             Spacing="10"
-                            IsVisible="{Binding IsUpdateSectionVisible}">
-                    <TextBlock FontSize="13"
+                            IsVisible="{Binding IsUpdateSettingsSectionSelected}">
+                    <TextBlock FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
                                Text="应用更新" />
                     <Border Background="{DynamicResource SurfaceBrush}"
                             BorderBrush="{DynamicResource DividerBrush}"
@@ -429,12 +572,12 @@
                     </Border>
                 </StackPanel>
 
-                <StackPanel Margin="0,12,0,0"
+                <StackPanel x:Name="StorageSettingsSection"
                             Spacing="10"
-                            IsVisible="{Binding IsStorageSectionVisible}">
-                    <TextBlock FontSize="13"
+                            IsVisible="{Binding IsStorageSettingsSectionSelected}">
+                    <TextBlock FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
                                Text="本地数据" />
                     <Border Background="{DynamicResource SurfaceBrush}"
                             BorderBrush="{DynamicResource DividerBrush}"
@@ -525,12 +668,12 @@
                     </Border>
                 </StackPanel>
 
-                <StackPanel Margin="0,12,0,0"
+                <StackPanel x:Name="HistorySettingsSection"
                             Spacing="10"
-                            IsVisible="{Binding IsHistorySettingsSectionVisible}">
-                    <TextBlock FontSize="13"
+                            IsVisible="{Binding IsHistorySettingsSectionSelected}">
+                    <TextBlock FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
                                Text="历史与隐私" />
                     <Border Background="{DynamicResource SurfaceBrush}"
                             BorderBrush="{DynamicResource DividerBrush}"
@@ -656,13 +799,34 @@
                     </Border>
                 </StackPanel>
 
-                <StackPanel Margin="0,12,0,0"
+                <StackPanel x:Name="SyncSettingsSection"
                             Spacing="10"
-                            IsVisible="{Binding IsSyncSectionVisible}">
-                    <TextBlock FontSize="13"
+                            IsVisible="{Binding IsSyncSettingsSectionSelected}">
+                    <TextBlock FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
-                               Text="端到端加密同步" />
+                               Foreground="{DynamicResource PrimaryTextBrush}"
+                               Text="同步" />
+                    <Border Padding="4"
+                            HorizontalAlignment="Left"
+                            Background="{DynamicResource HoverSurfaceBrush}"
+                            CornerRadius="6">
+                        <ListBox x:Name="SyncSettingsPaneList"
+                                 Classes="settings-segmented-navigation"
+                                 SelectedIndex="{Binding SelectedSyncSettingsPaneIndex, Mode=TwoWay}"
+                                 SelectionChanged="OnSyncSettingsPaneSelectionChanged">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBoxItem Classes="settings-segment" Content="状态" />
+                            <ListBoxItem Classes="settings-segment" Content="配置" />
+                            <ListBoxItem x:Name="SyncMigrationPaneItem"
+                                         Classes="settings-segment"
+                                         Content="迁移"
+                                         IsEnabled="{Binding IsProviderMigrationSectionVisible}" />
+                        </ListBox>
+                    </Border>
                     <Border Background="{DynamicResource SurfaceBrush}"
                             BorderBrush="{DynamicResource DividerBrush}"
                             BorderThickness="1"
@@ -712,6 +876,9 @@
                             <Border Grid.Row="1" Background="{DynamicResource DividerBrush}" />
 
                             <StackPanel Grid.Row="2" Margin="20,16,20,18" Spacing="12">
+                                <StackPanel x:Name="SyncOverviewPane"
+                                            Spacing="12"
+                                            IsVisible="{Binding IsSyncOverviewPaneSelected}">
                                 <Border Padding="12,10"
                                         Background="{DynamicResource SubtleSurfaceBrush}"
                                         CornerRadius="6">
@@ -761,7 +928,11 @@
                                         </StackPanel>
                                     </Button>
                                 </Grid>
+                                </StackPanel>
 
+                                <StackPanel x:Name="SyncConfigurationPane"
+                                            Spacing="12"
+                                            IsVisible="{Binding IsSyncConfigurationPaneSelected}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <RadioButton Classes="sync-mode"
                                                  Content="创建新空间"
@@ -971,12 +1142,11 @@
                                         </StackPanel>
                                     </Button>
                                 </StackPanel>
+                                </StackPanel>
 
-                                <Border Height="1"
-                                        Margin="0,4,0,0"
-                                        Background="{DynamicResource DividerBrush}"
-                                        IsVisible="{Binding IsProviderMigrationSectionVisible}" />
-
+                                <StackPanel x:Name="SyncMigrationPane"
+                                            Spacing="12"
+                                            IsVisible="{Binding IsSyncMigrationPaneSelected}">
                                 <StackPanel x:Name="ProviderMigrationSection"
                                             Spacing="12"
                                             IsVisible="{Binding IsProviderMigrationSectionVisible}">
@@ -1183,17 +1353,18 @@
                                         </Button>
                                     </StackPanel>
                                 </StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>
                 </StackPanel>
 
-                <StackPanel Margin="0,12,0,0"
+                <StackPanel x:Name="PermissionSettingsSection"
                             Spacing="10"
-                            IsVisible="{Binding IsPermissionSectionVisible}">
-                    <TextBlock FontSize="13"
+                            IsVisible="{Binding IsPermissionSettingsSectionSelected}">
+                    <TextBlock FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Foreground="{DynamicResource PrimaryTextBrush}"
                                Text="权限与受限模式" />
                     <Border Background="{DynamicResource SurfaceBrush}"
                             BorderBrush="{DynamicResource DividerBrush}"
@@ -1256,8 +1427,9 @@
                         </Grid>
                     </Border>
                 </StackPanel>
-            </StackPanel>
-        </ScrollViewer>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
 
         <Border Grid.Row="2"
                 Background="{DynamicResource SurfaceBrush}"

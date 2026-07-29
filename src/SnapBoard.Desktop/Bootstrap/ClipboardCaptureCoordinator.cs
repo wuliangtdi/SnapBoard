@@ -212,9 +212,10 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         (PauseReasons & ~ClipboardCapturePauseReason.ForegroundProtection) !=
         ClipboardCapturePauseReason.None;
 
-    private bool IsForegroundProtectionActive()
+    private bool IsForegroundProtectionActive(DesktopLocalSettings? settings = null)
     {
-        if (_localSettings?.Current.PauseClipboardCaptureWhenProtected != true ||
+        settings ??= _localSettings?.Current;
+        if (settings?.PauseClipboardCaptureWhenProtected != true ||
             _foregroundWindowStateService is null)
         {
             return false;
@@ -222,7 +223,9 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
 
         try
         {
-            return _foregroundWindowStateService.GetForegroundWindowState().IsProtected;
+            return _foregroundWindowStateService
+                .GetForegroundWindowState()
+                .IsProtected(settings.ProtectionScope);
         }
         catch
         {
@@ -254,8 +257,10 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         object? sender,
         DesktopLocalSettingsChangedEventArgs e)
     {
-        if (!e.Settings.PauseClipboardCaptureWhenProtected &&
-            SetPauseReasonCore(ClipboardCapturePauseReason.ForegroundProtection, active: false))
+        bool foregroundProtected = IsForegroundProtectionActive(e.Settings);
+        if (SetPauseReasonCore(
+                ClipboardCapturePauseReason.ForegroundProtection,
+                foregroundProtected))
         {
             PublishState(null);
         }

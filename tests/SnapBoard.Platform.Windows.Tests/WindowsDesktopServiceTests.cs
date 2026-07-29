@@ -211,6 +211,9 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
 
         Assert.Equal(GlobalHotKeyGesture.WindowsDefault, service.Current.PrimaryHotKey);
         Assert.Null(service.Current.DoubleHotKey);
+        Assert.Equal(
+            ForegroundProtectionScope.FullScreenOnly,
+            service.Current.ProtectionScope);
         Assert.True(service.Current.DisableGlobalHotKeysWhenProtected);
         Assert.True(service.Current.PauseClipboardCaptureWhenProtected);
         Assert.True(registry.TryGetValue(
@@ -230,6 +233,7 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
         DesktopLocalSettings expected = new(
             primary,
             doubleGesture,
+            ProtectionScope: ForegroundProtectionScope.FullScreenAndMaximized,
             DisableGlobalHotKeysWhenProtected: false,
             PauseClipboardCaptureWhenProtected: false);
 
@@ -256,6 +260,36 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
     }
 
     [Fact]
+    public void PreviousFormatVersionIsRejectedWithoutMigration()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService previous = new(registry);
+        previous.Update(previous.Current with
+        {
+            PrimaryHotKey = CreateGesture(0x4A, "Ctrl+Alt+J"),
+            DoubleHotKey = CreateGesture(0x4B, "Ctrl+Alt+K"),
+            ProtectionScope = ForegroundProtectionScope.FullScreenAndMaximized,
+            DisableGlobalHotKeysWhenProtected = false,
+            PauseClipboardCaptureWhenProtected = false,
+        });
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.VersionValueName,
+            "1");
+
+        WindowsDesktopLocalSettingsService current = new(registry);
+
+        Assert.Equal("2", WindowsDesktopLocalSettingsService.CurrentVersion);
+        Assert.Equal(GlobalHotKeyGesture.WindowsDefault, current.Current.PrimaryHotKey);
+        Assert.Null(current.Current.DoubleHotKey);
+        Assert.Equal(
+            ForegroundProtectionScope.FullScreenOnly,
+            current.Current.ProtectionScope);
+        Assert.True(current.Current.DisableGlobalHotKeysWhenProtected);
+        Assert.True(current.Current.PauseClipboardCaptureWhenProtected);
+    }
+
+    [Fact]
     public void InvalidCurrentFieldRejectsWholeConfiguration()
     {
         FakeWindowsRegistryStore registry = new();
@@ -263,6 +297,7 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
         valid.Update(new DesktopLocalSettings(
             CreateGesture(0x4A, "Ctrl+Alt+J"),
             CreateGesture(0x4B, "Ctrl+Alt+K"),
+            ProtectionScope: ForegroundProtectionScope.FullScreenAndMaximized,
             DisableGlobalHotKeysWhenProtected: false,
             PauseClipboardCaptureWhenProtected: false));
         registry.Seed(
@@ -274,6 +309,9 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
 
         Assert.Equal(GlobalHotKeyGesture.WindowsDefault, restarted.Current.PrimaryHotKey);
         Assert.Null(restarted.Current.DoubleHotKey);
+        Assert.Equal(
+            ForegroundProtectionScope.FullScreenOnly,
+            restarted.Current.ProtectionScope);
         Assert.True(restarted.Current.DisableGlobalHotKeysWhenProtected);
         Assert.True(restarted.Current.PauseClipboardCaptureWhenProtected);
     }
@@ -283,6 +321,11 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
     {
         FakeWindowsRegistryStore registry = new();
         GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.ProtectionScopeValueName,
+            ((int)ForegroundProtectionScope.FullScreenAndMaximized).ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
         registry.Seed(
             WindowsDesktopLocalSettingsService.SettingsSubKey,
             WindowsDesktopLocalSettingsService.VersionValueName,
@@ -308,8 +351,34 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
 
         Assert.Equal(GlobalHotKeyGesture.WindowsDefault, service.Current.PrimaryHotKey);
         Assert.Null(service.Current.DoubleHotKey);
+        Assert.Equal(
+            ForegroundProtectionScope.FullScreenOnly,
+            service.Current.ProtectionScope);
         Assert.True(service.Current.DisableGlobalHotKeysWhenProtected);
         Assert.True(service.Current.PauseClipboardCaptureWhenProtected);
+    }
+
+    [Fact]
+    public void InvalidProtectionScopeRejectsWholeConfiguration()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService valid = new(registry);
+        valid.Update(valid.Current with
+        {
+            PrimaryHotKey = CreateGesture(0x4A, "Ctrl+Alt+J"),
+            ProtectionScope = ForegroundProtectionScope.FullScreenAndMaximized,
+        });
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.ProtectionScopeValueName,
+            "9");
+
+        WindowsDesktopLocalSettingsService restarted = new(registry);
+
+        Assert.Equal(GlobalHotKeyGesture.WindowsDefault, restarted.Current.PrimaryHotKey);
+        Assert.Equal(
+            ForegroundProtectionScope.FullScreenOnly,
+            restarted.Current.ProtectionScope);
     }
 
     private static GlobalHotKeyGesture CreateGesture(uint virtualKey, string displayName) => new(

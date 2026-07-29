@@ -17,12 +17,13 @@ public sealed class WindowsForegroundWindowStateServiceTests
         ForegroundWindowStateResult result = service.GetForegroundWindowState();
 
         Assert.Equal(ForegroundWindowState.Normal, result.State);
-        Assert.False(result.IsProtected);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenOnly));
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
         Assert.Equal((uint)42, result.Identity?.ProcessId);
     }
 
     [Fact]
-    public void ZoomedWindowReturnsMaximizedBeforeBoundsComparison()
+    public void ZoomedWindowReturnsMaximizedWhenMonitorIsUnavailable()
     {
         FakeForegroundWindowNative native = new()
         {
@@ -34,7 +35,8 @@ public sealed class WindowsForegroundWindowStateServiceTests
         ForegroundWindowStateResult result = service.GetForegroundWindowState();
 
         Assert.Equal(ForegroundWindowState.Maximized, result.State);
-        Assert.True(result.IsProtected);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenOnly));
+        Assert.True(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
     }
 
     [Fact]
@@ -50,7 +52,43 @@ public sealed class WindowsForegroundWindowStateServiceTests
         ForegroundWindowStateResult result = service.GetForegroundWindowState();
 
         Assert.Equal(ForegroundWindowState.FullScreen, result.State);
-        Assert.True(result.IsProtected);
+        Assert.True(result.IsProtected(ForegroundProtectionScope.FullScreenOnly));
+        Assert.True(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
+    }
+
+    [Fact]
+    public void ZoomedBorderlessWindowCoveringItsMonitorReturnsFullScreen()
+    {
+        FakeForegroundWindowNative native = new()
+        {
+            Zoomed = true,
+            WindowStyle = 0,
+            WindowBounds = Rectangle(0, 0, 1920, 1080),
+            MonitorBounds = Rectangle(0, 0, 1920, 1080),
+        };
+        WindowsForegroundWindowStateService service = new(native, snapBoardProcessId: 99);
+
+        ForegroundWindowStateResult result = service.GetForegroundWindowState();
+
+        Assert.Equal(ForegroundWindowState.FullScreen, result.State);
+        Assert.True(result.IsProtected(ForegroundProtectionScope.FullScreenOnly));
+    }
+
+    [Fact]
+    public void ZoomedFramedWindowCoveringItsMonitorRemainsMaximized()
+    {
+        FakeForegroundWindowNative native = new()
+        {
+            Zoomed = true,
+            WindowBounds = Rectangle(0, 0, 1920, 1080),
+            MonitorBounds = Rectangle(0, 0, 1920, 1080),
+        };
+        WindowsForegroundWindowStateService service = new(native, snapBoardProcessId: 99);
+
+        ForegroundWindowStateResult result = service.GetForegroundWindowState();
+
+        Assert.Equal(ForegroundWindowState.Maximized, result.State);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenOnly));
     }
 
     [Fact]
@@ -93,7 +131,7 @@ public sealed class WindowsForegroundWindowStateServiceTests
 
         Assert.Equal(ForegroundWindowState.Normal, result.State);
         Assert.True(result.IsSnapBoard);
-        Assert.False(result.IsProtected);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
         Assert.Equal(ForegroundWindowDiagnosticCode.SnapBoardWindow, result.DiagnosticCode);
     }
 
@@ -133,7 +171,7 @@ public sealed class WindowsForegroundWindowStateServiceTests
 
         Assert.Equal(ForegroundWindowState.Unavailable, result.State);
         Assert.Equal(expectedDiagnostic, result.DiagnosticCode);
-        Assert.False(result.IsProtected);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
     }
 
     [Fact]
@@ -146,7 +184,7 @@ public sealed class WindowsForegroundWindowStateServiceTests
 
         Assert.Equal(ForegroundWindowState.Unknown, result.State);
         Assert.Equal(ForegroundWindowDiagnosticCode.MonitorUnavailable, result.DiagnosticCode);
-        Assert.False(result.IsProtected);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
     }
 
     [Fact]
@@ -159,7 +197,7 @@ public sealed class WindowsForegroundWindowStateServiceTests
 
         Assert.Equal(ForegroundWindowState.Unknown, result.State);
         Assert.Equal(ForegroundWindowDiagnosticCode.NativeFailure, result.DiagnosticCode);
-        Assert.False(result.IsProtected);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
     }
 
     [Fact]
@@ -214,6 +252,12 @@ public sealed class WindowsForegroundWindowStateServiceTests
 
         public bool Zoomed { get; set; }
 
+        public bool WindowStyleAvailable { get; set; } = true;
+
+        public uint WindowStyle { get; set; } =
+            WindowsNativeConstants.WindowStyleCaption |
+            WindowsNativeConstants.WindowStyleThickFrame;
+
         public bool Cloaked { get; set; }
 
         public bool ProcessAvailable { get; set; } = true;
@@ -241,6 +285,12 @@ public sealed class WindowsForegroundWindowStateServiceTests
         public bool IsIconic(nint windowHandle) => Iconic;
 
         public bool IsZoomed(nint windowHandle) => Zoomed;
+
+        public bool TryGetWindowStyle(nint windowHandle, out uint style)
+        {
+            style = WindowStyle;
+            return WindowStyleAvailable;
+        }
 
         public nint GetDesktopWindow() => DesktopWindow;
 

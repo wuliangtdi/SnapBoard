@@ -9,6 +9,12 @@ public enum ForegroundWindowState
     Unavailable = 4,
 }
 
+public enum ForegroundProtectionScope
+{
+    FullScreenOnly = 0,
+    FullScreenAndMaximized = 1,
+}
+
 public enum ForegroundWindowDiagnosticCode
 {
     None = 0,
@@ -34,8 +40,11 @@ public sealed record ForegroundWindowStateResult(
     ForegroundWindowIdentity? Identity,
     ForegroundWindowDiagnosticCode DiagnosticCode)
 {
-    public bool IsProtected =>
-        !IsSnapBoard && State is ForegroundWindowState.Maximized or ForegroundWindowState.FullScreen;
+    public bool IsProtected(ForegroundProtectionScope scope) =>
+        !IsSnapBoard &&
+        (State == ForegroundWindowState.FullScreen ||
+            (scope == ForegroundProtectionScope.FullScreenAndMaximized &&
+                State == ForegroundWindowState.Maximized));
 }
 
 public interface IPlatformForegroundWindowStateService

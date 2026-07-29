@@ -3,12 +3,14 @@ namespace SnapBoard.Platform.Abstractions.Desktop;
 public sealed record DesktopLocalSettings(
     GlobalHotKeyGesture PrimaryHotKey,
     GlobalHotKeyGesture? DoubleHotKey,
+    ForegroundProtectionScope ProtectionScope,
     bool DisableGlobalHotKeysWhenProtected,
     bool PauseClipboardCaptureWhenProtected)
 {
     public static DesktopLocalSettings CreateDefaults(GlobalHotKeyGesture primaryHotKey) => new(
         primaryHotKey,
         DoubleHotKey: null,
+        ProtectionScope: ForegroundProtectionScope.FullScreenOnly,
         DisableGlobalHotKeysWhenProtected: true,
         PauseClipboardCaptureWhenProtected: true);
 }

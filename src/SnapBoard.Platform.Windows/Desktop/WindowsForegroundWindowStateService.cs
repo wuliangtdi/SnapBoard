@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Windows.Interop;
@@ -16,6 +17,8 @@ internal interface IWindowsForegroundWindowNative
     bool IsIconic(nint windowHandle);
 
     bool IsZoomed(nint windowHandle);
+
+    bool TryGetWindowStyle(nint windowHandle, out uint style);
 
     nint GetDesktopWindow();
 
@@ -44,6 +47,16 @@ internal sealed class WindowsForegroundWindowNative : IWindowsForegroundWindowNa
     public bool IsIconic(nint windowHandle) => WindowsNativeMethods.IsIconic(windowHandle);
 
     public bool IsZoomed(nint windowHandle) => WindowsNativeMethods.IsZoomed(windowHandle);
+
+    public bool TryGetWindowStyle(nint windowHandle, out uint style)
+    {
+        Marshal.SetLastPInvokeError(0);
+        nint result = WindowsNativeMethods.GetWindowLongPointer(
+            windowHandle,
+            WindowsNativeConstants.WindowLongStyle);
+        style = unchecked((uint)result.ToInt64());
+        return result != 0 || Marshal.GetLastPInvokeError() == 0;
+    }
 
     public nint GetDesktopWindow() => WindowsNativeMethods.GetDesktopWindow();
 
@@ -174,25 +187,32 @@ public sealed class WindowsForegroundWindowStateService : IPlatformForegroundWin
                 return Unavailable(ForegroundWindowDiagnosticCode.CloakedWindow, identity);
             }
 
-            if (_native.IsZoomed(windowHandle))
-            {
-                return Available(ForegroundWindowState.Maximized, identity);
-            }
+            bool isZoomed = _native.IsZoomed(windowHandle);
 
             if (!_native.TryGetMonitorBounds(windowHandle, out NativeRectangle monitorBounds))
             {
-                return Unknown(ForegroundWindowDiagnosticCode.MonitorUnavailable, identity);
+                return isZoomed
+                    ? Available(ForegroundWindowState.Maximized, identity)
+                    : Unknown(ForegroundWindowDiagnosticCode.MonitorUnavailable, identity);
             }
 
             if (!_native.TryGetExtendedFrameBounds(windowHandle, out NativeRectangle windowBounds) &&
                 !_native.TryGetWindowBounds(windowHandle, out windowBounds))
             {
-                return Unknown(ForegroundWindowDiagnosticCode.BoundsUnavailable, identity);
+                return isZoomed
+                    ? Available(ForegroundWindowState.Maximized, identity)
+                    : Unknown(ForegroundWindowDiagnosticCode.BoundsUnavailable, identity);
             }
 
-            return CoversMonitor(windowBounds, monitorBounds)
-                ? Available(ForegroundWindowState.FullScreen, identity)
-                : Available(ForegroundWindowState.Normal, identity);
+            if (CoversMonitor(windowBounds, monitorBounds) &&
+                (!isZoomed || IsBorderless(windowHandle)))
+            {
+                return Available(ForegroundWindowState.FullScreen, identity);
+            }
+
+            return Available(
+                isZoomed ? ForegroundWindowState.Maximized : ForegroundWindowState.Normal,
+                identity);
         }
         catch
         {
@@ -207,6 +227,11 @@ public sealed class WindowsForegroundWindowStateService : IPlatformForegroundWin
         IsClose(window.Top, monitor.Top) &&
         IsClose(window.Right, monitor.Right) &&
         IsClose(window.Bottom, monitor.Bottom);
+
+    private bool IsBorderless(nint windowHandle) =>
+        _native.TryGetWindowStyle(windowHandle, out uint style) &&
+        (style & (WindowsNativeConstants.WindowStyleCaption |
+            WindowsNativeConstants.WindowStyleThickFrame)) == 0;
 
     private static bool HasPositiveArea(NativeRectangle rectangle) =>
         rectangle.Right > rectangle.Left && rectangle.Bottom > rectangle.Top;

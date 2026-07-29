@@ -145,7 +145,34 @@ public sealed class ClipboardCaptureCoordinatorTests
     }
 
     [Fact]
-    public async Task LeavingProtectionRecordsOnlyTheNextClipboardEvent()
+    public async Task MaximizedForegroundAllowsCaptureByDefault()
+    {
+        FakeClipboardMonitor monitor = new();
+        FakeClipboardReader reader = new();
+        FakeForegroundWindowStateService foreground = new()
+        {
+            Result = Protected(ForegroundWindowState.Maximized),
+        };
+        using ClipboardCaptureCoordinator coordinator = new(
+            monitor,
+            reader,
+            captureService: null,
+            foreground,
+            new FakeDesktopLocalSettingsService());
+
+        coordinator.Start();
+        monitor.Publish(9);
+        await reader.FirstRead.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([9UL], reader.ReadSequences);
+        Assert.False(coordinator.PauseReasons.HasFlag(
+            ClipboardCapturePauseReason.ForegroundProtection));
+    }
+
+    [Fact]
+    public async Task StrictScopeProtectsMaximizedForegroundUntilTheNextEvent()
     {
         FakeClipboardMonitor monitor = new();
         FakeClipboardReader reader = new();
@@ -154,12 +181,17 @@ public sealed class ClipboardCaptureCoordinatorTests
         {
             Result = Protected(ForegroundWindowState.Maximized),
         };
+        FakeDesktopLocalSettingsService settings = new();
+        settings.Update(settings.Current with
+        {
+            ProtectionScope = ForegroundProtectionScope.FullScreenAndMaximized,
+        });
         using ClipboardCaptureCoordinator coordinator = new(
             monitor,
             reader,
             captureService,
             foreground,
-            new FakeDesktopLocalSettingsService());
+            settings);
 
         coordinator.Start();
         monitor.Publish(10);
@@ -174,6 +206,41 @@ public sealed class ClipboardCaptureCoordinatorTests
         Assert.Equal(1, reader.ReadCount);
         Assert.Equal([11UL], reader.ReadSequences);
         Assert.Equal(1, captureService.ProcessCount);
+    }
+
+    [Fact]
+    public async Task ProtectionScopeChangeImmediatelyReevaluatesMaximizedForeground()
+    {
+        FakeClipboardMonitor monitor = new();
+        FakeForegroundWindowStateService foreground = new()
+        {
+            Result = Protected(ForegroundWindowState.Maximized),
+        };
+        FakeDesktopLocalSettingsService settings = new();
+        using ClipboardCaptureCoordinator coordinator = new(
+            monitor,
+            new FakeClipboardReader(),
+            captureService: null,
+            foreground,
+            settings);
+        coordinator.Start();
+
+        settings.Update(settings.Current with
+        {
+            ProtectionScope = ForegroundProtectionScope.FullScreenAndMaximized,
+        });
+        Assert.True(coordinator.PauseReasons.HasFlag(
+            ClipboardCapturePauseReason.ForegroundProtection));
+
+        settings.Update(settings.Current with
+        {
+            ProtectionScope = ForegroundProtectionScope.FullScreenOnly,
+        });
+        Assert.False(coordinator.PauseReasons.HasFlag(
+            ClipboardCapturePauseReason.ForegroundProtection));
+
+        monitor.Publish(12);
+        await WaitForObservedAsync(coordinator, 1);
     }
 
     [Fact]

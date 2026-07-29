@@ -772,14 +772,17 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private bool IsHotKeyProtectionActive()
     {
-        if (!_localSettings.Current.DisableGlobalHotKeysWhenProtected)
+        DesktopLocalSettings settings = _localSettings.Current;
+        if (!settings.DisableGlobalHotKeysWhenProtected)
         {
             return false;
         }
 
         try
         {
-            return _foregroundWindowStateService.GetForegroundWindowState().IsProtected;
+            return _foregroundWindowStateService
+                .GetForegroundWindowState()
+                .IsProtected(settings.ProtectionScope);
         }
         catch
         {

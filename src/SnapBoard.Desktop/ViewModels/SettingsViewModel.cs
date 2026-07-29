@@ -30,6 +30,23 @@ public sealed record ProviderMigrationDeviceViewItem(
     string Status,
     string Watermark);
 
+public enum SettingsSection
+{
+    General = 0,
+    HistoryAndPrivacy = 1,
+    Sync = 2,
+    Storage = 3,
+    Updates = 4,
+    Permissions = 5,
+}
+
+public enum SyncSettingsPane
+{
+    Overview = 0,
+    Configuration = 1,
+    Migration = 2,
+}
+
 public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 {
     private static readonly RetentionPeriodOption ThirtyDays = new("30 天", 30);
@@ -147,6 +164,8 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IsFullScreenProtectionAvailable = localSettings is not null &&
             foregroundWindowStateService is not null;
         DesktopLocalSettings? desktopSettings = localSettings?.Current;
+        SelectedForegroundProtectionScopeIndex = (int)(
+            desktopSettings?.ProtectionScope ?? ForegroundProtectionScope.FullScreenOnly);
         IsDisableGlobalHotKeysWhenProtected =
             desktopSettings?.DisableGlobalHotKeysWhenProtected ?? true;
         IsPauseClipboardCaptureWhenProtected =
@@ -192,6 +211,53 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGeneralSettingsSectionSelected))]
+    [NotifyPropertyChangedFor(nameof(IsHistorySettingsSectionSelected))]
+    [NotifyPropertyChangedFor(nameof(IsSyncSettingsSectionSelected))]
+    [NotifyPropertyChangedFor(nameof(IsStorageSettingsSectionSelected))]
+    [NotifyPropertyChangedFor(nameof(IsUpdateSettingsSectionSelected))]
+    [NotifyPropertyChangedFor(nameof(IsPermissionSettingsSectionSelected))]
+    public partial int SelectedSettingsSectionIndex { get; set; } =
+        (int)SettingsSection.General;
+
+    public bool IsGeneralSettingsSectionSelected =>
+        SelectedSettingsSectionIndex == (int)SettingsSection.General;
+
+    public bool IsHistorySettingsSectionSelected =>
+        SelectedSettingsSectionIndex == (int)SettingsSection.HistoryAndPrivacy &&
+        IsHistorySettingsSectionVisible;
+
+    public bool IsSyncSettingsSectionSelected =>
+        SelectedSettingsSectionIndex == (int)SettingsSection.Sync && IsSyncSectionVisible;
+
+    public bool IsStorageSettingsSectionSelected =>
+        SelectedSettingsSectionIndex == (int)SettingsSection.Storage && IsStorageSectionVisible;
+
+    public bool IsUpdateSettingsSectionSelected =>
+        SelectedSettingsSectionIndex == (int)SettingsSection.Updates && IsUpdateSectionVisible;
+
+    public bool IsPermissionSettingsSectionSelected =>
+        SelectedSettingsSectionIndex == (int)SettingsSection.Permissions &&
+        IsPermissionSectionVisible;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSyncOverviewPaneSelected))]
+    [NotifyPropertyChangedFor(nameof(IsSyncConfigurationPaneSelected))]
+    [NotifyPropertyChangedFor(nameof(IsSyncMigrationPaneSelected))]
+    public partial int SelectedSyncSettingsPaneIndex { get; set; } =
+        (int)SyncSettingsPane.Overview;
+
+    public bool IsSyncOverviewPaneSelected =>
+        SelectedSyncSettingsPaneIndex == (int)SyncSettingsPane.Overview;
+
+    public bool IsSyncConfigurationPaneSelected =>
+        SelectedSyncSettingsPaneIndex == (int)SyncSettingsPane.Configuration;
+
+    public bool IsSyncMigrationPaneSelected =>
+        SelectedSyncSettingsPaneIndex == (int)SyncSettingsPane.Migration &&
+        IsProviderMigrationSectionVisible;
+
+    [ObservableProperty]
     public partial string HotKeyDisplayName { get; set; }
 
     [ObservableProperty]
@@ -224,6 +290,10 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public partial bool IsFullScreenProtectionAvailable { get; set; }
 
     [ObservableProperty]
+    public partial int SelectedForegroundProtectionScopeIndex { get; set; } =
+        (int)ForegroundProtectionScope.FullScreenOnly;
+
+    [ObservableProperty]
     public partial bool IsDisableGlobalHotKeysWhenProtected { get; set; } = true;
 
     [ObservableProperty]
@@ -242,6 +312,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public partial bool IsAutoStartAvailable { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPermissionSettingsSectionSelected))]
     public partial bool IsPermissionSectionVisible { get; set; }
 
     [ObservableProperty]
@@ -261,6 +332,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public partial string ApplicationIdentityStatus { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsStorageSettingsSectionSelected))]
     public partial bool IsStorageSectionVisible { get; set; }
 
     [ObservableProperty]
@@ -297,6 +369,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public partial string StorageMigrationErrorMessage { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsHistorySettingsSectionSelected))]
     public partial bool IsHistorySettingsSectionVisible { get; set; }
 
     [ObservableProperty]
@@ -333,6 +406,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public bool IsCustomRetentionPeriod => SelectedRetentionPeriod.IsCustom;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSyncSettingsSectionSelected))]
     public partial bool IsSyncSectionVisible { get; set; }
 
     [ObservableProperty]
@@ -404,6 +478,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public bool HasSyncActiveSpaceId => !string.IsNullOrWhiteSpace(SyncActiveSpaceId);
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSyncMigrationPaneSelected))]
     public partial bool IsProviderMigrationSectionVisible { get; set; }
 
     [ObservableProperty]
@@ -472,6 +547,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public string SettingsScopeDescription { get; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsUpdateSettingsSectionSelected))]
     public partial bool IsUpdateSectionVisible { get; set; }
 
     [ObservableProperty]
@@ -1050,6 +1126,34 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     partial void OnIsCapturingDoubleHotKeyChanged(bool value) =>
         OnPropertyChanged(nameof(IsCapturingPrimaryHotKey));
 
+    partial void OnSelectedSettingsSectionIndexChanged(int value)
+    {
+        if (value != (int)SettingsSection.General)
+        {
+            CancelHotKeyCapture();
+        }
+    }
+
+    partial void OnIsProviderMigrationSectionVisibleChanged(bool value)
+    {
+        if (!value && SelectedSyncSettingsPaneIndex == (int)SyncSettingsPane.Migration)
+        {
+            SelectedSyncSettingsPaneIndex = (int)SyncSettingsPane.Overview;
+        }
+    }
+
+    partial void OnSelectedForegroundProtectionScopeIndexChanged(int value)
+    {
+        ForegroundProtectionScope scope = (ForegroundProtectionScope)value;
+        if (!_initializing && _localSettings is not null && Enum.IsDefined(scope))
+        {
+            SaveProtectionSettings(settings => settings with
+            {
+                ProtectionScope = scope,
+            });
+        }
+    }
+
     partial void OnIsDisableGlobalHotKeysWhenProtectedChanged(bool value)
     {
         if (!_initializing && _localSettings is not null)
@@ -1261,14 +1365,19 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         {
             ForegroundWindowStateResult result =
                 _foregroundWindowStateService.GetForegroundWindowState();
+            ForegroundProtectionScope scope = _localSettings?.Current.ProtectionScope ??
+                ForegroundProtectionScope.FullScreenOnly;
             ForegroundWindowStatus = result.State switch
             {
-                ForegroundWindowState.Maximized => "当前检测到窗口最大化，保护已生效",
-                ForegroundWindowState.FullScreen => "当前检测到全屏窗口，保护已生效",
+                ForegroundWindowState.Maximized when result.IsProtected(scope) =>
+                    "当前检测到窗口最大化，已进入保护范围",
+                ForegroundWindowState.Maximized =>
+                    "当前检测到窗口最大化，按当前范围不启用保护",
+                ForegroundWindowState.FullScreen => "当前检测到全屏窗口，已进入保护范围",
                 ForegroundWindowState.Unknown or ForegroundWindowState.Unavailable =>
                     "当前平台暂时无法判断前台窗口状态",
                 _ when result.IsSnapBoard => "闪剪自身窗口不触发全屏保护",
-                _ => "当前前台窗口未触发全屏保护",
+                _ => "当前前台窗口未进入保护范围",
             };
         }
         catch
