@@ -1826,7 +1826,7 @@ public sealed class SyncProviderMigrationEndToEndTests
                 continue;
             }
 
-            byte[] content = await File.ReadAllBytesAsync(path);
+            byte[] content = await ReadSqliteFileBytesAsync(path);
             try
             {
                 foreach (string text in forbidden)
@@ -1846,6 +1846,34 @@ public sealed class SyncProviderMigrationEndToEndTests
             {
                 CryptographicOperations.ZeroMemory(content);
             }
+        }
+    }
+
+    private static async Task<byte[]> ReadSqliteFileBytesAsync(string path)
+    {
+        // SQLite 连接池会保留可写句柄；Windows 读取原始 DB/WAL/SHM 时必须共享现有访问。
+        await using FileStream stream = new(path, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.ReadWrite | FileShare.Delete,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
+        });
+        if (stream.Length > int.MaxValue)
+        {
+            throw new IOException($"SQLite test file is too large to scan: {path}");
+        }
+
+        byte[] content = GC.AllocateUninitializedArray<byte>((int)stream.Length);
+        try
+        {
+            await stream.ReadExactlyAsync(content);
+            return content;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(content);
+            throw;
         }
     }
 
