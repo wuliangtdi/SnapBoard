@@ -34,6 +34,14 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public void QuickArgumentAlwaysRequestsTheQuickWindow()
+    {
+        SingleInstanceCommand command = Program.GetSingleInstanceCommand(["--quick"]);
+
+        Assert.Equal(SingleInstanceCommand.ShowQuickWindow, command);
+    }
+
+    [Fact]
     public void LoginItemLaunchDefaultsToBackgroundButExplicitWindowWins()
     {
         Assert.Equal(

@@ -41,16 +41,20 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
     private readonly IAutomaticPasteService _automaticPasteService;
     private readonly ClipboardCaptureCoordinator _captureCoordinator;
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;
+    private readonly IPlatformForegroundWindowStateService _foregroundWindowStateService;
     private readonly IGlobalHotKeyService _hotKeyService;
     private readonly IHistorySettingsService? _historySettingsService;
     private readonly IApplicationUpdateService? _applicationUpdateService;
     private readonly MainViewModel _mainViewModel;
+    private readonly IDesktopLocalSettingsService _localSettings;
+    private readonly QuickWindowHotKeyController _quickWindowHotKeyController;
     private readonly IPlatformWindowPlacementService _placementService;
     private readonly WindowsSingleInstanceCoordinator? _singleInstance;
     private readonly IStorageManagementService? _storageManagementService;
     private readonly IStorageMigrationBarrier? _storageMigrationBarrier;
     private readonly IStoragePlatformService? _storagePlatformService;
     private readonly ISyncService? _syncService;
+    private readonly ITwoSlotGlobalHotKeyService _twoSlotHotKeyService;
     private readonly IClipboardWriter _writer;
     private MainWindow? _mainWindow;
     private QuickWindow? _quickWindow;
@@ -58,6 +62,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
     private TrayIcon? _trayIcon;
     private TrayIcons? _trayIcons;
     private NativeMenuItem? _pauseMenuItem;
+    private NativeMenuItem? _recordingStatusMenuItem;
     private IAutomaticPasteTarget? _foregroundTarget;
     private PlatformScreenPlacement? _foregroundScreen;
     private CancellationTokenSource? _resourceReleaseCancellation;
@@ -80,7 +85,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         IStoragePlatformService? storagePlatformService = null,
         ISyncService? syncService = null,
         IHistorySettingsService? historySettingsService = null,
-        IApplicationUpdateService? applicationUpdateService = null)
+        IApplicationUpdateService? applicationUpdateService = null,
+        IPlatformForegroundWindowStateService? foregroundWindowStateService = null,
+        IDesktopLocalSettingsService? localSettings = null)
     {
         _application = application;
         _desktop = desktop;
@@ -88,8 +95,21 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         _writer = writer;
         _automaticPasteService = automaticPasteService;
         _hotKeyService = hotKeyService;
+        _twoSlotHotKeyService = hotKeyService as ITwoSlotGlobalHotKeyService ??
+            throw new ArgumentException(
+                "The Windows hot-key service must support two slots.",
+                nameof(hotKeyService));
         _autoStartService = autoStartService;
         _placementService = placementService;
+        _foregroundWindowStateService = foregroundWindowStateService ??
+            throw new ArgumentNullException(nameof(foregroundWindowStateService));
+        _localSettings = localSettings ??
+            throw new ArgumentNullException(nameof(localSettings));
+        _quickWindowHotKeyController = new QuickWindowHotKeyController(
+            _twoSlotHotKeyService.DoubleTriggerInterval,
+            () => _settingsWindow is { IsActive: true },
+            IsHotKeyProtectionActive,
+            ShowQuickWindowCore);
         _captureCoordinator = captureCoordinator;
         _singleInstance = singleInstance;
         _storageManagementService = storageManagementService;
@@ -106,8 +126,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         SubscribeEvents();
         CreateTrayIcon();
 
-        GlobalHotKeyRegistrationResult hotKeyResult = _hotKeyService.RegisterAsync(
-                _hotKeyService.ConfiguredGesture,
+        GlobalHotKeyRegistrationResult hotKeyResult = _twoSlotHotKeyService.RegisterAsync(
+                GlobalHotKeySlot.Primary,
+                _localSettings.Current.PrimaryHotKey,
                 CancellationToken.None)
             .AsTask()
             .GetAwaiter()
@@ -117,6 +138,24 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
             _mainViewModel.StatusMessage = hotKeyResult.Status == GlobalHotKeyRegistrationStatus.Conflict
                 ? "全局快捷键已被占用，可在设置中更换"
                 : "全局快捷键注册失败";
+        }
+
+        if (_localSettings.Current.DoubleHotKey is GlobalHotKeyGesture doubleGesture)
+        {
+            GlobalHotKeyRegistrationResult doubleResult = _twoSlotHotKeyService.RegisterAsync(
+                    GlobalHotKeySlot.Double,
+                    doubleGesture,
+                    CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+            if (doubleResult.Status != GlobalHotKeyRegistrationStatus.Registered)
+            {
+                _mainViewModel.StatusMessage = doubleResult.Status ==
+                    GlobalHotKeyRegistrationStatus.Conflict
+                    ? "连按两次快捷键已被占用，可在设置中更换"
+                    : "连按两次快捷键注册失败";
+            }
         }
 
         _mainViewModel.Start();
@@ -141,6 +180,8 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         }
     }
 
+    internal bool HasQuickWindow => _quickWindow is not null;
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -149,6 +190,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         }
 
         _isExiting = true;
+        _quickWindowHotKeyController.Reset();
         CancelScheduledResourceRelease();
         UnsubscribeEvents();
         _trayIcon?.Dispose();
@@ -171,7 +213,8 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         _mainViewModel.RecordingPauseToggleRequested += OnRecordingPauseToggleRequested;
         _mainViewModel.ExitRequested += OnExitRequested;
         _captureCoordinator.StateChanged += OnCaptureStateChanged;
-        _hotKeyService.Pressed += OnHotKeyPressed;
+        _twoSlotHotKeyService.Triggered += OnHotKeyTriggered;
+        _localSettings.Changed += OnLocalSettingsChanged;
         if (_singleInstance is not null)
         {
             _singleInstance.CommandReceived += OnSingleInstanceCommand;
@@ -187,7 +230,8 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         _mainViewModel.RecordingPauseToggleRequested -= OnRecordingPauseToggleRequested;
         _mainViewModel.ExitRequested -= OnExitRequested;
         _captureCoordinator.StateChanged -= OnCaptureStateChanged;
-        _hotKeyService.Pressed -= OnHotKeyPressed;
+        _twoSlotHotKeyService.Triggered -= OnHotKeyTriggered;
+        _localSettings.Changed -= OnLocalSettingsChanged;
         if (_singleInstance is not null)
         {
             _singleInstance.CommandReceived -= OnSingleInstanceCommand;
@@ -210,6 +254,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private void ShowMainWindow()
     {
+        _quickWindowHotKeyController.Reset();
         CaptureForegroundContext();
         MainWindow window = _mainWindow ?? CreateMainWindow();
         _desktop.MainWindow = window;
@@ -229,6 +274,16 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private void ShowQuickWindow()
     {
+        _quickWindowHotKeyController.ShowExplicitly();
+    }
+
+    private void ShowQuickWindowCore()
+    {
+        if (_isExiting)
+        {
+            return;
+        }
+
         CancelScheduledResourceRelease();
         if (_quickWindow is not null)
         {
@@ -256,6 +311,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private void ShowSettingsWindow()
     {
+        _quickWindowHotKeyController.Reset();
         CancelScheduledResourceRelease();
         if (_settingsWindow is not null)
         {
@@ -274,7 +330,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 syncService: _syncService,
                 historySettingsService: _historySettingsService,
                 applicationUpdateService: _applicationUpdateService,
-                requestUpdateInstall: BeginApplicationUpdateInstallAsync),
+                requestUpdateInstall: BeginApplicationUpdateInstallAsync,
+                localSettings: _localSettings,
+                foregroundWindowStateService: _foregroundWindowStateService),
         };
         window.Closed += OnSettingsWindowClosed;
         _settingsWindow = window;
@@ -332,7 +390,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            _captureCoordinator.SetPaused(paused: true);
+            _captureCoordinator.SetPauseReason(
+                ClipboardCapturePauseReason.StorageMigration,
+                active: true);
             await _storageMigrationBarrier.PrepareForMigrationAsync(cancellationToken)
                 .ConfigureAwait(false);
             PostToUi(ExitApplication);
@@ -364,7 +424,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
             }
             finally
             {
-                _captureCoordinator.SetPaused(paused: false);
+                _captureCoordinator.SetPauseReason(
+                    ClipboardCapturePauseReason.StorageMigration,
+                    active: false);
                 if (syncPauseRequested)
                 {
                     _syncService?.ResumeAfterPause();
@@ -383,7 +445,6 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
             throw new InvalidOperationException("Application updates are unavailable.");
         }
 
-        bool captureWasPaused = _captureCoordinator.IsPaused;
         bool syncPauseRequested = false;
         try
         {
@@ -393,13 +454,17 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            _captureCoordinator.SetPaused(paused: true);
+            _captureCoordinator.SetPauseReason(
+                ClipboardCapturePauseReason.UpdateInstallation,
+                active: true);
             _applicationUpdateService.ScheduleInstallAndRestart();
             PostToUi(ExitApplication);
         }
         catch
         {
-            _captureCoordinator.SetPaused(captureWasPaused);
+            _captureCoordinator.SetPauseReason(
+                ClipboardCapturePauseReason.UpdateInstallation,
+                active: false);
             if (syncPauseRequested)
             {
                 _syncService?.ResumeAfterPause();
@@ -425,11 +490,16 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
                 ToggleType = MenuItemToggleType.CheckBox,
             };
             _pauseMenuItem.Click += (_, _) => PostToUi(ToggleRecordingPause);
+            _recordingStatusMenuItem = new NativeMenuItem("正在记录")
+            {
+                IsEnabled = false,
+            };
             NativeMenuItem exit = new("退出");
             exit.Click += (_, _) => PostToUi(ExitApplication);
 
             menu.Items.Add(showMain);
             menu.Items.Add(showQuick);
+            menu.Items.Add(_recordingStatusMenuItem);
             menu.Items.Add(_pauseMenuItem);
             menu.Items.Add(settings);
             menu.Items.Add(new NativeMenuItemSeparator());
@@ -550,14 +620,9 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private void ToggleRecordingPause()
     {
-        bool paused = !_captureCoordinator.IsPaused;
-        _captureCoordinator.SetPaused(paused);
-        _mainViewModel.UpdateRecordingState(paused);
-        if (_pauseMenuItem is not null)
-        {
-            _pauseMenuItem.IsChecked = paused;
-            _pauseMenuItem.Header = paused ? "恢复记录" : "暂停记录";
-        }
+        _captureCoordinator.SetPauseReason(
+            ClipboardCapturePauseReason.Manual,
+            !_captureCoordinator.IsManuallyPaused);
     }
 
     private void ExitApplication()
@@ -568,6 +633,7 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
         }
 
         _isExiting = true;
+        _quickWindowHotKeyController.Reset();
         CloseAllWindows();
         _desktop.TryShutdown();
     }
@@ -699,20 +765,37 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
 
     private void OnExitRequested(object? sender, EventArgs e) => ExitApplication();
 
-    private void OnHotKeyPressed(object? sender, EventArgs e) => PostToUi(() =>
+    private void OnHotKeyTriggered(
+        object? sender,
+        GlobalHotKeyTriggeredEventArgs e) =>
+        PostToUi(() => _quickWindowHotKeyController.HandleTrigger(e));
+
+    private bool IsHotKeyProtectionActive()
     {
-        // 设置窗口激活时，用户可能正在录入当前已注册的组合键。此时只吞掉原生
-        // WM_HOTKEY，不能再弹出快速窗口打断焦点和键盘捕获。
-        if (_settingsWindow is not { IsActive: true })
+        if (!_localSettings.Current.DisableGlobalHotKeysWhenProtected)
         {
-            ShowQuickWindow();
+            return false;
         }
-    });
+
+        try
+        {
+            return _foregroundWindowStateService.GetForegroundWindowState().IsProtected;
+        }
+        catch
+        {
+            // 检测失败等同 Unknown，默认放行，不能让全局快捷键永久失效。
+            return false;
+        }
+    }
+
+    private void OnLocalSettingsChanged(
+        object? sender,
+        DesktopLocalSettingsChangedEventArgs e) => _quickWindowHotKeyController.Reset();
 
     private void OnSingleInstanceCommand(SingleInstanceCommand command) =>
         PostToUi(() => ExecuteSingleInstanceCommand(command));
 
-    private void ExecuteSingleInstanceCommand(SingleInstanceCommand command)
+    internal void ExecuteSingleInstanceCommand(SingleInstanceCommand command)
     {
         switch (command)
         {
@@ -743,10 +826,37 @@ internal sealed class WindowsDesktopLifecycleCoordinator : IDisposable
             _mainViewModel.StatusMessage = "剪贴板监听已停止";
         }
 
-        _mainViewModel.IsRecordingPaused = state.IsPaused;
+        bool isInternallyPaused = (state.PauseReasons &
+            (ClipboardCapturePauseReason.StorageMigration |
+                ClipboardCapturePauseReason.UpdateInstallation)) != 0;
+        _mainViewModel.UpdateRecordingState(
+            state.IsManuallyPaused,
+            state.IsForegroundProtected,
+            isInternallyPaused);
         if (_pauseMenuItem is not null)
         {
-            _pauseMenuItem.IsChecked = state.IsPaused;
+            _pauseMenuItem.IsChecked = state.IsManuallyPaused;
+            _pauseMenuItem.Header = state.IsManuallyPaused ? "恢复记录" : "暂停记录";
+        }
+
+        if (_recordingStatusMenuItem is not null)
+        {
+            _recordingStatusMenuItem.Header = state.IsForegroundProtected
+                ? "全屏保护中，暂不记录"
+                : state.IsManuallyPaused
+                    ? "用户已暂停记录"
+                    : isInternallyPaused
+                        ? "内部维护中，暂不记录"
+                        : "正在记录";
+        }
+
+        if (_trayIcon is not null)
+        {
+            _trayIcon.ToolTipText = state.IsForegroundProtected
+                ? "闪剪 - 全屏保护中，暂不记录"
+                : state.IsManuallyPaused
+                    ? "闪剪 - 用户已暂停记录"
+                    : "闪剪";
         }
     });
 

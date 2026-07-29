@@ -153,6 +153,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public partial bool IsRecordingPaused { get; set; }
 
     [ObservableProperty]
+    public partial bool IsForegroundProtectionActive { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsInternalCapturePauseActive { get; set; }
+
+    [ObservableProperty]
     public partial bool IsLoading { get; set; }
 
     [ObservableProperty]
@@ -194,7 +200,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     public bool IsLinkFilterSelected => SelectedFilter == ClipboardItemType.Link;
 
-    public string RecordingStateText => IsRecordingPaused ? "记录已暂停" : "正在记录";
+    public string RecordingStateText => IsForegroundProtectionActive
+        ? "全屏保护中，暂不记录"
+        : IsRecordingPaused
+            ? "记录已暂停"
+            : IsInternalCapturePauseActive
+                ? "内部维护中，暂不记录"
+                : "正在记录";
 
     public event EventHandler? CopyRequested;
 
@@ -262,6 +274,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
 
     partial void OnIsRecordingPausedChanged(bool value) =>
+        OnPropertyChanged(nameof(RecordingStateText));
+
+    partial void OnIsForegroundProtectionActiveChanged(bool value) =>
+        OnPropertyChanged(nameof(RecordingStateText));
+
+    partial void OnIsInternalCapturePauseActiveChanged(bool value) =>
         OnPropertyChanged(nameof(RecordingStateText));
 
     partial void OnIsLoadingChanged(bool value) =>
@@ -382,8 +400,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     internal void UpdateRecordingState(bool paused)
     {
-        IsRecordingPaused = paused;
+        UpdateRecordingState(paused, foregroundProtected: false, internallyPaused: false);
         StatusMessage = paused ? "剪贴板记录已暂停" : "剪贴板记录已恢复";
+    }
+
+    internal void UpdateRecordingState(
+        bool manuallyPaused,
+        bool foregroundProtected,
+        bool internallyPaused)
+    {
+        IsRecordingPaused = manuallyPaused;
+        IsForegroundProtectionActive = foregroundProtected;
+        IsInternalCapturePauseActive = internallyPaused;
     }
 
     [RelayCommand]

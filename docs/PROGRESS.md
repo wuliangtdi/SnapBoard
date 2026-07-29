@@ -744,7 +744,43 @@ AOT 与性能：
   - 未修改同步协议、SQLite、平台安全存储或 WebDAV 迁移执行逻辑，因此不以此次截图替代真实双设备迁移验证。
 ```
 
-## 25. 更新规则
+## 25. 2026-07-29 执行记录：Windows 快速窗口双击快捷键与全屏保护
+
+```text
+日期：2026-07-29
+阶段/任务：docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md 第 13.4 节阶段 A（Windows 与共享层）
+状态：[x] Windows 与共享层实现、自动验证、win-x64 Native AOT 和当前 Windows 实机验证完成；[ ] macOS 原生阶段 B 待从最新 main 继续
+开发基线：c8f449cf25ad8ead2dfbd1eade65b2b19fec9202（main / origin/main）
+分支：codex/windows-quick-window-fullscreen-protection
+实现内容：
+  - Platform.Abstractions 增加 Primary/Double 两槽模型、来源事件、本机设置快照和前台窗口 Normal/Maximized/FullScreen/Unknown/Unavailable 语义；现有单次快捷键接口继续保留，避免破坏 macOS 编译边界。
+  - 共享 DoubleHotKeyPressStateMachine 使用单调 TimeProvider；第一次只进入等待，第二次完成后立即复位，超时后的当前按键成为下一轮第一次，重复按键、配置变化、窗口保护、捕获、退出和显式入口都会清理待定状态。
+  - Windows 使用两个固定槽位及备用 ID 原子替换 RegisterHotKey；两槽均带 MOD_NOREPEAT，相同组合拒绝，冲突和旧 ID 注销失败完整回滚，清除 Double 不影响 Primary，陈旧 WM_HOTKEY ID 不再触发。
+  - HKCU\Software\SnapBoard\Desktop 保存两槽和两个默认开启的保护开关；只采用当前结构，不读取或迁移开发期 GlobalHotKey 值，也不生成同步事件。
+  - WindowsForegroundWindowStateService 使用 IsZoomed、DWM 扩展边框、MonitorFromWindow/GetMonitorInfo、可见/最小化/遮蔽/桌面与进程身份检查；按前台窗口所在显示器识别无边框全屏，并排除 SnapBoard 自身窗口，不读取标题、游戏名、文档路径或剪贴板内容。
+  - 快捷键保护只处理 Primary/Double 全局来源；托盘、应用按钮、单实例命令和 --quick 走显式入口。记录保护在 IClipboardContentReader.ReadAsync 前判断；Manual、ForegroundProtection、StorageMigration、UpdateInstallation 使用可组合位标记，清除单一原因不会释放其他原因。
+  - 设置页保留滚动布局和 settings-toggle，新增“连按两次快捷键打开快速窗口”、完整按键录入、应用/清除、两个全屏保护开关及状态文案；未提供第二槽默认键、预设列表或修饰键菜单。macOS 显示未实现能力，不注册虚假服务或恒定 Normal 空实现。
+自动验证：
+  - dotnet restore SnapBoard.slnx --locked-mode 通过；dotnet format --verify-no-changes 通过；Release build 0 警告、0 错误。
+  - 全量 386 项：367 项通过、19 项按平台/外部服务条件跳过、0 项失败；Windows Platform 83/83，Desktop Headless 83/83。
+  - 双击状态机、双 RegisterHotKey 来源/冲突/清除/回滚、MOD_NOREPEAT 长按、HKCU 持久化/重启、五态前台检测、多显示器/自身排除、ReadAsync 前保护、SQLite/Blob/Outbox 零增长、全部暂停组合及显式入口放行均有专项断言。
+  - SettingsWindow Headless 覆盖精确标题、默认未设置、无预设/修饰键菜单、两个默认开启的 settings-toggle、滚动布局和状态文案。
+Windows 实机验证：
+  - Native AOT 隔离实例中打开设置页，目视确认 702 x 752 窗口沿用现有风格、滚动布局、第二槽默认“未设置”、精确文案和两个默认开启开关；录入 Ctrl+Shift+K 后真实注册成功。
+  - 两个 1920 x 1080 显示器上分别验证普通窗为 Normal、IsZoomed 最大化窗为 Maximized、无边框窗和动态全屏窗为 FullScreen，SnapBoard 自身窗返回 IsSnapBoard；第二显示器全屏保护命中。
+  - 普通窗中第一下 Double 不打开、第二下只打开一个快速窗口；最大化、无边框全屏和全屏视频中 Primary/Double 均被抑制；全屏下 --quick 仍打开；连续重复 KeyDown 模拟长按不能构成第二次，释放并重新完整按两次后正常打开。
+  - 独立且禁用外部解析的 Chrome 临时配置最大化后被识别为 Maximized，ffplay 本地生成的 30 fps 测试色视频全屏播放时被识别为 FullScreen；两者均抑制 Primary。临时浏览器/视频进程、配置与数据已删除，不读取现有浏览器会话。
+  - 手动暂停状态经真实 Windows 前台检测器进入和离开全屏后仍保留，自动保护只增删 ForegroundProtection；清除 Manual 后读取恢复。AOT 进程退出并以同一隔离数据根重启后，已保存的 Double 重新注册并再次通过完整探针。
+Native AOT：
+  - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。
+  - SnapBoard.Desktop.exe 40,032,256 字节；可用隔离数据目录后台启动、响应单实例命令、退出和重启。
+  - SnapBoard.StorageMigrator.exe 4,513,280 字节，保持独立 AOT；发布目录中没有对应 .dll、.deps.json 或 .runtimeconfig.json。
+限制：
+  - 长按通过 Windows 注入的按下/重复/释放序列验证，不等同于人工按住物理键盘；手动暂停组合通过真实协调器和真实前台窗口切换验证，不等同于人工点击主窗口按钮。对应 UI 命令另由 Headless 测试覆盖。
+  - 本阶段未实现或宣称 macOS 原生两槽注册、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
+```
+
+## 26. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

@@ -28,6 +28,15 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void OnDoubleHotKeyCaptureClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SettingsViewModel viewModel)
+        {
+            viewModel.BeginDoubleHotKeyCapture();
+            DoubleHotKeyCaptureButton.Focus();
+        }
+    }
+
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         if (DataContext is not SettingsViewModel { IsCapturingHotKey: true } viewModel)
@@ -66,6 +75,7 @@ public partial class SettingsWindow : Window
         if (DataContext is SettingsViewModel viewModel)
         {
             viewModel.RefreshAccessibilityPermission();
+            viewModel.RefreshForegroundWindowStatus();
             await viewModel.InitializeHistorySettingsAsync();
             await viewModel.InitializeStorageAsync();
             await viewModel.InitializeSyncAsync();

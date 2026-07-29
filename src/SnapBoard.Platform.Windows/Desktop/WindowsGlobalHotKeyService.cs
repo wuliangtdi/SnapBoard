@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -11,19 +10,24 @@ using SnapBoard.Platform.Windows.Interop;
 namespace SnapBoard.Platform.Windows.Desktop;
 
 [SupportedOSPlatform("windows")]
-public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposable
+public sealed class WindowsGlobalHotKeyService :
+    IGlobalHotKeyService,
+    ITwoSlotGlobalHotKeyService,
+    IDisposable
 {
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _configurationGate = new(1, 1);
     private readonly ConcurrentQueue<HotKeyCommand> _commands = new();
-    private readonly Channel<bool> _pressedEvents = Channel.CreateBounded<bool>(
-        new BoundedChannelOptions(1)
+    private readonly Channel<GlobalHotKeySlot> _pressedEvents =
+        Channel.CreateBounded<GlobalHotKeySlot>(
+        new BoundedChannelOptions(8)
         {
             FullMode = BoundedChannelFullMode.DropWrite,
             SingleReader = true,
             SingleWriter = true,
         });
     private readonly WindowsHotKeyRegistrar _registrar;
-    private readonly IWindowsRegistryStore _registry;
+    private readonly IDesktopLocalSettingsService _settings;
     private readonly string _windowClassName = $"SnapBoard.HotKey.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -33,45 +37,48 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
     private uint _threadId;
     private bool _stopRequested;
     private int _state;
-    private GlobalHotKeyGesture _configuredGesture;
-
-    private const string SettingsSubKey = @"Software\SnapBoard\Desktop";
-    private const string HotKeyValueName = "GlobalHotKey";
+    private readonly TimeSpan _doubleTriggerInterval;
 
     public WindowsGlobalHotKeyService()
         : this(
             new WindowsHotKeyRegistrar(new WindowsHotKeyNative()),
-            new WindowsRegistryStore())
+            new WindowsDesktopLocalSettingsService(),
+            GetSystemDoubleTriggerInterval())
+    {
+    }
+
+    public WindowsGlobalHotKeyService(WindowsDesktopLocalSettingsService settings)
+        : this(
+            new WindowsHotKeyRegistrar(new WindowsHotKeyNative()),
+            settings,
+            GetSystemDoubleTriggerInterval())
     {
     }
 
     internal WindowsGlobalHotKeyService(
         WindowsHotKeyRegistrar registrar,
-        IWindowsRegistryStore registry)
+        IDesktopLocalSettingsService settings,
+        TimeSpan? doubleTriggerInterval = null)
     {
         _registrar = registrar;
-        _registry = registry;
-        _configuredGesture = ReadConfiguredGesture();
+        _settings = settings;
+        _doubleTriggerInterval = doubleTriggerInterval ?? TimeSpan.FromMilliseconds(400);
     }
 
     public event EventHandler? Pressed;
 
-    public GlobalHotKeyGesture? CurrentGesture => _registrar.CurrentGesture;
+    public event EventHandler<GlobalHotKeyTriggeredEventArgs>? Triggered;
 
-    public GlobalHotKeyGesture ConfiguredGesture
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _configuredGesture;
-            }
-        }
-    }
+    public GlobalHotKeyGesture? CurrentGesture =>
+        _registrar.GetCurrentGesture(GlobalHotKeySlot.Primary);
+
+    public GlobalHotKeyGesture ConfiguredGesture => _settings.Current.PrimaryHotKey;
 
     public GlobalHotKeyGesture DefaultGesture => GlobalHotKeyGesture.WindowsDefault;
 
     public string ModifierDisplayNames => "Ctrl、Alt、Shift 或 Win";
+
+    public TimeSpan DoubleTriggerInterval => _doubleTriggerInterval;
 
     public GlobalHotKeyGestureCreationResult CreateGesture(
         GlobalHotKeyModifiers modifiers,
@@ -79,40 +86,132 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
 
     public async ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
         GlobalHotKeyGesture gesture,
+        CancellationToken cancellationToken) =>
+        await RegisterAsync(GlobalHotKeySlot.Primary, gesture, cancellationToken)
+            .ConfigureAwait(false);
+
+    public GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot) =>
+        _registrar.GetCurrentGesture(slot);
+
+    public GlobalHotKeyGesture? GetConfiguredGesture(GlobalHotKeySlot slot) => slot switch
+    {
+        GlobalHotKeySlot.Primary => _settings.Current.PrimaryHotKey,
+        GlobalHotKeySlot.Double => _settings.Current.DoubleHotKey,
+        _ => null,
+    };
+
+    public async ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
+        GlobalHotKeySlot slot,
+        GlobalHotKeyGesture gesture,
         CancellationToken cancellationToken)
     {
-        if (gesture.VirtualKey is 0 or > 0xFE ||
-            (gesture.Modifiers & ~KnownModifiers) != 0)
+        await _configurationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await RegisterCoreAsync(slot, gesture, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _configurationGate.Release();
+        }
+    }
+
+    private async ValueTask<GlobalHotKeyRegistrationResult> RegisterCoreAsync(
+        GlobalHotKeySlot slot,
+        GlobalHotKeyGesture gesture,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(slot) ||
+            !WindowsDesktopLocalSettingsService.IsValidGesture(gesture))
         {
             return new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Failed);
+        }
+
+        DesktopLocalSettings currentSettings = _settings.Current;
+        GlobalHotKeyGesture? otherGesture = slot == GlobalHotKeySlot.Primary
+            ? currentSettings.DoubleHotKey
+            : currentSettings.PrimaryHotKey;
+        if (otherGesture is GlobalHotKeyGesture other && gesture.HasSameBinding(other))
+        {
+            return new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Duplicate);
         }
 
         await StartAsync(cancellationToken).ConfigureAwait(false);
         TaskCompletionSource<GlobalHotKeyRegistrationResult> completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        _commands.Enqueue(new HotKeyCommand(gesture, completion, cancellationToken));
+        _commands.Enqueue(new HotKeyCommand(
+            HotKeyCommandType.Register,
+            slot,
+            gesture,
+            completion,
+            cancellationToken));
         PostCommandMessage(completion);
         GlobalHotKeyRegistrationResult result =
-            await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await completion.Task.ConfigureAwait(false);
         if (result.Status == GlobalHotKeyRegistrationStatus.Registered &&
-            _registrar.CurrentGesture == gesture)
+            _registrar.GetCurrentGesture(slot) == gesture)
         {
-            lock (_gate)
-            {
-                _configuredGesture = gesture;
-            }
-
-            try
-            {
-                _registry.SetString(SettingsSubKey, HotKeyValueName, SerializeGesture(gesture));
-            }
-            catch (Exception exception) when (IsRegistryFailure(exception))
-            {
-                // 快捷键已经在当前会话注册成功；配置写入失败只影响下次启动，不回滚有效绑定。
-            }
+            DesktopLocalSettingsUpdateResult updateResult = _settings.Update(settings =>
+                slot == GlobalHotKeySlot.Primary
+                    ? settings with { PrimaryHotKey = gesture }
+                    : settings with { DoubleHotKey = gesture });
+            return result with { SettingsPersisted = updateResult.Persisted };
         }
 
         return result;
+    }
+
+    public async ValueTask<GlobalHotKeyRegistrationResult> ClearAsync(
+        GlobalHotKeySlot slot,
+        CancellationToken cancellationToken)
+    {
+        await _configurationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ClearCoreAsync(slot, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _configurationGate.Release();
+        }
+    }
+
+    private async ValueTask<GlobalHotKeyRegistrationResult> ClearCoreAsync(
+        GlobalHotKeySlot slot,
+        CancellationToken cancellationToken)
+    {
+        if (slot != GlobalHotKeySlot.Double)
+        {
+            return new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Unsupported);
+        }
+
+        GlobalHotKeyRegistrationResult result;
+        if (Volatile.Read(ref _state) == 0)
+        {
+            result = new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Registered);
+        }
+        else
+        {
+            TaskCompletionSource<GlobalHotKeyRegistrationResult> completion =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _commands.Enqueue(new HotKeyCommand(
+                HotKeyCommandType.ClearSlot,
+                slot,
+                null,
+                completion,
+                cancellationToken));
+            PostCommandMessage(completion);
+            result = await completion.Task.ConfigureAwait(false);
+        }
+
+        if (result.Status != GlobalHotKeyRegistrationStatus.Registered)
+        {
+            return result;
+        }
+
+        DesktopLocalSettingsUpdateResult updateResult =
+            _settings.Update(settings => settings with { DoubleHotKey = null });
+        return result with { SettingsPersisted = updateResult.Persisted };
     }
 
     public async ValueTask UnregisterAsync(CancellationToken cancellationToken)
@@ -124,7 +223,12 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
 
         TaskCompletionSource<GlobalHotKeyRegistrationResult> completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        _commands.Enqueue(new HotKeyCommand(null, completion, cancellationToken));
+        _commands.Enqueue(new HotKeyCommand(
+            HotKeyCommandType.UnregisterAll,
+            GlobalHotKeySlot.Primary,
+            null,
+            completion,
+            cancellationToken));
         PostCommandMessage(completion);
         await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -190,13 +294,6 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
         }
     }
 
-    private const GlobalHotKeyModifiers KnownModifiers =
-        GlobalHotKeyModifiers.Alt |
-        GlobalHotKeyModifiers.Control |
-        GlobalHotKeyModifiers.Shift |
-        GlobalHotKeyModifiers.Windows |
-        GlobalHotKeyModifiers.NoRepeat;
-
     private async ValueTask StartAsync(CancellationToken cancellationToken)
     {
         Task startedTask;
@@ -243,11 +340,16 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
 
     private async Task PumpPressedEventsAsync()
     {
-        await foreach (bool _ in _pressedEvents.Reader.ReadAllAsync().ConfigureAwait(false))
+        await foreach (GlobalHotKeySlot source in
+            _pressedEvents.Reader.ReadAllAsync().ConfigureAwait(false))
         {
             try
             {
-                Pressed?.Invoke(this, EventArgs.Empty);
+                Triggered?.Invoke(this, new GlobalHotKeyTriggeredEventArgs(source));
+                if (source == GlobalHotKeySlot.Primary)
+                {
+                    Pressed?.Invoke(this, EventArgs.Empty);
+                }
             }
             catch
             {
@@ -355,7 +457,7 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
 
             if (windowHandle != 0 && WindowsNativeMethods.IsWindow(windowHandle))
             {
-                _registrar.Unregister(windowHandle);
+                _registrar.UnregisterAll(windowHandle);
                 WindowsNativeMethods.DestroyWindow(windowHandle);
             }
 
@@ -407,15 +509,25 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
                 continue;
             }
 
-            if (command.Gesture is GlobalHotKeyGesture gesture)
+            switch (command.Type)
             {
-                command.Completion.TrySetResult(_registrar.Register(windowHandle, gesture));
-            }
-            else
-            {
-                _registrar.Unregister(windowHandle);
-                command.Completion.TrySetResult(
-                    new GlobalHotKeyRegistrationResult(GlobalHotKeyRegistrationStatus.Registered));
+                case HotKeyCommandType.Register when command.Gesture is GlobalHotKeyGesture gesture:
+                    command.Completion.TrySetResult(
+                        _registrar.Register(windowHandle, command.Slot, gesture));
+                    break;
+                case HotKeyCommandType.ClearSlot:
+                    command.Completion.TrySetResult(
+                        _registrar.Clear(windowHandle, command.Slot));
+                    break;
+                case HotKeyCommandType.UnregisterAll:
+                    _registrar.UnregisterAll(windowHandle);
+                    command.Completion.TrySetResult(new GlobalHotKeyRegistrationResult(
+                        GlobalHotKeyRegistrationStatus.Registered));
+                    break;
+                default:
+                    command.Completion.TrySetResult(new GlobalHotKeyRegistrationResult(
+                        GlobalHotKeyRegistrationStatus.Failed));
+                    break;
             }
         }
     }
@@ -436,38 +548,26 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
         }
     }
 
-    private GlobalHotKeyGesture ReadConfiguredGesture()
+    private static TimeSpan GetSystemDoubleTriggerInterval()
     {
-        try
+        uint milliseconds = WindowsNativeMethods.GetDoubleClickTime();
+        if (milliseconds == 0)
         {
-            string? value = _registry.GetString(SettingsSubKey, HotKeyValueName);
-            string[] parts = value?.Split('|', 3, StringSplitOptions.TrimEntries) ?? [];
-            if (parts.Length == 3 &&
-                uint.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out uint modifiers) &&
-                uint.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out uint virtualKey) &&
-                virtualKey is > 0 and <= 0xFE &&
-                (((GlobalHotKeyModifiers)modifiers) & ~KnownModifiers) == 0 &&
-                !string.IsNullOrWhiteSpace(parts[2]))
-            {
-                return new GlobalHotKeyGesture(
-                    (GlobalHotKeyModifiers)modifiers,
-                    virtualKey,
-                    parts[2]);
-            }
-        }
-        catch (Exception exception) when (IsRegistryFailure(exception))
-        {
+            milliseconds = 400;
         }
 
-        return GlobalHotKeyGesture.WindowsDefault;
+        return TimeSpan.FromMilliseconds(Math.Clamp(milliseconds, 250u, 700u));
     }
 
-    private static string SerializeGesture(GlobalHotKeyGesture gesture) => string.Create(
-        CultureInfo.InvariantCulture,
-        $"{(uint)gesture.Modifiers}|{gesture.VirtualKey}|{gesture.DisplayName}");
+    internal bool QueueActiveHotKeyIdentifier(int identifier)
+    {
+        if (!_registrar.TryGetActiveSlot(identifier, out GlobalHotKeySlot slot))
+        {
+            return false;
+        }
 
-    private static bool IsRegistryFailure(Exception exception) =>
-        exception is IOException or UnauthorizedAccessException or System.Security.SecurityException;
+        return _pressedEvents.Writer.TryWrite(slot);
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     private static unsafe nint WindowProcedure(
@@ -503,9 +603,8 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
                 switch (message)
                 {
                     case WindowsNativeConstants.WindowMessageHotKey:
-                        // 原生回调只尝试写入容量为 1 的 Channel；窗口显示、焦点和业务逻辑
-                        // 全部由后台事件泵转交给 Avalonia Dispatcher，禁止在 WNDPROC 中执行。
-                        host._pressedEvents.Writer.TryWrite(true);
+                        // 只转发此刻仍活动的注册 ID；清除或替换前已排队的旧消息必须丢弃。
+                        host.QueueActiveHotKeyIdentifier((int)wParam);
                         return 0;
 
                     case WindowsNativeConstants.WindowMessageHotKeyCommand:
@@ -513,7 +612,7 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
                         return 0;
 
                     case WindowsNativeConstants.WindowMessageClose:
-                        host._registrar.Unregister(windowHandle);
+                        host._registrar.UnregisterAll(windowHandle);
                         WindowsNativeMethods.DestroyWindow(windowHandle);
                         return 0;
 
@@ -539,7 +638,16 @@ public sealed class WindowsGlobalHotKeyService : IGlobalHotKeyService, IDisposab
         return WindowsNativeMethods.DefWindowProc(windowHandle, message, wParam, lParam);
     }
 
+    private enum HotKeyCommandType
+    {
+        Register = 0,
+        ClearSlot = 1,
+        UnregisterAll = 2,
+    }
+
     private sealed record HotKeyCommand(
+        HotKeyCommandType Type,
+        GlobalHotKeySlot Slot,
         GlobalHotKeyGesture? Gesture,
         TaskCompletionSource<GlobalHotKeyRegistrationResult> Completion,
         CancellationToken CancellationToken);

@@ -17,6 +17,9 @@ public readonly record struct GlobalHotKeyGesture(
     uint VirtualKey,
     string DisplayName)
 {
+    public bool HasSameBinding(GlobalHotKeyGesture other) =>
+        Modifiers == other.Modifiers && VirtualKey == other.VirtualKey;
+
     public static GlobalHotKeyGesture WindowsDefault { get; } = new(
         GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Shift | GlobalHotKeyModifiers.NoRepeat,
         0x56,
@@ -36,6 +39,7 @@ public enum GlobalHotKeyRegistrationStatus
     Conflict = 1,
     Failed = 2,
     Unsupported = 3,
+    Duplicate = 4,
 }
 
 public enum GlobalHotKeyGestureCreationStatus
@@ -51,7 +55,25 @@ public sealed record GlobalHotKeyGestureCreationResult(
 
 public sealed record GlobalHotKeyRegistrationResult(
     GlobalHotKeyRegistrationStatus Status,
-    int NativeErrorCode = 0);
+    int NativeErrorCode = 0,
+    bool SettingsPersisted = true);
+
+#pragma warning disable CA1720 // Double 是已确认的快捷键触发来源协议名，不表示数值类型。
+public enum GlobalHotKeySlot
+{
+    Primary = 0,
+    Double = 1,
+}
+#pragma warning restore CA1720
+
+public sealed class GlobalHotKeyTriggeredEventArgs(
+    GlobalHotKeySlot source,
+    bool isRepeat = false) : EventArgs
+{
+    public GlobalHotKeySlot Source { get; } = source;
+
+    public bool IsRepeat { get; } = isRepeat;
+}
 
 /// <summary>
 /// 全局快捷键的跨平台边界。原生消息窗口、注册 ID 和 Win32 错误码均由平台层管理。
@@ -77,4 +99,27 @@ public interface IGlobalHotKeyService : IAsyncDisposable
         CancellationToken cancellationToken);
 
     ValueTask UnregisterAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// 两槽全局快捷键能力。平台未完成原生双槽实现时不注册该能力，不能用空成功实现代替。
+/// </summary>
+public interface ITwoSlotGlobalHotKeyService
+{
+    event EventHandler<GlobalHotKeyTriggeredEventArgs>? Triggered;
+
+    TimeSpan DoubleTriggerInterval { get; }
+
+    GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot);
+
+    GlobalHotKeyGesture? GetConfiguredGesture(GlobalHotKeySlot slot);
+
+    ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
+        GlobalHotKeySlot slot,
+        GlobalHotKeyGesture gesture,
+        CancellationToken cancellationToken);
+
+    ValueTask<GlobalHotKeyRegistrationResult> ClearAsync(
+        GlobalHotKeySlot slot,
+        CancellationToken cancellationToken);
 }

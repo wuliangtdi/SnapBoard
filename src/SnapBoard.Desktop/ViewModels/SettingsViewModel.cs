@@ -70,7 +70,10 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         ApplicationUpdateSource.GitHub);
     private readonly IAutoStartService _autoStartService;
     private readonly IAccessibilityPermissionService? _accessibilityPermissionService;
+    private readonly IPlatformForegroundWindowStateService? _foregroundWindowStateService;
     private readonly IGlobalHotKeyService _hotKeyService;
+    private readonly ITwoSlotGlobalHotKeyService? _twoSlotHotKeyService;
+    private readonly IDesktopLocalSettingsService? _localSettings;
     private readonly IHistorySettingsService? _historySettingsService;
     private readonly Func<string, CancellationToken, ValueTask>? _requestStorageMigration;
     private readonly IStorageManagementService? _storageManagementService;
@@ -82,6 +85,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SynchronizationContext? _uiContext;
     private GlobalHotKeyGesture _pendingHotKey;
+    private GlobalHotKeyGesture? _pendingDoubleHotKey;
     private bool _initializing;
     private bool _historySettingsInitialized;
     private bool _syncSettingsInitialized;
@@ -99,11 +103,17 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         ISyncService? syncService = null,
         IHistorySettingsService? historySettingsService = null,
         IApplicationUpdateService? applicationUpdateService = null,
-        Func<CancellationToken, ValueTask>? requestUpdateInstall = null)
+        Func<CancellationToken, ValueTask>? requestUpdateInstall = null,
+        IDesktopLocalSettingsService? localSettings = null,
+        IPlatformForegroundWindowStateService? foregroundWindowStateService = null)
     {
+        _initializing = true;
         _hotKeyService = hotKeyService;
+        _twoSlotHotKeyService = hotKeyService as ITwoSlotGlobalHotKeyService;
         _autoStartService = autoStartService;
         _accessibilityPermissionService = accessibilityPermissionService;
+        _localSettings = localSettings;
+        _foregroundWindowStateService = foregroundWindowStateService;
         _storageManagementService = storageManagementService;
         _storagePlatformService = storagePlatformService;
         _requestStorageMigration = requestStorageMigration;
@@ -114,7 +124,15 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         _requestUpdateInstall = requestUpdateInstall;
         _uiContext = SynchronizationContext.Current;
         _pendingHotKey = hotKeyService.ConfiguredGesture;
+        _pendingDoubleHotKey = _twoSlotHotKeyService?.GetConfiguredGesture(
+            GlobalHotKeySlot.Double);
         HotKeyDisplayName = _pendingHotKey.DisplayName;
+        DoubleHotKeyDisplayName = _pendingDoubleHotKey?.DisplayName ?? "未设置";
+        IsDoubleHotKeyAvailable = _twoSlotHotKeyService is not null;
+        HasConfiguredDoubleHotKey = _pendingDoubleHotKey is not null;
+        DoubleHotKeyStatus = IsDoubleHotKeyAvailable
+            ? _pendingDoubleHotKey is null ? "未设置" : "当前已启用"
+            : "当前平台尚未实现连按两次快捷键";
         DefaultHotKeyToolTip = $"恢复默认快捷键 {hotKeyService.DefaultGesture.DisplayName}";
         SettingsScopeDescription =
             "本机设置保存在当前用户下；历史、隐私与同步频率随加密空间同步";
@@ -126,6 +144,13 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IsProviderMigrationSectionVisible = _providerMigrationService is not null;
         IsHistorySettingsSectionVisible = historySettingsService is not null;
         IsUpdateSectionVisible = applicationUpdateService is not null;
+        IsFullScreenProtectionAvailable = localSettings is not null &&
+            foregroundWindowStateService is not null;
+        DesktopLocalSettings? desktopSettings = localSettings?.Current;
+        IsDisableGlobalHotKeysWhenProtected =
+            desktopSettings?.DisableGlobalHotKeysWhenProtected ?? true;
+        IsPauseClipboardCaptureWhenProtected =
+            desktopSettings?.PauseClipboardCaptureWhenProtected ?? true;
         UpdateSourceOptions = applicationUpdateService?.IsOfficialSourceConfigured == true
             ?
             [
@@ -160,10 +185,10 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             ApplyApplicationUpdateStatus(_applicationUpdateService.Status);
         }
 
-        _initializing = true;
         RefreshAutoStartState();
         _initializing = false;
         RefreshAccessibilityPermission();
+        RefreshForegroundWindowStatus();
     }
 
     [ObservableProperty]
@@ -172,8 +197,43 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsCapturingHotKey { get; set; }
 
+    public bool IsCapturingPrimaryHotKey => IsCapturingHotKey && !IsCapturingDoubleHotKey;
+
+    [ObservableProperty]
+    public partial bool IsCapturingDoubleHotKey { get; set; }
+
     [ObservableProperty]
     public partial bool HasPendingHotKeyChange { get; set; }
+
+    [ObservableProperty]
+    public partial string DoubleHotKeyDisplayName { get; set; } = "未设置";
+
+    [ObservableProperty]
+    public partial bool HasPendingDoubleHotKeyChange { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasConfiguredDoubleHotKey { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsDoubleHotKeyAvailable { get; set; }
+
+    [ObservableProperty]
+    public partial string DoubleHotKeyStatus { get; set; } = "未设置";
+
+    [ObservableProperty]
+    public partial bool IsFullScreenProtectionAvailable { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsDisableGlobalHotKeysWhenProtected { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsPauseClipboardCaptureWhenProtected { get; set; } = true;
+
+    [ObservableProperty]
+    public partial string FullScreenProtectionStatus { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ForegroundWindowStatus { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial bool IsAutoStartEnabled { get; set; }
@@ -884,8 +944,23 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     public void BeginHotKeyCapture()
     {
+        IsCapturingDoubleHotKey = false;
         IsCapturingHotKey = true;
         HotKeyStatus = $"请按下包含 {_hotKeyService.ModifierDisplayNames} 的组合键，Esc 取消";
+    }
+
+    public void BeginDoubleHotKeyCapture()
+    {
+        if (_twoSlotHotKeyService is null)
+        {
+            DoubleHotKeyStatus = "当前平台尚未实现连按两次快捷键";
+            return;
+        }
+
+        IsCapturingDoubleHotKey = true;
+        IsCapturingHotKey = true;
+        DoubleHotKeyStatus =
+            $"请按下包含 {_hotKeyService.ModifierDisplayNames} 的组合键，Esc 取消";
     }
 
     public void CancelHotKeyCapture()
@@ -895,8 +970,17 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        bool wasDouble = IsCapturingDoubleHotKey;
         IsCapturingHotKey = false;
-        HotKeyStatus = "已取消快捷键录入";
+        IsCapturingDoubleHotKey = false;
+        if (wasDouble)
+        {
+            DoubleHotKeyStatus = "已取消快捷键录入";
+        }
+        else
+        {
+            HotKeyStatus = "已取消快捷键录入";
+        }
     }
 
     public bool CaptureHotKey(GlobalHotKeyModifiers modifiers, string keyName)
@@ -906,6 +990,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             return false;
         }
 
+        bool isDouble = IsCapturingDoubleHotKey;
         GlobalHotKeyGestureCreationResult result =
             _hotKeyService.CreateGesture(modifiers, keyName);
         if (result is
@@ -914,20 +999,77 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
                 Gesture: GlobalHotKeyGesture gesture,
             })
         {
-            _pendingHotKey = gesture;
-            HotKeyDisplayName = gesture.DisplayName;
-            HasPendingHotKeyChange = gesture != _hotKeyService.ConfiguredGesture;
             IsCapturingHotKey = false;
-            HotKeyStatus = HasPendingHotKeyChange
-                ? $"已录入 {gesture.DisplayName}，点击应用后生效"
-                : $"{gesture.DisplayName} 已是当前快捷键";
+            IsCapturingDoubleHotKey = false;
+            if (isDouble)
+            {
+                _pendingDoubleHotKey = gesture;
+                DoubleHotKeyDisplayName = gesture.DisplayName;
+                HasPendingDoubleHotKeyChange = gesture !=
+                    _twoSlotHotKeyService?.GetConfiguredGesture(GlobalHotKeySlot.Double);
+                DoubleHotKeyStatus = gesture.HasSameBinding(_pendingHotKey)
+                    ? "两组快捷键不能相同"
+                    : HasPendingDoubleHotKeyChange
+                        ? $"已录入 {gesture.DisplayName}，点击应用后生效"
+                        : $"{gesture.DisplayName} 已是当前快捷键";
+            }
+            else
+            {
+                _pendingHotKey = gesture;
+                HotKeyDisplayName = gesture.DisplayName;
+                HasPendingHotKeyChange = gesture != _hotKeyService.ConfiguredGesture;
+                HotKeyStatus = _pendingDoubleHotKey is GlobalHotKeyGesture pendingDouble &&
+                    gesture.HasSameBinding(pendingDouble)
+                    ? "两组快捷键不能相同"
+                    : HasPendingHotKeyChange
+                        ? $"已录入 {gesture.DisplayName}，点击应用后生效"
+                        : $"{gesture.DisplayName} 已是当前快捷键";
+            }
+
             return true;
         }
 
-        HotKeyStatus = result.Status == GlobalHotKeyGestureCreationStatus.MissingModifier
+        string status = result.Status == GlobalHotKeyGestureCreationStatus.MissingModifier
             ? $"快捷键必须包含 {_hotKeyService.ModifierDisplayNames}，请重新按下"
             : "该按键暂不支持注册为全局快捷键，请重新按下";
+        if (isDouble)
+        {
+            DoubleHotKeyStatus = status;
+        }
+        else
+        {
+            HotKeyStatus = status;
+        }
+
         return false;
+    }
+
+    partial void OnIsCapturingHotKeyChanged(bool value) =>
+        OnPropertyChanged(nameof(IsCapturingPrimaryHotKey));
+
+    partial void OnIsCapturingDoubleHotKeyChanged(bool value) =>
+        OnPropertyChanged(nameof(IsCapturingPrimaryHotKey));
+
+    partial void OnIsDisableGlobalHotKeysWhenProtectedChanged(bool value)
+    {
+        if (!_initializing && _localSettings is not null)
+        {
+            SaveProtectionSettings(settings => settings with
+            {
+                DisableGlobalHotKeysWhenProtected = value,
+            });
+        }
+    }
+
+    partial void OnIsPauseClipboardCaptureWhenProtectedChanged(bool value)
+    {
+        if (!_initializing && _localSettings is not null)
+        {
+            SaveProtectionSettings(settings => settings with
+            {
+                PauseClipboardCaptureWhenProtected = value,
+            });
+        }
     }
 
     partial void OnIsAutoStartEnabledChanged(bool value)
@@ -965,13 +1107,22 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task ApplyHotKeyAsync()
     {
+        if (_pendingDoubleHotKey is GlobalHotKeyGesture pendingDouble &&
+            _pendingHotKey.HasSameBinding(pendingDouble))
+        {
+            HotKeyStatus = "两组快捷键不能相同";
+            return;
+        }
+
         GlobalHotKeyRegistrationResult result = await _hotKeyService.RegisterAsync(
             _pendingHotKey,
             CancellationToken.None);
         if (result.Status == GlobalHotKeyRegistrationStatus.Registered)
         {
             HasPendingHotKeyChange = false;
-            HotKeyStatus = $"已启用 {_pendingHotKey.DisplayName}";
+            HotKeyStatus = result.SettingsPersisted
+                ? $"已启用 {_pendingHotKey.DisplayName}"
+                : "快捷键已生效，但本机设置保存失败";
             return;
         }
 
@@ -983,8 +1134,75 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             GlobalHotKeyRegistrationStatus.Conflict =>
                 "快捷键已被其他应用占用，原快捷键已恢复",
             GlobalHotKeyRegistrationStatus.Unsupported => "当前平台不支持全局快捷键",
+            GlobalHotKeyRegistrationStatus.Duplicate => "两组快捷键不能相同",
             _ => "快捷键注册失败，原快捷键已恢复",
         };
+    }
+
+    [RelayCommand]
+    private async Task ApplyDoubleHotKeyAsync()
+    {
+        if (_twoSlotHotKeyService is null || _pendingDoubleHotKey is not GlobalHotKeyGesture gesture)
+        {
+            DoubleHotKeyStatus = "请先录入一组完整快捷键";
+            return;
+        }
+
+        if (gesture.HasSameBinding(_pendingHotKey))
+        {
+            DoubleHotKeyStatus = "两组快捷键不能相同";
+            return;
+        }
+
+        GlobalHotKeyRegistrationResult result = await _twoSlotHotKeyService.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            gesture,
+            CancellationToken.None);
+        if (result.Status == GlobalHotKeyRegistrationStatus.Registered)
+        {
+            HasPendingDoubleHotKeyChange = false;
+            HasConfiguredDoubleHotKey = true;
+            DoubleHotKeyStatus = result.SettingsPersisted
+                ? $"已启用 {gesture.DisplayName}"
+                : "快捷键已生效，但本机设置保存失败";
+            return;
+        }
+
+        ResetPendingDoubleHotKey(
+            _twoSlotHotKeyService.GetConfiguredGesture(GlobalHotKeySlot.Double));
+        DoubleHotKeyStatus = result.Status switch
+        {
+            GlobalHotKeyRegistrationStatus.Conflict =>
+                "快捷键已被其他应用占用，原配置已保留",
+            GlobalHotKeyRegistrationStatus.Duplicate => "两组快捷键不能相同",
+            GlobalHotKeyRegistrationStatus.Unsupported =>
+                "当前平台尚未实现连按两次快捷键",
+            _ => "快捷键注册失败，原配置已保留",
+        };
+    }
+
+    [RelayCommand]
+    private async Task ClearDoubleHotKeyAsync()
+    {
+        if (_twoSlotHotKeyService is null)
+        {
+            DoubleHotKeyStatus = "当前平台尚未实现连按两次快捷键";
+            return;
+        }
+
+        GlobalHotKeyRegistrationResult result = await _twoSlotHotKeyService.ClearAsync(
+            GlobalHotKeySlot.Double,
+            CancellationToken.None);
+        if (result.Status == GlobalHotKeyRegistrationStatus.Registered)
+        {
+            ResetPendingDoubleHotKey(null);
+            DoubleHotKeyStatus = result.SettingsPersisted
+                ? "未设置"
+                : "快捷键已清除，但本机设置保存失败";
+            return;
+        }
+
+        DoubleHotKeyStatus = "清除失败，原配置已保留";
     }
 
     [RelayCommand]
@@ -1028,6 +1246,34 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         if (_accessibilityPermissionService is not null)
         {
             ApplyAccessibilityState(_accessibilityPermissionService.GetState());
+        }
+    }
+
+    public void RefreshForegroundWindowStatus()
+    {
+        if (_foregroundWindowStateService is null)
+        {
+            ForegroundWindowStatus = "当前平台尚未实现前台窗口状态检测";
+            return;
+        }
+
+        try
+        {
+            ForegroundWindowStateResult result =
+                _foregroundWindowStateService.GetForegroundWindowState();
+            ForegroundWindowStatus = result.State switch
+            {
+                ForegroundWindowState.Maximized => "当前检测到窗口最大化，保护已生效",
+                ForegroundWindowState.FullScreen => "当前检测到全屏窗口，保护已生效",
+                ForegroundWindowState.Unknown or ForegroundWindowState.Unavailable =>
+                    "当前平台暂时无法判断前台窗口状态",
+                _ when result.IsSnapBoard => "闪剪自身窗口不触发全屏保护",
+                _ => "当前前台窗口未触发全屏保护",
+            };
+        }
+        catch
+        {
+            ForegroundWindowStatus = "当前平台暂时无法判断前台窗口状态";
         }
     }
 
@@ -1939,6 +2185,27 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         HotKeyDisplayName = gesture.DisplayName;
         HasPendingHotKeyChange = false;
         IsCapturingHotKey = false;
+        IsCapturingDoubleHotKey = false;
+    }
+
+    private void ResetPendingDoubleHotKey(GlobalHotKeyGesture? gesture)
+    {
+        _pendingDoubleHotKey = gesture;
+        DoubleHotKeyDisplayName = gesture?.DisplayName ?? "未设置";
+        HasPendingDoubleHotKeyChange = false;
+        HasConfiguredDoubleHotKey = gesture is not null;
+        IsCapturingHotKey = false;
+        IsCapturingDoubleHotKey = false;
+    }
+
+    private void SaveProtectionSettings(
+        Func<DesktopLocalSettings, DesktopLocalSettings> update)
+    {
+        DesktopLocalSettingsUpdateResult result = _localSettings!.Update(update);
+        FullScreenProtectionStatus = result.Persisted
+            ? "本机设置已保存并立即生效"
+            : "当前会话已生效，但本机设置保存失败";
+        RefreshForegroundWindowStatus();
     }
 
     private static string GetStorageValidationMessage(

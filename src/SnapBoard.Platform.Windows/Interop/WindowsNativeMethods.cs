@@ -5,6 +5,7 @@ namespace SnapBoard.Platform.Windows.Interop;
 internal static partial class WindowsNativeMethods
 {
     private const string Advapi32 = "advapi32.dll";
+    private const string DwmApi = "dwmapi.dll";
     private const string Kernel32 = "kernel32.dll";
     private const string Shell32 = "shell32.dll";
     private const string User32 = "user32.dll";
@@ -53,6 +54,16 @@ internal static partial class WindowsNativeMethods
     [LibraryImport(User32, EntryPoint = "IsWindow")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindow(nint windowHandle);
+
+    [LibraryImport(User32, EntryPoint = "IsWindowVisible")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsWindowVisible(nint windowHandle);
+
+    [LibraryImport(User32, EntryPoint = "GetDesktopWindow")]
+    internal static partial nint GetDesktopWindow();
+
+    [LibraryImport(User32, EntryPoint = "GetShellWindow")]
+    internal static partial nint GetShellWindow();
 
     [LibraryImport(User32, EntryPoint = "GetMessageW", SetLastError = true)]
     internal static partial int GetMessage(
@@ -156,6 +167,9 @@ internal static partial class WindowsNativeMethods
     [LibraryImport(User32, EntryPoint = "GetForegroundWindow")]
     internal static partial nint GetForegroundWindow();
 
+    [LibraryImport(User32, EntryPoint = "GetDoubleClickTime")]
+    internal static partial uint GetDoubleClickTime();
+
     [LibraryImport(User32, EntryPoint = "SetForegroundWindow")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool SetForegroundWindow(nint windowHandle);
@@ -217,6 +231,20 @@ internal static partial class WindowsNativeMethods
 
     [LibraryImport(User32, EntryPoint = "GetDpiForWindow")]
     internal static partial uint GetDpiForWindow(nint windowHandle);
+
+    [LibraryImport(DwmApi, EntryPoint = "DwmGetWindowAttribute")]
+    internal static partial int DwmGetWindowAttributeUInt32(
+        nint windowHandle,
+        uint attribute,
+        out uint value,
+        uint valueSize);
+
+    [LibraryImport(DwmApi, EntryPoint = "DwmGetWindowAttribute")]
+    internal static partial int DwmGetWindowAttributeRectangle(
+        nint windowHandle,
+        uint attribute,
+        out NativeRectangle value,
+        uint valueSize);
 
     [LibraryImport(User32, EntryPoint = "GetAsyncKeyState")]
     internal static partial short GetAsyncKeyState(int virtualKey);

@@ -76,4 +76,34 @@ public sealed class MainViewModelTests
         Assert.Equal(9, viewModel.VisibleItems.Count);
         Assert.NotNull(viewModel.SelectedItem);
     }
+
+    [Fact]
+    public void RecordingStateTextDistinguishesComposablePauseReasons()
+    {
+        MainViewModel viewModel = new();
+
+        viewModel.UpdateRecordingState(
+            manuallyPaused: false,
+            foregroundProtected: true,
+            internallyPaused: false);
+        Assert.Equal("全屏保护中，暂不记录", viewModel.RecordingStateText);
+
+        viewModel.UpdateRecordingState(
+            manuallyPaused: true,
+            foregroundProtected: false,
+            internallyPaused: false);
+        Assert.Equal("记录已暂停", viewModel.RecordingStateText);
+
+        viewModel.UpdateRecordingState(
+            manuallyPaused: false,
+            foregroundProtected: false,
+            internallyPaused: true);
+        Assert.Equal("内部维护中，暂不记录", viewModel.RecordingStateText);
+
+        viewModel.UpdateRecordingState(
+            manuallyPaused: false,
+            foregroundProtected: false,
+            internallyPaused: false);
+        Assert.Equal("正在记录", viewModel.RecordingStateText);
+    }
 }

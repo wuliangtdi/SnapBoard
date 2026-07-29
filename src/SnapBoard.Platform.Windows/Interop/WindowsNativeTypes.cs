@@ -41,6 +41,8 @@ internal static partial class WindowsNativeConstants
     public const ushort VirtualKeyV = 0x56;
 
     public const int ErrorHotKeyAlreadyRegistered = 1409;
+    public const uint DwmWindowAttributeExtendedFrameBounds = 9;
+    public const uint DwmWindowAttributeCloaked = 14;
     public const uint MonitorDefaultToNearest = 0x00000002;
     public const uint SetWindowPositionNoActivate = 0x0010;
     public const uint ShowWindowMaximized = 3;

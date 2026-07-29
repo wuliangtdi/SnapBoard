@@ -214,6 +214,138 @@ public sealed class SecondaryWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public void SettingsWindowShowsTwoSlotHotKeysAndDefaultProtectionToggles()
+    {
+        FakeDesktopLocalSettingsService localSettings = new();
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            localSettings: localSettings,
+            foregroundWindowStateService: new FakeForegroundWindowStateService());
+        SettingsWindow window = new() { DataContext = viewModel };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.IsType<Button>(window.FindControl<Button>("DoubleHotKeyCaptureButton"));
+            Assert.Equal(
+                "连按两次快捷键打开快速窗口",
+                window.FindControl<TextBlock>("DoubleHotKeyHeading")?.Text);
+            ToggleSwitch hotKeyProtection = Assert.IsType<ToggleSwitch>(
+                window.FindControl<ToggleSwitch>("DisableHotKeysWhenProtectedToggle"));
+            ToggleSwitch captureProtection = Assert.IsType<ToggleSwitch>(
+                window.FindControl<ToggleSwitch>("PauseCaptureWhenProtectedToggle"));
+            Assert.True(hotKeyProtection.IsChecked is true);
+            Assert.True(captureProtection.IsChecked is true);
+            Assert.Equal("未设置", viewModel.DoubleHotKeyDisplayName);
+            Assert.False(viewModel.HasConfiguredDoubleHotKey);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [Fact]
+    public void HotKeyCaptureTargetsAreMutuallyExclusiveAndRejectDuplicates()
+    {
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService());
+
+        viewModel.BeginHotKeyCapture();
+        Assert.True(viewModel.IsCapturingPrimaryHotKey);
+        viewModel.BeginDoubleHotKeyCapture();
+        Assert.False(viewModel.IsCapturingPrimaryHotKey);
+        Assert.True(viewModel.IsCapturingDoubleHotKey);
+
+        Assert.True(viewModel.CaptureHotKey(
+            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Shift,
+            "V"));
+
+        Assert.Equal("两组快捷键不能相同", viewModel.DoubleHotKeyStatus);
+        viewModel.BeginHotKeyCapture();
+        Assert.True(viewModel.IsCapturingPrimaryHotKey);
+        Assert.False(viewModel.IsCapturingDoubleHotKey);
+    }
+
+    [Fact]
+    public async Task DoubleHotKeyConflictKeepsBothPreviousSlots()
+    {
+        FakeGlobalHotKeyService hotKeyService = new();
+        GlobalHotKeyGesture originalDouble = Gesture("Ctrl+Alt+K", 0x4B);
+        await hotKeyService.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            originalDouble,
+            CancellationToken.None);
+        using SettingsViewModel viewModel = new(hotKeyService, new FakeAutoStartService());
+        viewModel.BeginDoubleHotKeyCapture();
+        Assert.True(viewModel.CaptureHotKey(
+            GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.Shift,
+            "M"));
+        hotKeyService.NextDoubleRegistrationStatus = GlobalHotKeyRegistrationStatus.Conflict;
+
+        await viewModel.ApplyDoubleHotKeyCommand.ExecuteAsync(null);
+
+        Assert.Equal(GlobalHotKeyGesture.Default, hotKeyService.ConfiguredGesture);
+        Assert.Equal(originalDouble, hotKeyService.ConfiguredDoubleGesture);
+        Assert.Equal(originalDouble.DisplayName, viewModel.DoubleHotKeyDisplayName);
+        Assert.Equal("快捷键已被其他应用占用，原配置已保留", viewModel.DoubleHotKeyStatus);
+    }
+
+    [Fact]
+    public async Task ClearingDoubleHotKeyDoesNotChangePrimarySlot()
+    {
+        FakeGlobalHotKeyService hotKeyService = new();
+        await hotKeyService.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            Gesture("Ctrl+Alt+K", 0x4B),
+            CancellationToken.None);
+        using SettingsViewModel viewModel = new(hotKeyService, new FakeAutoStartService());
+
+        await viewModel.ClearDoubleHotKeyCommand.ExecuteAsync(null);
+
+        Assert.Equal(GlobalHotKeyGesture.Default, hotKeyService.ConfiguredGesture);
+        Assert.Null(hotKeyService.ConfiguredDoubleGesture);
+        Assert.Equal("未设置", viewModel.DoubleHotKeyDisplayName);
+        Assert.False(viewModel.HasConfiguredDoubleHotKey);
+    }
+
+    [Fact]
+    public void ProtectionTogglesPersistImmediatelyAndUnknownStateUsesConservativeText()
+    {
+        FakeDesktopLocalSettingsService localSettings = new();
+        FakeForegroundWindowStateService foreground = new()
+        {
+            Result = new ForegroundWindowStateResult(
+                ForegroundWindowState.Unknown,
+                IsSnapBoard: false,
+                Identity: null,
+                ForegroundWindowDiagnosticCode.NativeFailure),
+        };
+        using SettingsViewModel viewModel = new(
+            new FakeGlobalHotKeyService(),
+            new FakeAutoStartService(),
+            localSettings: localSettings,
+            foregroundWindowStateService: foreground);
+
+        viewModel.IsDisableGlobalHotKeysWhenProtected = false;
+        viewModel.IsPauseClipboardCaptureWhenProtected = false;
+
+        Assert.Equal(2, localSettings.UpdateCount);
+        Assert.False(localSettings.Current.DisableGlobalHotKeysWhenProtected);
+        Assert.False(localSettings.Current.PauseClipboardCaptureWhenProtected);
+        Assert.Equal("当前平台暂时无法判断前台窗口状态", viewModel.ForegroundWindowStatus);
+    }
+
+    private static GlobalHotKeyGesture Gesture(string displayName, uint virtualKey) => new(
+        GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+        virtualKey,
+        displayName);
+
+    [AvaloniaFact]
     public async Task InvalidStorageTargetDisplaysTheReasonAndKeepsMigrationDisabled()
     {
         const string target = @"D:\ProgramData\SnapBoard_Data";
@@ -667,7 +799,7 @@ public sealed class SecondaryWindowHeadlessTests
             DataContext = new SettingsViewModel(hotKeyService, autoStartService),
         };
 
-    private sealed class FakeGlobalHotKeyService : IGlobalHotKeyService
+    private sealed class FakeGlobalHotKeyService : IGlobalHotKeyService, ITwoSlotGlobalHotKeyService
     {
         public event EventHandler? Pressed
         {
@@ -679,6 +811,21 @@ public sealed class SecondaryWindowHeadlessTests
 
         public GlobalHotKeyGesture ConfiguredGesture { get; private set; } =
             GlobalHotKeyGesture.Default;
+
+        public GlobalHotKeyGesture? CurrentDoubleGesture { get; private set; }
+
+        public GlobalHotKeyGesture? ConfiguredDoubleGesture { get; private set; }
+
+        public GlobalHotKeyRegistrationStatus NextDoubleRegistrationStatus { get; set; } =
+            GlobalHotKeyRegistrationStatus.Registered;
+
+        public event EventHandler<GlobalHotKeyTriggeredEventArgs>? Triggered
+        {
+            add { }
+            remove { }
+        }
+
+        public TimeSpan DoubleTriggerInterval => TimeSpan.FromMilliseconds(400);
 
         public GlobalHotKeyGesture DefaultGesture => GlobalHotKeyGesture.WindowsDefault;
 
@@ -747,14 +894,100 @@ public sealed class SecondaryWindowHeadlessTests
                 GlobalHotKeyRegistrationStatus.Registered));
         }
 
+        public GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot) =>
+            slot == GlobalHotKeySlot.Primary ? CurrentGesture : CurrentDoubleGesture;
+
+        public GlobalHotKeyGesture? GetConfiguredGesture(GlobalHotKeySlot slot) =>
+            slot == GlobalHotKeySlot.Primary ? ConfiguredGesture : ConfiguredDoubleGesture;
+
+        public ValueTask<GlobalHotKeyRegistrationResult> RegisterAsync(
+            GlobalHotKeySlot slot,
+            GlobalHotKeyGesture gesture,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (slot == GlobalHotKeySlot.Primary)
+            {
+                return RegisterAsync(gesture, cancellationToken);
+            }
+
+            if (gesture.HasSameBinding(ConfiguredGesture))
+            {
+                return ValueTask.FromResult(new GlobalHotKeyRegistrationResult(
+                    GlobalHotKeyRegistrationStatus.Duplicate));
+            }
+
+            GlobalHotKeyRegistrationStatus status = NextDoubleRegistrationStatus;
+            NextDoubleRegistrationStatus = GlobalHotKeyRegistrationStatus.Registered;
+            if (status == GlobalHotKeyRegistrationStatus.Registered)
+            {
+                CurrentDoubleGesture = gesture;
+                ConfiguredDoubleGesture = gesture;
+            }
+
+            return ValueTask.FromResult(new GlobalHotKeyRegistrationResult(status));
+        }
+
+        public ValueTask<GlobalHotKeyRegistrationResult> ClearAsync(
+            GlobalHotKeySlot slot,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (slot == GlobalHotKeySlot.Primary)
+            {
+                CurrentGesture = null;
+            }
+            else
+            {
+                CurrentDoubleGesture = null;
+                ConfiguredDoubleGesture = null;
+            }
+
+            return ValueTask.FromResult(new GlobalHotKeyRegistrationResult(
+                GlobalHotKeyRegistrationStatus.Registered));
+        }
+
         public ValueTask UnregisterAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CurrentGesture = null;
+            CurrentDoubleGesture = null;
             return ValueTask.CompletedTask;
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class FakeDesktopLocalSettingsService : IDesktopLocalSettingsService
+    {
+        public event EventHandler<DesktopLocalSettingsChangedEventArgs>? Changed;
+
+        public DesktopLocalSettings Current { get; private set; } =
+            DesktopLocalSettings.CreateDefaults(GlobalHotKeyGesture.Default);
+
+        public int UpdateCount { get; private set; }
+
+        public DesktopLocalSettingsUpdateResult Update(DesktopLocalSettings settings)
+        {
+            Current = settings;
+            UpdateCount++;
+            Changed?.Invoke(this, new DesktopLocalSettingsChangedEventArgs(settings));
+            return new DesktopLocalSettingsUpdateResult(Persisted: true);
+        }
+
+        public DesktopLocalSettingsUpdateResult Update(
+            Func<DesktopLocalSettings, DesktopLocalSettings> update) => Update(update(Current));
+    }
+
+    private sealed class FakeForegroundWindowStateService : IPlatformForegroundWindowStateService
+    {
+        public ForegroundWindowStateResult Result { get; set; } = new(
+            ForegroundWindowState.Normal,
+            IsSnapBoard: false,
+            Identity: null,
+            ForegroundWindowDiagnosticCode.None);
+
+        public ForegroundWindowStateResult GetForegroundWindowState() => Result;
     }
 
     private sealed class FakeAutoStartService : IAutoStartService

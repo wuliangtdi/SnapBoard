@@ -121,15 +121,30 @@ internal static class DesktopCompositionRoot
             provider.GetRequiredService<WindowsClipboardAdapter>());
         services.AddSingleton<IAutomaticPasteService>(provider =>
             provider.GetRequiredService<WindowsClipboardAdapter>());
-        services.AddSingleton<IGlobalHotKeyService, WindowsGlobalHotKeyService>();
+        services.AddSingleton<WindowsDesktopLocalSettingsService>();
+        services.AddSingleton<IDesktopLocalSettingsService>(provider =>
+            provider.GetRequiredService<WindowsDesktopLocalSettingsService>());
+        services.AddSingleton<WindowsGlobalHotKeyService>();
+        services.AddSingleton<IGlobalHotKeyService>(provider =>
+            provider.GetRequiredService<WindowsGlobalHotKeyService>());
+        services.AddSingleton<ITwoSlotGlobalHotKeyService>(provider =>
+            provider.GetRequiredService<WindowsGlobalHotKeyService>());
         services.AddSingleton<IAutoStartService, WindowsAutoStartService>();
         services.AddSingleton<IPlatformWindowPlacementService, WindowsWindowPlacementService>();
+        services.AddSingleton<
+            IPlatformForegroundWindowStateService,
+            WindowsForegroundWindowStateService>();
         services.AddSingleton<IPlatformSecretStore, WindowsCredentialSecretStore>();
         AddSyncServices(services);
         services.AddSingleton<
             IClipboardSourceApplicationMetadataResolver,
             WindowsClipboardSourceApplicationMetadataResolver>();
-        services.AddSingleton<ClipboardCaptureCoordinator>();
+        services.AddSingleton(provider => new ClipboardCaptureCoordinator(
+            provider.GetRequiredService<IClipboardMonitor>(),
+            provider.GetRequiredService<IClipboardContentReader>(),
+            provider.GetRequiredService<IClipboardCaptureService>(),
+            provider.GetRequiredService<IPlatformForegroundWindowStateService>(),
+            provider.GetRequiredService<IDesktopLocalSettingsService>()));
     }
 
     [SupportedOSPlatform("macos")]
@@ -154,7 +169,10 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
         services.AddSingleton<IPlatformSecretStore, MacOSKeychainSecretStore>();
         AddSyncServices(services);
-        services.AddSingleton<ClipboardCaptureCoordinator>();
+        services.AddSingleton(provider => new ClipboardCaptureCoordinator(
+            provider.GetRequiredService<IClipboardMonitor>(),
+            provider.GetRequiredService<IClipboardContentReader>(),
+            provider.GetRequiredService<IClipboardCaptureService>()));
     }
 
     private static void AddSyncServices(IServiceCollection services)

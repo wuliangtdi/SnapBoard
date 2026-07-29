@@ -8,43 +8,316 @@ namespace SnapBoard.Platform.Windows.Tests;
 public sealed class WindowsHotKeyRegistrarTests
 {
     [Fact]
-    public void ConflictRestoresPreviousRegistration()
+    public void DoubleSlotConflictPreservesBothRegistrations()
     {
         FakeWindowsHotKeyNative native = new();
-        native.EnqueueRegisterResult(result: true);
+        WindowsHotKeyRegistrar registrar = new(native);
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        GlobalHotKeyGesture replacement = CreateGesture(0x4C, "Ctrl+Alt+L");
+
+        Assert.Equal(
+            GlobalHotKeyRegistrationStatus.Registered,
+            registrar.Register(
+                123,
+                GlobalHotKeySlot.Primary,
+                GlobalHotKeyGesture.WindowsDefault).Status);
+        Assert.Equal(
+            GlobalHotKeyRegistrationStatus.Registered,
+            registrar.Register(123, GlobalHotKeySlot.Double, doubleGesture).Status);
+        int? primaryIdentifier = registrar.GetCurrentIdentifier(GlobalHotKeySlot.Primary);
+        int? doubleIdentifier = registrar.GetCurrentIdentifier(GlobalHotKeySlot.Double);
         native.EnqueueRegisterResult(
             result: false,
             error: WindowsNativeConstants.ErrorHotKeyAlreadyRegistered);
-        native.EnqueueRegisterResult(result: true);
-        WindowsHotKeyRegistrar registrar = new(native);
-        GlobalHotKeyGesture replacement = new(
-            GlobalHotKeyModifiers.Control | GlobalHotKeyModifiers.Alt,
-            0x56,
-            "Ctrl+Alt+V");
 
-        GlobalHotKeyRegistrationResult first = registrar.Register(123, GlobalHotKeyGesture.Default);
-        GlobalHotKeyRegistrationResult second = registrar.Register(123, replacement);
+        GlobalHotKeyRegistrationResult result = registrar.Register(
+            123,
+            GlobalHotKeySlot.Double,
+            replacement);
 
-        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, first.Status);
-        Assert.Equal(GlobalHotKeyRegistrationStatus.Conflict, second.Status);
-        Assert.Equal(GlobalHotKeyGesture.Default, registrar.CurrentGesture);
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Conflict, result.Status);
+        Assert.Equal(
+            GlobalHotKeyGesture.WindowsDefault,
+            registrar.GetCurrentGesture(GlobalHotKeySlot.Primary));
+        Assert.Equal(doubleGesture, registrar.GetCurrentGesture(GlobalHotKeySlot.Double));
+        Assert.Equal(primaryIdentifier, registrar.GetCurrentIdentifier(GlobalHotKeySlot.Primary));
+        Assert.Equal(doubleIdentifier, registrar.GetCurrentIdentifier(GlobalHotKeySlot.Double));
         Assert.Equal(3, native.RegisterCount);
-        Assert.Equal(1, native.UnregisterCount);
+        Assert.Equal(0, native.UnregisterCount);
     }
 
     [Fact]
-    public void UnregisterIsIdempotent()
+    public void RegistersTwoDistinctIdsWithNoRepeatAndMapsTheirSources()
     {
         FakeWindowsHotKeyNative native = new();
         WindowsHotKeyRegistrar registrar = new(native);
-        registrar.Register(123, GlobalHotKeyGesture.Default);
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
 
-        registrar.Unregister(123);
-        registrar.Unregister(123);
+        registrar.Register(123, GlobalHotKeySlot.Primary, GlobalHotKeyGesture.WindowsDefault);
+        registrar.Register(123, GlobalHotKeySlot.Double, doubleGesture);
 
-        Assert.Null(registrar.CurrentGesture);
-        Assert.Equal(1, native.UnregisterCount);
+        Assert.Collection(
+            native.Registrations,
+            primary =>
+            {
+                Assert.Equal(WindowsHotKeyRegistrar.PrimaryRegistrationIdentifier, primary.Identifier);
+                Assert.True((((GlobalHotKeyModifiers)primary.Modifiers) &
+                    GlobalHotKeyModifiers.NoRepeat) != 0);
+            },
+            doubleRegistration =>
+            {
+                Assert.Equal(
+                    WindowsHotKeyRegistrar.DoubleRegistrationIdentifier,
+                    doubleRegistration.Identifier);
+                Assert.True((((GlobalHotKeyModifiers)doubleRegistration.Modifiers) &
+                    GlobalHotKeyModifiers.NoRepeat) != 0);
+            });
+        Assert.True(WindowsHotKeyRegistrar.TryGetSlot(
+            WindowsHotKeyRegistrar.PrimaryRegistrationIdentifier,
+            out GlobalHotKeySlot primarySource));
+        Assert.Equal(GlobalHotKeySlot.Primary, primarySource);
+        Assert.True(WindowsHotKeyRegistrar.TryGetSlot(
+            WindowsHotKeyRegistrar.DoubleRegistrationIdentifier,
+            out GlobalHotKeySlot doubleSource));
+        Assert.Equal(GlobalHotKeySlot.Double, doubleSource);
     }
+
+    [Fact]
+    public void DuplicateGestureIsRejectedBeforeNativeRegistration()
+    {
+        FakeWindowsHotKeyNative native = new();
+        WindowsHotKeyRegistrar registrar = new(native);
+        registrar.Register(123, GlobalHotKeySlot.Primary, GlobalHotKeyGesture.WindowsDefault);
+
+        GlobalHotKeyRegistrationResult result = registrar.Register(
+            123,
+            GlobalHotKeySlot.Double,
+            GlobalHotKeyGesture.WindowsDefault);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Duplicate, result.Status);
+        Assert.Equal(1, native.RegisterCount);
+        Assert.Null(registrar.GetCurrentGesture(GlobalHotKeySlot.Double));
+    }
+
+    [Fact]
+    public void DuplicateNativeBindingIsRejectedEvenWhenDisplayNamesDiffer()
+    {
+        FakeWindowsHotKeyNative native = new();
+        WindowsHotKeyRegistrar registrar = new(native);
+        registrar.Register(123, GlobalHotKeySlot.Primary, GlobalHotKeyGesture.WindowsDefault);
+        GlobalHotKeyGesture disguisedDuplicate = GlobalHotKeyGesture.WindowsDefault with
+        {
+            DisplayName = "different-display-name",
+        };
+
+        GlobalHotKeyRegistrationResult result = registrar.Register(
+            123,
+            GlobalHotKeySlot.Double,
+            disguisedDuplicate);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Duplicate, result.Status);
+        Assert.Equal(1, native.RegisterCount);
+    }
+
+    [Fact]
+    public void ClearingDoubleSlotDoesNotUnregisterPrimary()
+    {
+        FakeWindowsHotKeyNative native = new();
+        WindowsHotKeyRegistrar registrar = new(native);
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        registrar.Register(123, GlobalHotKeySlot.Primary, GlobalHotKeyGesture.WindowsDefault);
+        registrar.Register(123, GlobalHotKeySlot.Double, doubleGesture);
+
+        registrar.Clear(123, GlobalHotKeySlot.Double);
+        registrar.Clear(123, GlobalHotKeySlot.Double);
+
+        Assert.Equal(
+            GlobalHotKeyGesture.WindowsDefault,
+            registrar.GetCurrentGesture(GlobalHotKeySlot.Primary));
+        Assert.Null(registrar.GetCurrentGesture(GlobalHotKeySlot.Double));
+        Assert.Equal(
+            [WindowsHotKeyRegistrar.DoubleRegistrationIdentifier],
+            native.UnregisteredIdentifiers);
+    }
+
+    [Fact]
+    public void ClearedOrReplacedIdentifiersNoLongerMapToActiveSources()
+    {
+        FakeWindowsHotKeyNative native = new();
+        WindowsHotKeyRegistrar registrar = new(native);
+        GlobalHotKeyGesture first = CreateGesture(0x4B, "Ctrl+Alt+K");
+        GlobalHotKeyGesture replacement = CreateGesture(0x4C, "Ctrl+Alt+L");
+        registrar.Register(123, GlobalHotKeySlot.Double, first);
+        int firstIdentifier = Assert.IsType<int>(
+            registrar.GetCurrentIdentifier(GlobalHotKeySlot.Double));
+
+        registrar.Register(123, GlobalHotKeySlot.Double, replacement);
+        int replacementIdentifier = Assert.IsType<int>(
+            registrar.GetCurrentIdentifier(GlobalHotKeySlot.Double));
+
+        Assert.False(registrar.TryGetActiveSlot(firstIdentifier, out _));
+        Assert.True(registrar.TryGetActiveSlot(
+            replacementIdentifier,
+            out GlobalHotKeySlot replacementSlot));
+        Assert.Equal(GlobalHotKeySlot.Double, replacementSlot);
+
+        registrar.Clear(123, GlobalHotKeySlot.Double);
+
+        Assert.False(registrar.TryGetActiveSlot(replacementIdentifier, out _));
+    }
+
+    [Fact]
+    public void FailedOldIdReleaseRollsBackNewRegistration()
+    {
+        FakeWindowsHotKeyNative native = new();
+        WindowsHotKeyRegistrar registrar = new(native);
+        GlobalHotKeyGesture original = CreateGesture(0x4B, "Ctrl+Alt+K");
+        GlobalHotKeyGesture replacement = CreateGesture(0x4C, "Ctrl+Alt+L");
+        registrar.Register(123, GlobalHotKeySlot.Double, original);
+        native.EnqueueUnregisterResult(result: false, error: 5);
+
+        GlobalHotKeyRegistrationResult result = registrar.Register(
+            123,
+            GlobalHotKeySlot.Double,
+            replacement);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Failed, result.Status);
+        Assert.Equal(original, registrar.GetCurrentGesture(GlobalHotKeySlot.Double));
+        Assert.Equal(
+            [
+                WindowsHotKeyRegistrar.DoubleRegistrationIdentifier,
+                WindowsHotKeyRegistrar.AlternateDoubleRegistrationIdentifier,
+            ],
+            native.UnregisteredIdentifiers);
+    }
+
+    private static GlobalHotKeyGesture CreateGesture(uint virtualKey, string displayName) => new(
+        GlobalHotKeyModifiers.Control |
+        GlobalHotKeyModifiers.Alt |
+        GlobalHotKeyModifiers.NoRepeat,
+        virtualKey,
+        displayName);
+}
+
+[SupportedOSPlatform("windows")]
+public sealed class WindowsDesktopLocalSettingsServiceTests
+{
+    [Fact]
+    public void FreshInstallUsesAndPersistsCurrentDefaults()
+    {
+        FakeWindowsRegistryStore registry = new();
+
+        WindowsDesktopLocalSettingsService service = new(registry);
+
+        Assert.Equal(GlobalHotKeyGesture.WindowsDefault, service.Current.PrimaryHotKey);
+        Assert.Null(service.Current.DoubleHotKey);
+        Assert.True(service.Current.DisableGlobalHotKeysWhenProtected);
+        Assert.True(service.Current.PauseClipboardCaptureWhenProtected);
+        Assert.True(registry.TryGetValue(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.VersionValueName,
+            out string? version));
+        Assert.Equal(WindowsDesktopLocalSettingsService.CurrentVersion, version);
+    }
+
+    [Fact]
+    public void TwoGesturesAndProtectionSettingsSurviveRestart()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService first = new(registry);
+        GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        DesktopLocalSettings expected = new(
+            primary,
+            doubleGesture,
+            DisableGlobalHotKeysWhenProtected: false,
+            PauseClipboardCaptureWhenProtected: false);
+
+        DesktopLocalSettingsUpdateResult update = first.Update(expected);
+        WindowsDesktopLocalSettingsService restarted = new(registry);
+
+        Assert.True(update.Persisted);
+        Assert.Equal(expected, restarted.Current);
+    }
+
+    [Fact]
+    public void MissingCurrentVersionIgnoresDevelopmentHotKeyValue()
+    {
+        FakeWindowsRegistryStore registry = new();
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            "GlobalHotKey",
+            "legacy-development-value");
+
+        WindowsDesktopLocalSettingsService service = new(registry);
+
+        Assert.Equal(GlobalHotKeyGesture.WindowsDefault, service.Current.PrimaryHotKey);
+        Assert.Null(service.Current.DoubleHotKey);
+    }
+
+    [Fact]
+    public void InvalidCurrentFieldRejectsWholeConfiguration()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService valid = new(registry);
+        valid.Update(new DesktopLocalSettings(
+            CreateGesture(0x4A, "Ctrl+Alt+J"),
+            CreateGesture(0x4B, "Ctrl+Alt+K"),
+            DisableGlobalHotKeysWhenProtected: false,
+            PauseClipboardCaptureWhenProtected: false));
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.PauseCaptureValueName,
+            "invalid");
+
+        WindowsDesktopLocalSettingsService restarted = new(registry);
+
+        Assert.Equal(GlobalHotKeyGesture.WindowsDefault, restarted.Current.PrimaryHotKey);
+        Assert.Null(restarted.Current.DoubleHotKey);
+        Assert.True(restarted.Current.DisableGlobalHotKeysWhenProtected);
+        Assert.True(restarted.Current.PauseClipboardCaptureWhenProtected);
+    }
+
+    [Fact]
+    public void CurrentFormatRejectsDuplicateBindingsWithDifferentDisplayNames()
+    {
+        FakeWindowsRegistryStore registry = new();
+        GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.VersionValueName,
+            WindowsDesktopLocalSettingsService.CurrentVersion);
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.PrimaryHotKeyValueName,
+            $"{(uint)primary.Modifiers}|{primary.VirtualKey}|{primary.DisplayName}");
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.DoubleHotKeyValueName,
+            $"{(uint)primary.Modifiers}|{primary.VirtualKey}|different-display");
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.DisableHotKeysValueName,
+            "0");
+        registry.Seed(
+            WindowsDesktopLocalSettingsService.SettingsSubKey,
+            WindowsDesktopLocalSettingsService.PauseCaptureValueName,
+            "0");
+
+        WindowsDesktopLocalSettingsService service = new(registry);
+
+        Assert.Equal(GlobalHotKeyGesture.WindowsDefault, service.Current.PrimaryHotKey);
+        Assert.Null(service.Current.DoubleHotKey);
+        Assert.True(service.Current.DisableGlobalHotKeysWhenProtected);
+        Assert.True(service.Current.PauseClipboardCaptureWhenProtected);
+    }
+
+    private static GlobalHotKeyGesture CreateGesture(uint virtualKey, string displayName) => new(
+        GlobalHotKeyModifiers.Control |
+        GlobalHotKeyModifiers.Alt |
+        GlobalHotKeyModifiers.NoRepeat,
+        virtualKey,
+        displayName);
 }
 
 public sealed class WindowsHotKeyKeyMapTests
@@ -136,6 +409,77 @@ public sealed class WindowsAutoStartServiceTests
 public sealed class WindowsDesktopNativeIntegrationTests
 {
     [WindowsFact]
+    public async Task ConcurrentSlotRegistrationPersistsBothLatestGestures()
+    {
+        FakeWindowsRegistryStore registry = new();
+        WindowsDesktopLocalSettingsService settings = new(registry);
+        GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        await using WindowsGlobalHotKeyService service = new(
+            new WindowsHotKeyRegistrar(new FakeWindowsHotKeyNative()),
+            settings);
+
+        Task<GlobalHotKeyRegistrationResult> primaryTask = service.RegisterAsync(
+            GlobalHotKeySlot.Primary,
+            primary,
+            CancellationToken.None).AsTask();
+        Task<GlobalHotKeyRegistrationResult> doubleTask = service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            doubleGesture,
+            CancellationToken.None).AsTask();
+        GlobalHotKeyRegistrationResult[] results = await Task.WhenAll(
+            primaryTask,
+            doubleTask);
+
+        Assert.All(results, result => Assert.Equal(
+            GlobalHotKeyRegistrationStatus.Registered,
+            result.Status));
+        Assert.Equal(primary, settings.Current.PrimaryHotKey);
+        Assert.Equal(doubleGesture, settings.Current.DoubleHotKey);
+        Assert.Equal(primary, service.GetCurrentGesture(GlobalHotKeySlot.Primary));
+        Assert.Equal(doubleGesture, service.GetCurrentGesture(GlobalHotKeySlot.Double));
+    }
+
+    [WindowsFact]
+    public async Task ActiveRegistrationIdentifiersRaiseDistinctTriggerSources()
+    {
+        WindowsHotKeyRegistrar registrar = new(new FakeWindowsHotKeyNative());
+        WindowsDesktopLocalSettingsService settings = new(new FakeWindowsRegistryStore());
+        await using WindowsGlobalHotKeyService service = new(registrar, settings);
+        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        await service.RegisterAsync(
+            GlobalHotKeySlot.Primary,
+            GlobalHotKeyGesture.WindowsDefault,
+            CancellationToken.None);
+        await service.RegisterAsync(
+            GlobalHotKeySlot.Double,
+            doubleGesture,
+            CancellationToken.None);
+        List<GlobalHotKeySlot> sources = [];
+        TaskCompletionSource receivedBoth = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        service.Triggered += (_, e) =>
+        {
+            lock (sources)
+            {
+                sources.Add(e.Source);
+                if (sources.Count == 2)
+                {
+                    receivedBoth.TrySetResult();
+                }
+            }
+        };
+        int primaryIdentifier = registrar.GetCurrentIdentifier(GlobalHotKeySlot.Primary)!.Value;
+        int doubleIdentifier = registrar.GetCurrentIdentifier(GlobalHotKeySlot.Double)!.Value;
+
+        Assert.True(service.QueueActiveHotKeyIdentifier(primaryIdentifier));
+        Assert.True(service.QueueActiveHotKeyIdentifier(doubleIdentifier));
+        await receivedBoth.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal([GlobalHotKeySlot.Primary, GlobalHotKeySlot.Double], sources);
+    }
+
+    [WindowsFact]
     public async Task TwoMessageWindowsReportHotKeyConflictAndReleaseRegistration()
     {
         GlobalHotKeyGesture gesture = new(
@@ -200,5 +544,12 @@ public sealed class WindowsDesktopNativeIntegrationTests
 
     private static WindowsGlobalHotKeyService CreateHotKeyService() => new(
         new WindowsHotKeyRegistrar(new WindowsHotKeyNative()),
-        new FakeWindowsRegistryStore());
+        new WindowsDesktopLocalSettingsService(new FakeWindowsRegistryStore()));
+
+    private static GlobalHotKeyGesture CreateGesture(uint virtualKey, string displayName) => new(
+        GlobalHotKeyModifiers.Control |
+        GlobalHotKeyModifiers.Alt |
+        GlobalHotKeyModifiers.NoRepeat,
+        virtualKey,
+        displayName);
 }

@@ -153,11 +153,28 @@ internal sealed class FakeWindowsRegistryStore : IWindowsRegistryStore
         _values[(subKey, name)] = value;
 
     public void DeleteValue(string subKey, string name) => _values.Remove((subKey, name));
+
+    public void Seed(string subKey, string name, string value) =>
+        _values[(subKey, name)] = value;
+
+    public bool TryGetValue(string subKey, string name, out string? value) =>
+        _values.TryGetValue((subKey, name), out value);
 }
+
+internal sealed record WindowsHotKeyNativeRegistration(
+    nint WindowHandle,
+    int Identifier,
+    uint Modifiers,
+    uint VirtualKey);
 
 internal sealed class FakeWindowsHotKeyNative : IWindowsHotKeyNative
 {
     private readonly Queue<(bool Result, int Error)> _registerResults = new();
+    private readonly Queue<(bool Result, int Error)> _unregisterResults = new();
+
+    public List<WindowsHotKeyNativeRegistration> Registrations { get; } = [];
+
+    public List<int> UnregisteredIdentifiers { get; } = [];
 
     public int RegisterCount { get; private set; }
 
@@ -168,9 +185,17 @@ internal sealed class FakeWindowsHotKeyNative : IWindowsHotKeyNative
     public void EnqueueRegisterResult(bool result, int error = 0) =>
         _registerResults.Enqueue((result, error));
 
+    public void EnqueueUnregisterResult(bool result, int error = 0) =>
+        _unregisterResults.Enqueue((result, error));
+
     public bool Register(nint windowHandle, int identifier, uint modifiers, uint virtualKey)
     {
         RegisterCount++;
+        Registrations.Add(new WindowsHotKeyNativeRegistration(
+            windowHandle,
+            identifier,
+            modifiers,
+            virtualKey));
         (bool result, int error) = _registerResults.Count == 0
             ? (true, 0)
             : _registerResults.Dequeue();
@@ -181,7 +206,12 @@ internal sealed class FakeWindowsHotKeyNative : IWindowsHotKeyNative
     public bool Unregister(nint windowHandle, int identifier)
     {
         UnregisterCount++;
-        return true;
+        UnregisteredIdentifiers.Add(identifier);
+        (bool result, int error) = _unregisterResults.Count == 0
+            ? (true, 0)
+            : _unregisterResults.Dequeue();
+        LastError = error;
+        return result;
     }
 
     public int GetLastError() => LastError;

@@ -434,7 +434,9 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
                 await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            _captureCoordinator.SetPaused(paused: true);
+            _captureCoordinator.SetPauseReason(
+                ClipboardCapturePauseReason.StorageMigration,
+                active: true);
             await _storageMigrationBarrier.PrepareForMigrationAsync(cancellationToken)
                 .ConfigureAwait(false);
             PostToUi(ExitApplication);
@@ -466,7 +468,9 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
             }
             finally
             {
-                _captureCoordinator.SetPaused(paused: false);
+                _captureCoordinator.SetPauseReason(
+                    ClipboardCapturePauseReason.StorageMigration,
+                    active: false);
                 if (syncPauseRequested)
                 {
                     _syncService?.ResumeAfterPause();
@@ -485,7 +489,6 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
             throw new InvalidOperationException("Application updates are unavailable.");
         }
 
-        bool captureWasPaused = _captureCoordinator.IsPaused;
         bool syncPauseRequested = false;
         try
         {
@@ -495,13 +498,17 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
                 await _syncService.PauseAndDrainAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            _captureCoordinator.SetPaused(paused: true);
+            _captureCoordinator.SetPauseReason(
+                ClipboardCapturePauseReason.UpdateInstallation,
+                active: true);
             _applicationUpdateService.ScheduleInstallAndRestart();
             PostToUi(ExitApplication);
         }
         catch
         {
-            _captureCoordinator.SetPaused(captureWasPaused);
+            _captureCoordinator.SetPauseReason(
+                ClipboardCapturePauseReason.UpdateInstallation,
+                active: false);
             if (syncPauseRequested)
             {
                 _syncService?.ResumeAfterPause();
@@ -617,8 +624,8 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
 
     private void ToggleRecordingPause()
     {
-        bool paused = !_captureCoordinator.IsPaused;
-        _captureCoordinator.SetPaused(paused);
+        bool paused = !_captureCoordinator.IsManuallyPaused;
+        _captureCoordinator.SetPauseReason(ClipboardCapturePauseReason.Manual, paused);
         _mainViewModel.UpdateRecordingState(paused);
         _menuBarService.SetRecordingPaused(paused);
     }
@@ -803,8 +810,14 @@ internal sealed class MacOSDesktopLifecycleCoordinator : IDisposable
             _mainViewModel.StatusMessage = "剪贴板监听已停止";
         }
 
-        _mainViewModel.IsRecordingPaused = state.IsPaused;
-        _menuBarService.SetRecordingPaused(state.IsPaused);
+        bool isInternallyPaused = (state.PauseReasons &
+            (ClipboardCapturePauseReason.StorageMigration |
+                ClipboardCapturePauseReason.UpdateInstallation)) != 0;
+        _mainViewModel.UpdateRecordingState(
+            state.IsManuallyPaused,
+            foregroundProtected: false,
+            isInternallyPaused);
+        _menuBarService.SetRecordingPaused(state.IsManuallyPaused);
     });
 
     private async void OnQuickWindowDismissRequested(object? sender, EventArgs e) =>

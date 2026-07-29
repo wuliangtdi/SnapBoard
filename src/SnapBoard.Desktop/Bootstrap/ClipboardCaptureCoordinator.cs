@@ -1,14 +1,33 @@
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Abstractions.Desktop;
 
 namespace SnapBoard.Desktop.Bootstrap;
 
 internal sealed record ClipboardCaptureState(
-    bool IsPaused,
+    ClipboardCapturePauseReason PauseReasons,
     long ObservedEventCount,
     long ReadCount,
     ClipboardReadStatus? LastReadStatus,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null)
+{
+    public bool IsPaused => PauseReasons != ClipboardCapturePauseReason.None;
+
+    public bool IsManuallyPaused => PauseReasons.HasFlag(ClipboardCapturePauseReason.Manual);
+
+    public bool IsForegroundProtected =>
+        PauseReasons.HasFlag(ClipboardCapturePauseReason.ForegroundProtection);
+}
+
+[Flags]
+internal enum ClipboardCapturePauseReason
+{
+    None = 0,
+    Manual = 1 << 0,
+    ForegroundProtection = 1 << 1,
+    StorageMigration = 1 << 2,
+    UpdateInstallation = 1 << 3,
+}
 
 /// <summary>
 /// 桌面进程只启动一次剪贴板 WatchAsync。暂停记录时仍持续排空平台有界队列，
@@ -17,13 +36,15 @@ internal sealed record ClipboardCaptureState(
 internal sealed class ClipboardCaptureCoordinator : IDisposable
 {
     private readonly IClipboardCaptureService? _captureService;
+    private readonly IDesktopLocalSettingsService? _localSettings;
     private readonly IClipboardMonitor _monitor;
+    private readonly IPlatformForegroundWindowStateService? _foregroundWindowStateService;
     private readonly IClipboardContentReader _reader;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _captureTask;
     private long _observedEventCount;
     private long _readCount;
-    private int _isPaused;
+    private int _pauseReasons;
     private int _started;
     private int _disposed;
 
@@ -37,18 +58,36 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
     public ClipboardCaptureCoordinator(
         IClipboardMonitor monitor,
         IClipboardContentReader reader,
-        IClipboardCaptureService? captureService)
+        IClipboardCaptureService? captureService,
+        IPlatformForegroundWindowStateService? foregroundWindowStateService = null,
+        IDesktopLocalSettingsService? localSettings = null)
     {
         ArgumentNullException.ThrowIfNull(monitor);
         ArgumentNullException.ThrowIfNull(reader);
         _monitor = monitor;
         _reader = reader;
         _captureService = captureService;
+        _foregroundWindowStateService = foregroundWindowStateService;
+        _localSettings = localSettings;
+        if (_localSettings is not null)
+        {
+            _localSettings.Changed += OnLocalSettingsChanged;
+        }
     }
 
     public event Action<ClipboardCaptureState>? StateChanged;
 
-    public bool IsPaused => Volatile.Read(ref _isPaused) != 0;
+    public ClipboardCapturePauseReason PauseReasons =>
+        (ClipboardCapturePauseReason)Volatile.Read(ref _pauseReasons);
+
+    public bool IsPaused => PauseReasons != ClipboardCapturePauseReason.None;
+
+    public bool IsManuallyPaused =>
+        PauseReasons.HasFlag(ClipboardCapturePauseReason.Manual);
+
+    public long ObservedEventCount => Interlocked.Read(ref _observedEventCount);
+
+    public long ReadCount => Interlocked.Read(ref _readCount);
 
     public void Start()
     {
@@ -65,9 +104,18 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
     }
 
     public void SetPaused(bool paused)
+        => SetPauseReason(ClipboardCapturePauseReason.Manual, paused);
+
+    public void SetPauseReason(ClipboardCapturePauseReason reason, bool active)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        Interlocked.Exchange(ref _isPaused, paused ? 1 : 0);
+        if (reason is ClipboardCapturePauseReason.None ||
+            !Enum.IsDefined(reason) ||
+            !SetPauseReasonCore(reason, active))
+        {
+            return;
+        }
+
         PublishState(null);
     }
 
@@ -76,6 +124,11 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
+        }
+
+        if (_localSettings is not null)
+        {
+            _localSettings.Changed -= OnLocalSettingsChanged;
         }
 
         _shutdown.Cancel();
@@ -100,7 +153,11 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                 _monitor.WatchAsync(cancellationToken).ConfigureAwait(false))
             {
                 Interlocked.Increment(ref _observedEventCount);
-                if (IsPaused)
+                bool foregroundProtected = IsForegroundProtectionActive();
+                SetPauseReasonCore(
+                    ClipboardCapturePauseReason.ForegroundProtection,
+                    foregroundProtected);
+                if (foregroundProtected || HasPauseReasonOtherThanForegroundProtection())
                 {
                     PublishState(null);
                     continue;
@@ -144,10 +201,63 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         string? errorMessage = null)
     {
         StateChanged?.Invoke(new ClipboardCaptureState(
-            IsPaused,
+            PauseReasons,
             Interlocked.Read(ref _observedEventCount),
             Interlocked.Read(ref _readCount),
             lastReadStatus,
             errorMessage));
+    }
+
+    private bool HasPauseReasonOtherThanForegroundProtection() =>
+        (PauseReasons & ~ClipboardCapturePauseReason.ForegroundProtection) !=
+        ClipboardCapturePauseReason.None;
+
+    private bool IsForegroundProtectionActive()
+    {
+        if (_localSettings?.Current.PauseClipboardCaptureWhenProtected != true ||
+            _foregroundWindowStateService is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _foregroundWindowStateService.GetForegroundWindowState().IsProtected;
+        }
+        catch
+        {
+            // 原生检测失败等同 Unknown，默认放行；异常细节不得进入 UI 或日志。
+            return false;
+        }
+    }
+
+    private bool SetPauseReasonCore(ClipboardCapturePauseReason reason, bool active)
+    {
+        int reasonValue = (int)reason;
+        while (true)
+        {
+            int current = Volatile.Read(ref _pauseReasons);
+            int updated = active ? current | reasonValue : current & ~reasonValue;
+            if (updated == current)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _pauseReasons, updated, current) == current)
+            {
+                return true;
+            }
+        }
+    }
+
+    private void OnLocalSettingsChanged(
+        object? sender,
+        DesktopLocalSettingsChangedEventArgs e)
+    {
+        if (!e.Settings.PauseClipboardCaptureWhenProtected &&
+            SetPauseReasonCore(ClipboardCapturePauseReason.ForegroundProtection, active: false))
+        {
+            PublishState(null);
+        }
     }
 }

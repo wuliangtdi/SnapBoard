@@ -57,35 +57,39 @@
                         BorderBrush="{DynamicResource DividerBrush}"
                         BorderThickness="1"
                         CornerRadius="6">
-                    <Grid RowDefinitions="166,1,104">
-                        <Grid Margin="20,17,20,16" RowDefinitions="Auto,Auto,Auto">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Border Width="36"
-                                        Height="36"
-                                        CornerRadius="6"
-                                        Background="{DynamicResource SelectionSurfaceBrush}">
-                                    <materialIcons:MaterialIcon Width="20"
-                                                                Height="20"
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center"
-                                                                Foreground="{DynamicResource AccentBrush}"
-                                                                Kind="Keyboard" />
-                                </Border>
-                                <StackPanel VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock FontWeight="SemiBold" Text="全局快捷键" />
-                                    <TextBlock FontSize="12"
-                                               Foreground="{DynamicResource SecondaryTextBrush}"
-                                               Text="用于从任意窗口打开快速粘贴" />
-                                </StackPanel>
+                    <StackPanel>
+                        <StackPanel Margin="20,17,20,14"
+                                    Orientation="Horizontal"
+                                    Spacing="10">
+                            <Border Width="36"
+                                    Height="36"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource SelectionSurfaceBrush}">
+                                <materialIcons:MaterialIcon Width="20"
+                                                            Height="20"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{DynamicResource AccentBrush}"
+                                                            Kind="Keyboard" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="全局快捷键" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="用于从任意窗口打开快速窗口" />
                             </StackPanel>
+                        </StackPanel>
 
-                            <Grid Grid.Row="1"
-                                  Margin="46,12,0,0"
-                                  ColumnDefinitions="*,Auto,Auto"
-                                  ColumnSpacing="8">
+                        <Border Height="1" Background="{DynamicResource DividerBrush}" />
+
+                        <StackPanel Margin="20,14,20,16" Spacing="8">
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Text="打开快速窗口" />
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                 <Button x:Name="HotKeyCaptureButton"
                                         Classes="shortcut-recorder"
-                                        Classes.capturing="{Binding IsCapturingHotKey}"
+                                        Classes.capturing="{Binding IsCapturingPrimaryHotKey}"
                                         Click="OnHotKeyCaptureClicked"
                                         ToolTip.Tip="点击后直接按下新的组合键">
                                     <Grid ColumnDefinitions="Auto,*,Auto">
@@ -103,7 +107,7 @@
                                                    FontSize="12"
                                                    FontWeight="Normal"
                                                    Foreground="{DynamicResource SecondaryTextBrush}"
-                                                   IsVisible="{Binding IsCapturingHotKey}"
+                                                   IsVisible="{Binding IsCapturingPrimaryHotKey}"
                                                    Text="录入中" />
                                     </Grid>
                                 </Button>
@@ -126,19 +130,75 @@
                                     <materialIcons:MaterialIcon Width="18" Height="18" Kind="Restore" />
                                 </Button>
                             </Grid>
-
-                            <TextBlock Grid.Row="2"
-                                       Margin="46,9,0,0"
-                                       FontSize="12"
+                            <TextBlock FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                       MaxLines="1"
                                        Text="{Binding HotKeyStatus}"
-                                       TextTrimming="CharacterEllipsis" />
-                        </Grid>
+                                       TextWrapping="Wrap" />
 
-                        <Border Grid.Row="1" Background="{DynamicResource DividerBrush}" />
+                            <TextBlock x:Name="DoubleHotKeyHeading"
+                                       Margin="0,8,0,0"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Text="连按两次快捷键打开快速窗口" />
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <Button x:Name="DoubleHotKeyCaptureButton"
+                                        Classes="shortcut-recorder"
+                                        Classes.capturing="{Binding IsCapturingDoubleHotKey}"
+                                        Click="OnDoubleHotKeyCaptureClicked"
+                                        IsEnabled="{Binding IsDoubleHotKeyAvailable}"
+                                        ToolTip.Tip="点击后直接按下第二组完整快捷键">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <materialIcons:MaterialIcon Width="18"
+                                                                    Height="18"
+                                                                    Margin="0,0,9,0"
+                                                                    VerticalAlignment="Center"
+                                                                    Kind="KeyboardOutline" />
+                                        <TextBlock Grid.Column="1"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding DoubleHotKeyDisplayName}" />
+                                        <TextBlock Grid.Column="2"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="Normal"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   IsVisible="{Binding IsCapturingDoubleHotKey}"
+                                                   Text="录入中" />
+                                    </Grid>
+                                </Button>
+                                <Button Grid.Column="1"
+                                        Classes="primary-command"
+                                        Command="{Binding ApplyDoubleHotKeyCommand}"
+                                        IsEnabled="{Binding HasPendingDoubleHotKeyChange}"
+                                        ToolTip.Tip="应用连按两次快捷键">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <materialIcons:MaterialIcon Width="17" Height="17" Kind="CheckCircle" />
+                                        <TextBlock VerticalAlignment="Center" Text="应用" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="2"
+                                        Classes="icon"
+                                        Width="40"
+                                        Height="40"
+                                        Command="{Binding ClearDoubleHotKeyCommand}"
+                                        IsEnabled="{Binding HasConfiguredDoubleHotKey}"
+                                        ToolTip.Tip="清除连按两次快捷键">
+                                    <materialIcons:MaterialIcon Width="18" Height="18" Kind="DeleteOutline" />
+                                </Button>
+                            </Grid>
+                            <TextBlock FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="{Binding DoubleHotKeyStatus}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock FontSize="11"
+                                       Foreground="{DynamicResource TertiaryTextBrush}"
+                                       Text="快捷键至少需要一个修饰键；两组快捷键不能相同。"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
 
-                        <Grid Grid.Row="2" Margin="20,0" ColumnDefinitions="Auto,*,Auto">
+                        <Border Height="1" Background="{DynamicResource DividerBrush}" />
+
+                        <Grid Margin="20,14,20,14" ColumnDefinitions="Auto,*,Auto">
                             <Border Width="36"
                                     Height="36"
                                     VerticalAlignment="Center"
@@ -158,7 +218,8 @@
                                 <TextBlock FontWeight="SemiBold" Text="登录启动" />
                                 <TextBlock FontSize="12"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="{Binding AutoStartStatus}" />
+                                           Text="{Binding AutoStartStatus}"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                             <ToggleSwitch Grid.Column="2"
                                           Classes="settings-toggle"
@@ -168,13 +229,75 @@
                                           OffContent="未开启"
                                           OnContent="已开启" />
                         </Grid>
-                    </Grid>
+                    </StackPanel>
                 </Border>
 
                 <TextBlock Margin="2,2,0,0"
                            FontSize="12"
                            Foreground="{DynamicResource TertiaryTextBrush}"
-                           Text="快捷键至少需要一个修饰键；冲突时会保留原有配置。" />
+                           Text="本机设置保存在当前用户下；快捷键与保护选项不会同步到其他设备。"
+                           TextWrapping="Wrap" />
+
+                <TextBlock Margin="0,12,0,0"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="全屏保护" />
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <StackPanel Margin="20,16,20,16" Spacing="14">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                            <StackPanel Spacing="3">
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="全屏或窗口最大化时停用快捷键"
+                                           TextWrapping="Wrap" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="避免游戏、视频或远程桌面被快速窗口打断"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="DisableHotKeysWhenProtectedToggle"
+                                          Grid.Column="1"
+                                          Classes="settings-toggle"
+                                          VerticalAlignment="Center"
+                                          IsEnabled="{Binding IsFullScreenProtectionAvailable}"
+                                          IsChecked="{Binding IsDisableGlobalHotKeysWhenProtected, Mode=TwoWay}"
+                                          OffContent="关闭"
+                                          OnContent="开启" />
+                        </Grid>
+                        <Border Height="1" Background="{DynamicResource DividerBrush}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                            <StackPanel Spacing="3">
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="全屏或窗口最大化时停止记录复制内容"
+                                           TextWrapping="Wrap" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="保护期间仍监听变化，但不会读取或保存剪贴板内容"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="PauseCaptureWhenProtectedToggle"
+                                          Grid.Column="1"
+                                          Classes="settings-toggle"
+                                          VerticalAlignment="Center"
+                                          IsEnabled="{Binding IsFullScreenProtectionAvailable}"
+                                          IsChecked="{Binding IsPauseClipboardCaptureWhenProtected, Mode=TwoWay}"
+                                          OffContent="关闭"
+                                          OnContent="开启" />
+                        </Grid>
+                        <TextBlock FontSize="12"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Text="{Binding ForegroundWindowStatus}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock FontSize="12"
+                                   Foreground="{DynamicResource TertiaryTextBrush}"
+                                   IsVisible="{Binding !!FullScreenProtectionStatus}"
+                                   Text="{Binding FullScreenProtectionStatus}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
 
                 <StackPanel Margin="0,12,0,0"
                             Spacing="10"

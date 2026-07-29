@@ -54,7 +54,9 @@ public partial class App : AvaloniaApplication, IDisposable
                     _services.GetService<IStoragePlatformService>(),
                     _services.GetService<ISyncService>(),
                     _services.GetService<IHistorySettingsService>(),
-                    _services.GetRequiredService<IApplicationUpdateService>());
+                    _services.GetRequiredService<IApplicationUpdateService>(),
+                    _services.GetRequiredService<IPlatformForegroundWindowStateService>(),
+                    _services.GetRequiredService<IDesktopLocalSettingsService>());
                 _windowsLifecycle.Initialize(startupMode);
                 desktop.Exit += OnDesktopExit;
 
