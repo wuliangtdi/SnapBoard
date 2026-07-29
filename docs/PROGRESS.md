@@ -920,6 +920,7 @@ Native AOT：
   - git fetch/switch/pull/rev-parse 和功能分支创建按要求执行；基线精确为 541712d8d82b0a6bf62e61d42700589732fbd61f。
   - dotnet restore SnapBoard.slnx --locked-mode 通过；dotnet format SnapBoard.slnx --no-restore 与 --verify-no-changes 通过；Release build 0 警告、0 错误。
   - 全量 459 项：434 项通过、25 项按平台/外部服务条件跳过、0 项失败。分项目为 Application 17/17、Architecture 2/2、Sync.WebDav 38/38、Linux 1/1、Windows 77 通过/24 跳过、Domain 4/4、Update 16/16、Desktop Headless 102/102、Infrastructure 94 通过/1 跳过、macOS Platform 83/83。
+  - 第一次全量运行中，一个未修改的共享 Headless 用例曾触发 5 秒瞬时超时；该用例定向复跑和 Desktop Headless 102/102 随即通过，之后两次完整解决方案运行均为上述 434 通过/25 跳过/0 失败，未为掩盖该次超时修改产品代码或放宽断言。
   - macOS Platform 覆盖两槽 ID/来源、冲突/清除/回滚、press/release repeat 标记、普通键与修饰键主键映射、NSUserDefaults 默认/当前格式/整组拒绝/旧键不读取、五态窗口分类、负坐标多显示器、scale=2、权限/原生失败及自身排除。
   - Desktop Headless 覆盖 Primary/Double 时序、repeat 不能完成第二次、默认最大化放行/严格范围拦截、进入保护清理待定 Double、菜单/应用命令/--quick 显式放行、手动暂停与前台/内部原因组合；共享 ClipboardCaptureCoordinator 测试继续证明保护在 ReadAsync 前生效。
   - git diff --check 通过；源代码审计未出现 AXTitle、kCGWindowName、CGRequestScreenCaptureAccess、CGPreflightScreenCaptureAccess、CGEventTap、键盘 Hook 或 Windows 平台文件差异。
