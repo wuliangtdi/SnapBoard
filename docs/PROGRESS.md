@@ -762,8 +762,8 @@ AOT 与性能：
   - 设置页保留滚动布局和 settings-toggle，新增“连按两次快捷键打开快速窗口”、完整按键录入、应用/清除、保护范围分段选择器、两个保护开关及状态文案；默认范围为“仅全屏（推荐）”，未提供第二槽默认键、预设列表或修饰键菜单。macOS 显示未实现能力，不注册虚假服务或恒定 Normal 空实现。
 自动验证：
   - dotnet restore SnapBoard.slnx --locked-mode 通过；dotnet format --verify-no-changes 通过；Release build 0 警告、0 错误。
-  - 当前全量 398 项：379 项通过、19 项按平台/外部服务条件跳过、0 项失败；Windows Platform 87/87，Desktop Headless 89/89。
-  - 双击状态机、双 RegisterHotKey 来源/冲突/清除/回滚、MOD_NOREPEAT 长按、HKCU 持久化/重启、五态前台检测、多显示器/自身排除、默认 Maximized 放行与严格范围保护、ReadAsync 前保护、SQLite/Blob/Outbox 零增长、全部暂停组合及显式入口放行均有专项断言。
+  - 当前全量 399 项：380 项通过、19 项按平台/外部服务条件跳过、0 项失败；Windows Platform 88/88，Desktop Headless 89/89。
+  - 双击状态机、双 RegisterHotKey 来源/冲突/清除/回滚、MOD_NOREPEAT 长按、HKCU 持久化/重启、五态前台检测、多显示器/自身排除、默认 Maximized 放行与严格范围保护、样式查询失败返回 Unknown 并默认放行、ReadAsync 前保护、SQLite/Blob/Outbox 零增长、全部暂停组合及显式入口放行均有专项断言。
   - SettingsWindow Headless 覆盖精确标题、默认未设置、默认“仅全屏（推荐）”、无预设/修饰键菜单、两个默认开启的 settings-toggle、滚动布局和状态文案。
 Windows 实机验证：
   - Native AOT 隔离实例中打开设置页，目视确认 702 x 752 窗口沿用现有风格、滚动布局、第二槽默认“未设置”、精确文案和两个默认开启开关；录入 Ctrl+Shift+K 后真实注册成功。
@@ -773,8 +773,8 @@ Windows 实机验证：
   - 手动暂停状态经真实 Windows 前台检测器进入和离开全屏后仍保留，自动保护只增删 ForegroundProtection；清除 Manual 后读取恢复。AOT 进程退出并以同一隔离数据根重启后，已保存的 Double 重新注册并再次通过完整探针。
 Native AOT：
   - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。
-  - SnapBoard.Desktop.exe 40,080,384 字节，SHA-256 3B0F3DA46B2B7594E3F68DF12A2BB0768539EA6E578112587F5E3927E9025949；可用全新隔离数据目录启动完整“闪剪”主窗口并保持响应，既有单实例命令、退出和重启探针继续通过。
-  - SnapBoard.StorageMigrator.exe 4,513,280 字节，SHA-256 5F177599A0C30F8773F6342EEFE44BE089945ABB35866CD5F3CC6B6C453E9FD4，保持独立 AOT；无参数退出码 4，发布目录中没有对应 .dll、.deps.json 或 .runtimeconfig.json。
+  - SnapBoard.Desktop.exe 40,080,384 字节，SHA-256 D6E536B26DA493E95E8DB7111F6DDC90F4E1167AE6489CA7DCC78E960591E76D；可用全新隔离数据目录启动完整“闪剪”主窗口并保持响应，既有单实例命令、退出和重启探针继续通过。
+  - SnapBoard.StorageMigrator.exe 4,513,280 字节，SHA-256 6BA410FDE682FA95ADC136D59439E08DB1FBEDD2B9EA088AE2BCFC0654711FCA，保持独立 AOT；无参数退出码 4，发布目录中没有对应 .dll、.deps.json 或 .runtimeconfig.json。
 限制：
   - 长按通过 Windows 注入的按下/重复/释放序列验证，不等同于人工按住物理键盘；手动暂停组合通过真实协调器和真实前台窗口切换验证，不等同于人工点击主窗口按钮。对应 UI 命令另由 Headless 测试覆盖。
   - 本阶段未实现或宣称 macOS 原生两槽注册、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
