@@ -110,6 +110,11 @@ public interface ITwoSlotGlobalHotKeyService
 
     TimeSpan DoubleTriggerInterval { get; }
 
+    GlobalHotKeyGestureCreationResult CreateGesture(
+        GlobalHotKeySlot slot,
+        GlobalHotKeyModifiers modifiers,
+        string keyName);
+
     GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot);
 
     GlobalHotKeyGesture? GetConfiguredGesture(GlobalHotKeySlot slot);

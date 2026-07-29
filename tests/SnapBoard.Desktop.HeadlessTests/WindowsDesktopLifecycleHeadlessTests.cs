@@ -257,6 +257,11 @@ public sealed class WindowsDesktopLifecycleHeadlessTests
             GlobalHotKeyModifiers modifiers,
             string keyName) => throw new NotSupportedException();
 
+        public GlobalHotKeyGestureCreationResult CreateGesture(
+            GlobalHotKeySlot slot,
+            GlobalHotKeyModifiers modifiers,
+            string keyName) => throw new NotSupportedException();
+
         public GlobalHotKeyGesture? GetCurrentGesture(GlobalHotKeySlot slot) => _gestures[slot];
 
         public GlobalHotKeyGesture? GetConfiguredGesture(GlobalHotKeySlot slot) =>

@@ -298,7 +298,7 @@
                                        TextWrapping="Wrap" />
                             <TextBlock FontSize="11"
                                        Foreground="{DynamicResource TertiaryTextBrush}"
-                                       Text="快捷键至少需要一个修饰键；两组快捷键不能相同。"
+                                       Text="单次快捷键需要修饰键；连按两次快捷键可使用单个按键。两组不能相同。"
                                        TextWrapping="Wrap" />
                         </StackPanel>
 

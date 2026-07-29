@@ -229,7 +229,10 @@ public sealed class WindowsDesktopLocalSettingsServiceTests
         FakeWindowsRegistryStore registry = new();
         WindowsDesktopLocalSettingsService first = new(registry);
         GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
-        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
+        GlobalHotKeyGesture doubleGesture = new(
+            GlobalHotKeyModifiers.NoRepeat,
+            0x4B,
+            "K");
         DesktopLocalSettings expected = new(
             primary,
             doubleGesture,
@@ -441,6 +444,21 @@ public sealed class WindowsHotKeyKeyMapTests
     }
 
     [Fact]
+    public void CreatesModifierlessDoubleGestureWithNoRepeat()
+    {
+        GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
+            GlobalHotKeyModifiers.None,
+            "K",
+            requireModifier: false);
+
+        Assert.Equal(GlobalHotKeyGestureCreationStatus.Created, result.Status);
+        GlobalHotKeyGesture gesture = Assert.IsType<GlobalHotKeyGesture>(result.Gesture);
+        Assert.Equal(0x4Bu, gesture.VirtualKey);
+        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, gesture.Modifiers);
+        Assert.Equal("K", gesture.DisplayName);
+    }
+
+    [Fact]
     public void RejectsModifierAsMainKey()
     {
         GlobalHotKeyGestureCreationResult result = WindowsHotKeyKeyMap.CreateGesture(
@@ -483,10 +501,15 @@ public sealed class WindowsDesktopNativeIntegrationTests
         FakeWindowsRegistryStore registry = new();
         WindowsDesktopLocalSettingsService settings = new(registry);
         GlobalHotKeyGesture primary = CreateGesture(0x4A, "Ctrl+Alt+J");
-        GlobalHotKeyGesture doubleGesture = CreateGesture(0x4B, "Ctrl+Alt+K");
         await using WindowsGlobalHotKeyService service = new(
             new WindowsHotKeyRegistrar(new FakeWindowsHotKeyNative()),
             settings);
+        GlobalHotKeyGestureCreationResult creation = service.CreateGesture(
+            GlobalHotKeySlot.Double,
+            GlobalHotKeyModifiers.None,
+            "K");
+        GlobalHotKeyGesture doubleGesture =
+            Assert.IsType<GlobalHotKeyGesture>(creation.Gesture);
 
         Task<GlobalHotKeyRegistrationResult> primaryTask = service.RegisterAsync(
             GlobalHotKeySlot.Primary,
@@ -503,6 +526,7 @@ public sealed class WindowsDesktopNativeIntegrationTests
         Assert.All(results, result => Assert.Equal(
             GlobalHotKeyRegistrationStatus.Registered,
             result.Status));
+        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, doubleGesture.Modifiers);
         Assert.Equal(primary, settings.Current.PrimaryHotKey);
         Assert.Equal(doubleGesture, settings.Current.DoubleHotKey);
         Assert.Equal(primary, service.GetCurrentGesture(GlobalHotKeySlot.Primary));

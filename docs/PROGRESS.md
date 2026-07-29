@@ -813,7 +813,34 @@ Native AOT：
   - 当前包仍为 ad-hoc 签名、PKG 未签名且未公证；Developer ID、Gatekeeper 正式接受、Intel Runner、多显示器/Retina、物理睡眠/断网和 8 小时长稳继续待实际条件。
 ```
 
-## 27. 更新规则
+## 27. 2026-07-29 执行记录：Double 单键录入与全局滚动条主题
+
+```text
+日期：2026-07-29
+阶段/任务：修正 Windows Double 槽录入规则并统一桌面滚动条视觉
+状态：[x] Windows 与共享语义、自动验证、渲染验证和 win-x64 Native AOT 完成；[ ] macOS 原生双槽阶段仍待实施
+开发基线：e13c2723dc309abb73e957fbbcccdc79f30d81fa（开发前已同步 main / origin/main）
+实现内容：
+  - ITwoSlotGlobalHotKeyService 增加按槽位创建手势的共享语义；Primary 保留至少一个平台修饰键的要求，Double 允许单个受支持的非修饰主键，或可选修饰键与一个主键组成的组合键。
+  - Windows 裸键 Double 仍由 RegisterHotKey 注册并强制包含 MOD_NOREPEAT；没有引入全局键盘 Hook，也不支持需要监听全部输入的 A+B 等多个普通主键同时组合。
+  - HKCU 当前格式版本仍为 2，序列化字段结构没有变化；Primary 与 Double 使用各自校验规则，裸键 Double 可持久化并在重启后恢复，不增加任何旧格式兼容或迁移代码。
+  - SettingsViewModel 按槽位调用平台创建语义；Double 录入提示改为“请按下一个按键或组合键，Esc 取消”，辅助文案明确单次快捷键需要修饰键、连按两次快捷键可使用单个按键。
+  - App 级 Avalonia 主题统一覆盖主窗口、快速窗口、设置页和其他滚动区域：10 px 轨道、圆角滑块、现有中性色与强调色状态，并移除 Fluent 原生上下/左右箭头。
+自动与视觉验证：
+  - dotnet format SnapBoard.slnx --verify-no-changes --no-restore 通过；Release build 0 警告、0 错误。
+  - 全量 406 项：384 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Windows Platform 89/89，Desktop Headless 91/91。
+  - 新增裸键 Double 创建、MOD_NOREPEAT、原生双槽注册、本机设置重启恢复、ViewModel 录入/应用，以及快速窗口 10 px、无箭头、圆角滑块的确定性断言；Primary 无修饰键拒绝测试继续通过。
+  - Headless 真实 Skia 截图确认快速窗口与设置页显示细圆角主题滑块且无箭头；主窗口共用同一 App 级主题。win-x64 AOT 隔离实例已启动完整“闪剪”主窗口并保持响应。
+Native AOT：
+  - win-x64 self-contained PublishAot 最终通过，0 个未解释 trim/AOT 警告。
+  - SnapBoard.Desktop.exe 40,379,904 字节，SHA-256 A320164453B07CF7721EC3306208E167C5D8B417FA6A4B41AB0EB70E8643C4FF。
+  - SnapBoard.StorageMigrator.exe 4,513,280 字节，SHA-256 4F87768D5E4543F7EFEA31999593A87BB8F2FE8E040846C51B9DB3E26C378729，保持独立 AOT；发布目录中没有对应 .dll、.deps.json 或 .runtimeconfig.json。
+限制：
+  - Windows/macOS 原生热键 API 均以一个非修饰主键为注册单位；多个普通主键同时组成的 A+B 式全局组合不在范围内，以保持“不监听所有用户键盘输入”的约束。
+  - 本次没有实现或宣称 macOS 原生两槽快捷键、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
+```
+
+## 28. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

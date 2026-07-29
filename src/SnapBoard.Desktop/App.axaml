@@ -23,6 +23,20 @@
         <SolidColorBrush x:Key="CodeKeywordBrush" Color="#7C3AED" />
         <SolidColorBrush x:Key="CodeTypeBrush" Color="#007A78" />
 
+        <x:Double x:Key="ScrollBarSize">10</x:Double>
+        <TransformOperations x:Key="VerticalSmallScrollThumbScaleTransform">scaleX(0.6)</TransformOperations>
+        <TransformOperations x:Key="HorizontalSmallScrollThumbScaleTransform">scaleY(0.6)</TransformOperations>
+        <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
+        <SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="#F7F9FC" />
+        <SolidColorBrush x:Key="ScrollBarPanningThumbBackground" Color="#C6CED9" />
+        <SolidColorBrush x:Key="ScrollBarThumbBackgroundColor" Color="#98A2B3" />
+        <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="#667085" />
+        <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="#1677FF" />
+        <SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent" />
+        <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="#F1F5FA" />
+        <SolidColorBrush x:Key="ScrollBarTrackStroke" Color="Transparent" />
+        <SolidColorBrush x:Key="ScrollBarTrackStrokePointerOver" Color="Transparent" />
+
         <ControlTheme x:Key="HistoryListBoxItemTheme" TargetType="ListBoxItem">
             <Setter Property="MinHeight" Value="79" />
             <Setter Property="Padding" Value="0" />
@@ -62,6 +76,23 @@
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />
+
+        <Style Selector="ScrollBar">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+
+        <Style Selector="ScrollBar /template/ Thumb">
+            <Setter Property="CornerRadius" Value="5" />
+        </Style>
+
+        <Style Selector="ScrollBar /template/ RepeatButton#PART_LineUpButton">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+
+        <Style Selector="ScrollBar /template/ RepeatButton#PART_LineDownButton">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
 
         <Style Selector="Window">
             <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />

@@ -6,6 +6,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SnapBoard.Desktop.Controls;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
@@ -153,6 +154,44 @@ public sealed class MainWindowHeadlessTests
                 Directory.CreateDirectory(Path.GetDirectoryName(capturePath)!);
                 frame.Save(capturePath, PngBitmapEncoderOptions.Default);
             }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void QuickWindowUsesCompactArrowlessThemedScrollBar()
+    {
+        QuickWindow window = new()
+        {
+            DataContext = new MainViewModel(),
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            ListBox historyList = window.FindControl<ListBox>("QuickHistoryList")!;
+            ScrollBar verticalScrollBar = Assert.Single(
+                historyList.GetVisualDescendants().OfType<ScrollBar>(),
+                scrollBar =>
+                    scrollBar.Orientation == Avalonia.Layout.Orientation.Vertical);
+            Assert.Equal(10, verticalScrollBar.MinWidth);
+            Assert.Equal(10, verticalScrollBar.Bounds.Width);
+
+            RepeatButton[] lineButtons = verticalScrollBar.GetVisualDescendants()
+                .OfType<RepeatButton>()
+                .Where(button => button.Name is "PART_LineUpButton" or "PART_LineDownButton")
+                .ToArray();
+            Assert.Equal(2, lineButtons.Length);
+            Assert.All(lineButtons, button => Assert.False(button.IsVisible));
+
+            Thumb thumb = Assert.Single(
+                verticalScrollBar.GetVisualDescendants().OfType<Thumb>());
+            Assert.Equal(new CornerRadius(5), thumb.CornerRadius);
         }
         finally
         {

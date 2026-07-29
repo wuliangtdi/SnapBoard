@@ -360,6 +360,30 @@ public sealed class SecondaryWindowHeadlessTests
         Assert.False(viewModel.HasPendingHotKeyChange);
     }
 
+    [Fact]
+    public async Task DoubleHotKeyCaptureAllowsAndAppliesSingleKey()
+    {
+        FakeGlobalHotKeyService hotKeyService = new();
+        using SettingsViewModel viewModel = new(
+            hotKeyService,
+            new FakeAutoStartService());
+
+        viewModel.BeginDoubleHotKeyCapture();
+
+        Assert.Equal("请按下一个按键或组合键，Esc 取消", viewModel.DoubleHotKeyStatus);
+        Assert.True(viewModel.CaptureHotKey(GlobalHotKeyModifiers.None, "K"));
+        Assert.Equal("K", viewModel.DoubleHotKeyDisplayName);
+        Assert.True(viewModel.HasPendingDoubleHotKeyChange);
+
+        await viewModel.ApplyDoubleHotKeyCommand.ExecuteAsync(null);
+
+        GlobalHotKeyGesture configured = Assert.IsType<GlobalHotKeyGesture>(
+            hotKeyService.ConfiguredDoubleGesture);
+        Assert.Equal(GlobalHotKeyModifiers.NoRepeat, configured.Modifiers);
+        Assert.Equal(0x4Bu, configured.VirtualKey);
+        Assert.False(viewModel.HasPendingDoubleHotKeyChange);
+    }
+
     [AvaloniaFact]
     public void SettingsWindowShowsTwoSlotHotKeysAndDefaultProtectionToggles()
     {
@@ -1028,14 +1052,33 @@ public sealed class SecondaryWindowHeadlessTests
 
         public GlobalHotKeyGestureCreationResult CreateGesture(
             GlobalHotKeyModifiers modifiers,
-            string keyName)
+            string keyName) => CreateGestureCore(
+            modifiers,
+            keyName,
+            requireModifier: true);
+
+        public GlobalHotKeyGestureCreationResult CreateGesture(
+            GlobalHotKeySlot slot,
+            GlobalHotKeyModifiers modifiers,
+            string keyName) => Enum.IsDefined(slot)
+            ? CreateGestureCore(
+                modifiers,
+                keyName,
+                requireModifier: slot == GlobalHotKeySlot.Primary)
+            : new GlobalHotKeyGestureCreationResult(
+                GlobalHotKeyGestureCreationStatus.UnsupportedKey);
+
+        private static GlobalHotKeyGestureCreationResult CreateGestureCore(
+            GlobalHotKeyModifiers modifiers,
+            string keyName,
+            bool requireModifier)
         {
             GlobalHotKeyModifiers userModifiers = modifiers &
                 (GlobalHotKeyModifiers.Control |
                  GlobalHotKeyModifiers.Alt |
                  GlobalHotKeyModifiers.Shift |
                  GlobalHotKeyModifiers.Windows);
-            if (userModifiers == GlobalHotKeyModifiers.None)
+            if (requireModifier && userModifiers == GlobalHotKeyModifiers.None)
             {
                 return new GlobalHotKeyGestureCreationResult(
                     GlobalHotKeyGestureCreationStatus.MissingModifier);

@@ -13,10 +13,11 @@ internal static class WindowsHotKeyKeyMap
 
     public static GlobalHotKeyGestureCreationResult CreateGesture(
         GlobalHotKeyModifiers modifiers,
-        string keyName)
+        string keyName,
+        bool requireModifier = true)
     {
         GlobalHotKeyModifiers normalizedModifiers = modifiers & UserModifiers;
-        if (normalizedModifiers == GlobalHotKeyModifiers.None)
+        if (requireModifier && normalizedModifiers == GlobalHotKeyModifiers.None)
         {
             return new GlobalHotKeyGestureCreationResult(
                 GlobalHotKeyGestureCreationStatus.MissingModifier);
