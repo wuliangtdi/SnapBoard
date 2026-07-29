@@ -204,14 +204,27 @@ public sealed class WindowsForegroundWindowStateService : IPlatformForegroundWin
                     : Unknown(ForegroundWindowDiagnosticCode.BoundsUnavailable, identity);
             }
 
-            if (CoversMonitor(windowBounds, monitorBounds) &&
-                (!isZoomed || IsBorderless(windowHandle)))
+            if (!CoversMonitor(windowBounds, monitorBounds))
+            {
+                return Available(
+                    isZoomed ? ForegroundWindowState.Maximized : ForegroundWindowState.Normal,
+                    identity);
+            }
+
+            if (!isZoomed)
             {
                 return Available(ForegroundWindowState.FullScreen, identity);
             }
 
+            if (!_native.TryGetWindowStyle(windowHandle, out uint style))
+            {
+                return Unknown(ForegroundWindowDiagnosticCode.NativeFailure, identity);
+            }
+
             return Available(
-                isZoomed ? ForegroundWindowState.Maximized : ForegroundWindowState.Normal,
+                IsBorderless(style)
+                    ? ForegroundWindowState.FullScreen
+                    : ForegroundWindowState.Maximized,
                 identity);
         }
         catch
@@ -228,8 +241,7 @@ public sealed class WindowsForegroundWindowStateService : IPlatformForegroundWin
         IsClose(window.Right, monitor.Right) &&
         IsClose(window.Bottom, monitor.Bottom);
 
-    private bool IsBorderless(nint windowHandle) =>
-        _native.TryGetWindowStyle(windowHandle, out uint style) &&
+    private static bool IsBorderless(uint style) =>
         (style & (WindowsNativeConstants.WindowStyleCaption |
             WindowsNativeConstants.WindowStyleThickFrame)) == 0;
 

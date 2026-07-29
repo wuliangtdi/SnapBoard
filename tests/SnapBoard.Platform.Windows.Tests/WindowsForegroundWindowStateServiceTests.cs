@@ -92,6 +92,25 @@ public sealed class WindowsForegroundWindowStateServiceTests
     }
 
     [Fact]
+    public void ZoomedFullMonitorWindowWithUnavailableStyleReturnsUnknown()
+    {
+        FakeForegroundWindowNative native = new()
+        {
+            Zoomed = true,
+            WindowStyleAvailable = false,
+            WindowBounds = Rectangle(0, 0, 1920, 1080),
+            MonitorBounds = Rectangle(0, 0, 1920, 1080),
+        };
+        WindowsForegroundWindowStateService service = new(native, snapBoardProcessId: 99);
+
+        ForegroundWindowStateResult result = service.GetForegroundWindowState();
+
+        Assert.Equal(ForegroundWindowState.Unknown, result.State);
+        Assert.Equal(ForegroundWindowDiagnosticCode.NativeFailure, result.DiagnosticCode);
+        Assert.False(result.IsProtected(ForegroundProtectionScope.FullScreenAndMaximized));
+    }
+
+    [Fact]
     public void NearlyFullScreenManualWindowIsNotMisclassified()
     {
         FakeForegroundWindowNative native = new()
