@@ -129,12 +129,69 @@ public sealed class MainWindowHeadlessTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
 
+            Assert.Equal(new Avalonia.Size(680, 480), window.ClientSize);
             Assert.Equal("闪剪", window.Title);
             Assert.NotNull(window.Icon);
+            Assert.NotNull(window.FindControl<Image>("QuickBrandLogo"));
+            Assert.NotNull(window.FindControl<TextBlock>("QuickProductName"));
+            Assert.NotNull(window.FindControl<TextBlock>("QuickSearchDescription"));
             Assert.NotNull(window.FindControl<TextBox>("QuickSearchBox"));
+            Assert.NotNull(window.FindControl<Button>("QuickClearSearchButton"));
             ListBox historyList = window.FindControl<ListBox>("QuickHistoryList")!;
             Assert.Equal(viewModel.VisibleItems.Count, historyList.ItemCount);
             Assert.NotNull(viewModel.SelectedItem);
+            Assert.IsType<Button>(window.FindControl<Button>("QuickPlainTextPasteButton"));
+            Assert.IsType<Button>(window.FindControl<Button>("QuickPasteButton"));
+
+            using var frame = window.CaptureRenderedFrame();
+            Assert.NotNull(frame);
+            Assert.Equal(680, frame.PixelSize.Width);
+            Assert.Equal(480, frame.PixelSize.Height);
+            string? capturePath = Environment.GetEnvironmentVariable("SNAPBOARD_QUICK_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(capturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(capturePath)!);
+                frame.Save(capturePath, PngBitmapEncoderOptions.Default);
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void QuickWindowMinimumSizeKeepsSearchAndPasteActionsInViewport()
+    {
+        QuickWindow window = new()
+        {
+            DataContext = new MainViewModel(),
+            Width = 560,
+            Height = 380,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(new Avalonia.Size(560, 380), window.ClientSize);
+            TextBox searchBox = window.FindControl<TextBox>("QuickSearchBox")!;
+            Button plainTextButton = window.FindControl<Button>("QuickPlainTextPasteButton")!;
+            Button pasteButton = window.FindControl<Button>("QuickPasteButton")!;
+            Assert.True(IsInsideWindow(searchBox, window));
+            Assert.True(IsInsideWindow(plainTextButton, window));
+            Assert.True(IsInsideWindow(pasteButton, window));
+
+            using var frame = window.CaptureRenderedFrame();
+            Assert.NotNull(frame);
+            string? capturePath =
+                Environment.GetEnvironmentVariable("SNAPBOARD_QUICK_MIN_CAPTURE_PATH");
+            if (!string.IsNullOrWhiteSpace(capturePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(capturePath)!);
+                frame.Save(capturePath, PngBitmapEncoderOptions.Default);
+            }
         }
         finally
         {
@@ -196,6 +253,14 @@ public sealed class MainWindowHeadlessTests
         window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
         window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
+    }
+
+    private static bool IsInsideWindow(Control control, Window window)
+    {
+        Avalonia.Point origin = control.TranslatePoint(default, window)!.Value;
+        return origin.X >= 0 && origin.Y >= 0 &&
+            origin.X + control.Bounds.Width <= window.ClientSize.Width &&
+            origin.Y + control.Bounds.Height <= window.ClientSize.Height;
     }
 
     private readonly record struct HeaderLayout(

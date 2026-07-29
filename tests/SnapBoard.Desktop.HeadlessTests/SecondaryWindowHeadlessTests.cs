@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -97,6 +98,11 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<Button>("StartOrProvideProviderMigrationButton"));
             Assert.IsType<ItemsControl>(
                 window.FindControl<ItemsControl>("ProviderMigrationDevicesItems"));
+            Avalonia.Point configureOrigin = configureSync.TranslatePoint(default, window)!.Value;
+            Avalonia.Point providerOrigin = providerSection.TranslatePoint(default, window)!.Value;
+            Assert.True(
+                providerOrigin.Y > configureOrigin.Y + configureSync.Bounds.Height,
+                "Provider migration must render after the save-and-validate action.");
             Assert.Equal(@"C:\SnapBoardData", viewModel.CurrentStorageDirectory);
             Assert.Contains("1 MiB", viewModel.StorageUsageText, StringComparison.Ordinal);
             using var frame = window.CaptureRenderedFrame();
