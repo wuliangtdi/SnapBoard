@@ -94,13 +94,15 @@ public static class ClipboardContentNormalizer
         string rtfText = richTextEnabled && plainText is null && !snapshot.RichText.IsEmpty
             ? ExtractRtfText(snapshot.RichText.Span)
             : string.Empty;
-        string displayText = GetDisplayText(
-            primaryKind,
-            plainText,
-            htmlText,
-            rtfText,
-            bitmap,
-            filePaths);
+        // 浏览器地址栏可能同时提供纯文本 URL 和带网页标题的 HTML；预览应保留用户复制的 URL。
+        string displayText = GetAbsoluteHttpUrl(primaryKind, plainText) ??
+            GetDisplayText(
+                primaryKind,
+                plainText,
+                htmlText,
+                rtfText,
+                bitmap,
+                filePaths);
         string searchableText = BuildSearchableText(
             plainText,
             htmlText,
@@ -255,6 +257,23 @@ public static class ClipboardContentNormalizer
         return looksLikeCode
             ? ClipboardHistoryDisplayCategory.Code
             : ClipboardHistoryDisplayCategory.Text;
+    }
+
+    private static string? GetAbsoluteHttpUrl(
+        ClipboardContentKind primaryKind,
+        string? plainText)
+    {
+        if (primaryKind is ClipboardContentKind.Image or ClipboardContentKind.FileReference ||
+            string.IsNullOrWhiteSpace(plainText))
+        {
+            return null;
+        }
+
+        string trimmed = plainText.Trim();
+        return Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? uri) &&
+            uri.Scheme is "http" or "https"
+                ? trimmed
+                : null;
     }
 
     private static ClipboardContentHash CalculateHash(

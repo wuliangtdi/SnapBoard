@@ -84,6 +84,64 @@ public sealed class ClipboardCapturePolicyTests
     }
 
     [Fact]
+    public async Task BrowserAddressBarCopyUsesPlainTextUrlForLinkPreview()
+    {
+        ClipboardCaptureOptions options = new();
+        ClipboardContentSnapshot snapshot = CreateSnapshot(
+            processName: "msedge.exe",
+            text: "https://linux.do",
+            html: Encoding.UTF8.GetBytes(
+                "Version:0.9\r\n<!--StartFragment-->" +
+                "<a href=\"https://linux.do\">LINUX DO - 新的理想型社区</a>" +
+                "<!--EndFragment-->"));
+        ClipboardCapturePolicyDecision decision = await CreateChain(options).EvaluateAsync(
+            snapshot,
+            CancellationToken.None);
+
+        ClipboardCapturedItem? normalized = ClipboardContentNormalizer.Normalize(
+            snapshot,
+            decision,
+            options);
+
+        Assert.NotNull(normalized);
+        Assert.Equal(ClipboardContentKind.Html, normalized.PrimaryKind);
+        Assert.Equal(ClipboardHistoryDisplayCategory.Link, normalized.DisplayCategory);
+        Assert.Equal("https://linux.do", normalized.PreviewText);
+        Assert.Contains(normalized.Representations, representation =>
+            representation.Kind == ClipboardContentKind.Text &&
+            representation.Text == "https://linux.do");
+        Assert.Contains(normalized.Representations, representation =>
+            representation.Kind == ClipboardContentKind.Html);
+        Assert.Contains("LINUX DO - 新的理想型社区", normalized.SearchableText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HtmlSelectionWithNonUrlPlainTextKeepsHtmlPreview()
+    {
+        ClipboardCaptureOptions options = new();
+        ClipboardContentSnapshot snapshot = CreateSnapshot(
+            processName: "msedge.exe",
+            text: "LINUX DO - 新的理想型社区",
+            html: Encoding.UTF8.GetBytes(
+                "Version:0.9\r\n<!--StartFragment-->" +
+                "<strong>LINUX DO - 新的理想型社区</strong>" +
+                "<!--EndFragment-->"));
+        ClipboardCapturePolicyDecision decision = await CreateChain(options).EvaluateAsync(
+            snapshot,
+            CancellationToken.None);
+
+        ClipboardCapturedItem? normalized = ClipboardContentNormalizer.Normalize(
+            snapshot,
+            decision,
+            options);
+
+        Assert.NotNull(normalized);
+        Assert.Equal(ClipboardContentKind.Html, normalized.PrimaryKind);
+        Assert.Equal(ClipboardHistoryDisplayCategory.Text, normalized.DisplayCategory);
+        Assert.Equal("LINUX DO - 新的理想型社区", normalized.PreviewText);
+    }
+
+    [Fact]
     public async Task NormalizationPreservesPackagedSourceIdentityAndAttribution()
     {
         ClipboardCaptureOptions options = new();
