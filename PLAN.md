@@ -659,14 +659,14 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] macOS 系统唤醒与网络全局状态变化通过平台抽象合并为 `SyncService.RequestSync()`；原生 observer/dynamic store 注册、非托管回调、重复启动与释放后解绑已测试，周期轮询继续作为失败兜底。
 - [ ] 实现快速窗口双击快捷键与全屏保护阶段 B：共享接口、状态机、ViewModel 与 UI 语义已由阶段 A 提供；macOS 原生两槽 Carbon 注册、前台窗口状态检测、保护接线和实机验证尚未实施。
 
-当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。轮询 tick 只读取 `changeCount` 并向有界 Channel 写入轻量事件；正文、SQLite 和网络不进入轮询路径。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。来源应用无法由 NSPasteboard 可靠确定时固定返回 `Unknown`，不做猜测。完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
+当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。轮询 tick 只读取 `changeCount`；发现变化时额外快照当时的前台 PID，并向有界 Channel 写入轻量事件，正文、SQLite 和网络不进入轮询路径。读取相同 `changeCount` 时才把该 PID 作为 `ForegroundWindowAtChange` 最佳努力来源，通过 `NSRunningApplication` 解析名称与可执行路径；这不是 NSPasteboard owner，后台脚本、快速切换或 PID 失效时必须降级 `Unknown`。App Bundle 图标通过 `NSWorkspace` 在平台主线程解析为固定 32 x 32 BGRA，并使用 256 项有界缓存。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`。
 
 #### 2.2 跨平台一致性
 
 - [~] 验证 Windows 与 macOS 格式映射和同步互操作：共享固定算法、恢复材料、同步收敛及服务商迁移状态机矩阵已在 macOS 运行；正式 Windows 与 macOS 应用双机互操作及双向迁移尚未执行。
 - [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复和单显示器窗口重开已实测；多 Space、多显示器、Retina 和全屏应用待验收。
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
-- [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写，macOS 来源身份保持 Unknown，AUMID/Package Family 为 NULL。
+- [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写。macOS 新记录保存最佳努力前台进程名称、路径和 `ForegroundWindowAtChange` 依据，无法确定时保持 Unknown；Windows 专属 AUMID/Package Family 继续为 NULL，既有 Unknown 历史不反向猜测或改写。
 - [~] 验证 Intel 与 Apple Silicon：Apple M4 上的 `osx-arm64` 原生测试、AOT 与开发包通过；同机交叉发布的 `osx-x64` 已在 Rosetta 下完成私有存储冷启动和单实例退出，但匹配 Intel 硬件/Runner 测试仍未执行，不能标记完成。
 - [~] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：两个 RID 的主程序与独立迁移器架构、无 CoreCLR、无 helper 托管配置、helper 退出码 4 及隔离存储启动/第二实例退出均通过；`osx-arm64` App/DMG/PKG 已本机复验，`osx-x64` 为 Rosetta 预检，仍待 Intel Runner 打包。0 个 trim/AOT 分析告警，链接器另有 2 个来自 .NET 10.0.10 官方 Apple NativeAOT 静态库的已解释 module-cache 调试信息告警。
 

@@ -1,5 +1,6 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
@@ -11,6 +12,7 @@ using SnapBoard.Desktop.Views;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Storage;
+using SnapBoard.Platform.MacOS.Desktop;
 using AvaloniaApplication = Avalonia.Application;
 
 namespace SnapBoard.Desktop;
@@ -98,6 +100,10 @@ public partial class App : AvaloniaApplication, IDisposable
 
                 base.OnFrameworkInitializationCompleted();
                 _macOSLifecycle.CompleteStartup(startupMode);
+                MacOSApplicationIdentity.SetApplicationMenuTitle();
+                Dispatcher.UIThread.Post(
+                    MacOSApplicationIdentity.SetApplicationMenuTitle,
+                    DispatcherPriority.Background);
                 _services.GetService<StorageStartupAcknowledgementCoordinator>()?.Start();
                 return;
             }

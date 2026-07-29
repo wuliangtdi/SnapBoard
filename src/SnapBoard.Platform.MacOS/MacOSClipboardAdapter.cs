@@ -252,9 +252,12 @@ public sealed class MacOSClipboardAdapter :
                     continue;
                 }
 
+                int? foregroundProcessId = CaptureForegroundProcessId();
                 _eventQueue.TryWrite(new ClipboardChangedEvent(
                     MacOSClipboardSequence.ToPublicSequence(currentChangeCount),
-                    DateTimeOffset.UtcNow));
+                    DateTimeOffset.UtcNow,
+                    new ClipboardSourceProcessHint(
+                        ForegroundProcessId: foregroundProcessId)));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -296,6 +299,21 @@ public sealed class MacOSClipboardAdapter :
                 return _pasteboard.GetChangeCount();
             }
         }, cancellationToken);
+
+    private int? CaptureForegroundProcessId()
+    {
+        try
+        {
+            int processId = _automaticPaste.GetFrontmostProcessId();
+            return processId > 0 ? processId : null;
+        }
+        catch (Exception exception) when (
+            exception is not OutOfMemoryException and not StackOverflowException)
+        {
+            // 来源归因是最佳努力能力；前台查询失败不能停止剪贴板监控。
+            return null;
+        }
+    }
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);

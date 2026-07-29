@@ -1,9 +1,11 @@
+using System.Runtime.Versioning;
 using System.Text;
 using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.MacOS.Interop;
 
 namespace SnapBoard.Platform.MacOS.Clipboard;
 
+[SupportedOSPlatform("macos")]
 internal sealed class MacOSPasteboardNative : IMacOSPasteboardNative
 {
     private const string FileUrlType = "public.file-url";
@@ -17,6 +19,7 @@ internal sealed class MacOSPasteboardNative : IMacOSPasteboardNative
 
     private readonly MacOSClipboardSettings _settings;
     private readonly MacOSClipboardOriginMarker _originMarker;
+    private readonly IMacOSClipboardSourceReader _sourceReader;
     private readonly nint _mutableArrayClass;
     private readonly nint _pasteboardClass;
     private readonly nint _pasteboardItemClass;
@@ -41,11 +44,20 @@ internal sealed class MacOSPasteboardNative : IMacOSPasteboardNative
     public MacOSPasteboardNative(
         MacOSClipboardSettings settings,
         MacOSClipboardOriginMarker originMarker)
+        : this(settings, originMarker, new MacOSClipboardSourceReader())
+    {
+    }
+
+    internal MacOSPasteboardNative(
+        MacOSClipboardSettings settings,
+        MacOSClipboardOriginMarker originMarker,
+        IMacOSClipboardSourceReader sourceReader)
     {
         MacOSAppKit.EnsureInitialized();
 
         _settings = settings;
         _originMarker = originMarker;
+        _sourceReader = sourceReader ?? throw new ArgumentNullException(nameof(sourceReader));
         _mutableArrayClass = ObjectiveC.GetRequiredClass("NSMutableArray");
         _pasteboardClass = ObjectiveC.GetRequiredClass("NSPasteboard");
         _pasteboardItemClass = ObjectiveC.GetRequiredClass("NSPasteboardItem");
@@ -165,12 +177,19 @@ internal sealed class MacOSPasteboardNative : IMacOSPasteboardNative
         ulong sequence = currentChangeCount == 0 && change.SequenceNumber != 0
             ? change.SequenceNumber
             : MacOSClipboardSequence.ToPublicSequence(currentChangeCount);
+        bool sourceHintMatchesCurrentClipboard =
+            MacOSClipboardSequence.ToPublicSequence(currentChangeCount) == change.SequenceNumber;
+        ClipboardSourceInfo source = sourceHintMatchesCurrentClipboard
+            ? _sourceReader.Read(
+                change.SourceHint.ForegroundProcessId,
+                ClipboardSourceAttributionKind.ForegroundWindowAtChange)
+            : CreateUnknownSource();
 
         ClipboardContentSnapshot snapshot = new()
         {
             SequenceNumber = sequence,
             CapturedAt = DateTimeOffset.UtcNow,
-            Source = CreateUnknownSource(),
+            Source = source,
             Formats = formats,
             UnavailableFormats = unavailable.ToArray(),
             Text = text,

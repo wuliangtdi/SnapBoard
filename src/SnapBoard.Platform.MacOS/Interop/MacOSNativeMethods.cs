@@ -11,6 +11,7 @@ internal static partial class MacOSNativeMethods
         "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
     private const string CoreGraphics =
         "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
+    private const string ImageIO = "/System/Library/Frameworks/ImageIO.framework/ImageIO";
     private const string ObjectiveCRuntime = "/usr/lib/libobjc.A.dylib";
 
     [LibraryImport(AppKit, EntryPoint = "NSApplicationLoad")]
@@ -160,6 +161,49 @@ internal static partial class MacOSNativeMethods
 
     [LibraryImport(CoreGraphics, EntryPoint = "CGEventPost")]
     internal static partial void CGEventPost(int tapLocation, nint keyboardEvent);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGColorSpaceCreateDeviceRGB")]
+    internal static partial nint CGColorSpaceCreateDeviceRGB();
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGColorSpaceRelease")]
+    internal static partial void CGColorSpaceRelease(nint colorSpace);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGBitmapContextCreate")]
+    internal static partial nint CGBitmapContextCreate(
+        nint data,
+        nuint width,
+        nuint height,
+        nuint bitsPerComponent,
+        nuint bytesPerRow,
+        nint colorSpace,
+        uint bitmapInfo);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGBitmapContextGetData")]
+    internal static partial nint CGBitmapContextGetData(nint context);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGContextDrawImage")]
+    internal static partial void CGContextDrawImage(
+        nint context,
+        NativeRectangle rectangle,
+        nint image);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGContextRelease")]
+    internal static partial void CGContextRelease(nint context);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGImageGetWidth")]
+    internal static partial nuint CGImageGetWidth(nint image);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGImageGetHeight")]
+    internal static partial nuint CGImageGetHeight(nint image);
+
+    [LibraryImport(ImageIO, EntryPoint = "CGImageSourceCreateWithData")]
+    internal static partial nint CGImageSourceCreateWithData(nint data, nint options);
+
+    [LibraryImport(ImageIO, EntryPoint = "CGImageSourceCreateImageAtIndex")]
+    internal static partial nint CGImageSourceCreateImageAtIndex(
+        nint source,
+        nuint index,
+        nint options);
 
     [LibraryImport(CoreFoundation, EntryPoint = "CFRelease")]
     internal static partial void CFRelease(nint handle);

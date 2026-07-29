@@ -180,6 +180,8 @@ internal sealed class MacOSAutomaticPaste(
 {
     public IAutomaticPasteTarget? CaptureForegroundTarget() => native.CaptureForegroundTarget();
 
+    public int GetFrontmostProcessId() => native.GetFrontmostProcessId();
+
     public bool HasAccessibilityPermission => native.HasAccessibilityPermission();
 
     public ValueTask<ForegroundActivationResult> TryActivateTargetAsync(

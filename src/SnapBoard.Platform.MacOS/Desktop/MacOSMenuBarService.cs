@@ -122,7 +122,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
         }
 
         Hosts[_target] = new WeakReference<MacOSMenuBarService>(this);
-        nint menuTitle = ObjectiveC.CreateString("闪剪");
+        nint menuTitle = ObjectiveC.CreateString(MacOSApplicationIdentity.ProductName);
         try
         {
             _menu = MacOSNativeMethods.SendIntPtrWithIntPtr(
@@ -173,6 +173,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
             ObjectiveC.GetSelector("setMenu:"),
             _menu);
         SetApplicationIcon();
+        MacOSApplicationIdentity.SetApplicationMenuTitle();
         SetRecordingPausedOnMainThread(recordingPaused);
     }
 
@@ -251,7 +252,7 @@ public sealed class MacOSMenuBarService : IDesktopMenuBarService
                 ObjectiveC.GetSelector("setImage:"),
                 image);
 
-            nint toolTip = ObjectiveC.CreateString("闪剪");
+            nint toolTip = ObjectiveC.CreateString(MacOSApplicationIdentity.ProductName);
             try
             {
                 MacOSNativeMethods.SendVoidWithIntPtr(

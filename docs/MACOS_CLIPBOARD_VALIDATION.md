@@ -51,7 +51,7 @@
 
 | 场景 | 结果 | 实际证据与限制 |
 | --- | --- | --- |
-| TextEdit 文本复制 | 通过 | 真实 TextEdit 选择并复制后读取到 Text 和 RTF，格式含 `public.utf8-plain-text`、`public.rtf`；来源按 best effort 返回 `Unknown` |
+| TextEdit 文本复制 | 通过 | 真实 TextEdit 选择并复制后读取到 Text 和 RTF，格式含 `public.utf8-plain-text`、`public.rtf`；2026-07-29 增量复测的新记录以 `ForegroundWindowAtChange` 识别为“文本编辑”并显示原生图标 |
 | Finder 文件复制 | 通过 | 在 Finder 复制仓库 `README.md`，读取到真实路径 `/Users/ozonect/CSharpProject/Test02/README.md`，格式含 `public.file-url`、`NSFilenamesPboardType` 和图标 TIFF；未把 `file:///.file/id=...` 当成 POSIX 路径 |
 | Google Chrome HTML 复制 | 通过 | 在真实 Chrome 的 `example.com` 页面选择并复制，读取到 Text 和 HTML，格式含 `public.html`、`public.utf8-plain-text` 及 Chromium 自定义类型 |
 | Safari HTML/RTF 复制 | 通过 | 在真实 Safari 的 `example.com` 页面选择并复制，读取到 Text、HTML、RTF 和 WebArchive 格式 |
@@ -61,13 +61,13 @@
 | 自动粘贴允许状态 | 通过 | `AXIsProcessTrusted` 与 `CGPreflightPostEventAccess` 均为允许；TextEdit 实际收到生成文本，返回 `PasteStatus=Pasted; Reason=None` |
 | 目标应用恢复 | 通过 | 捕获 `com.apple.TextEdit` 后切换到 Finder，等待期间保持 Finder 前台；服务随后恢复 TextEdit 并发送 Command+V，TextEdit 实际出现 `SnapBoard restored TextEdit after Finder verified` |
 | 辅助功能拒绝状态 | 通过 | 使用独立 ad-hoc 应用身份运行同一 AOT 探针，检测为 `AccessibilityPermissionGranted=False`；剪贴板写入成功，返回 `ManualPasteRequired; Reason=AccessibilityPermissionDenied` 和“已复制，请手动粘贴”，TextEdit 保持空白 |
-| 来源应用识别 | 受限但符合设计 | NSPasteboard 不可靠暴露 owner 应用，所有不能确定的样本返回 `Unknown`，未按前台窗口猜测来源 |
+| 来源应用识别 | 受限但符合设计 | NSPasteboard 不可靠暴露 owner 应用；现在只把检测到 `changeCount` 变化时的前台 PID 标记为 `ForegroundWindowAtChange`，读取前校验序列，名称/路径/PID 失效或切换竞争时返回 `Unknown`，不把结果表述为 clipboard owner |
 
 桌面生命周期和快捷键使用最终 `osx-arm64` App Bundle 实测：
 
 | 场景 | 结果 | 实际证据与限制 |
 | --- | --- | --- |
-| 原生菜单栏状态项 | 通过 | 状态项在窗口关闭后仍可见，菜单实际包含“打开 SnapBoard / 快速粘贴 / 暂停记录 / 设置... / 退出 SnapBoard”；Template 图标在当前外观下显示，辅助功能树可访问 |
+| 原生菜单栏状态项 | 通过 | 状态项在窗口关闭后仍可见，菜单实际包含“打开闪剪 / 快速粘贴 / 暂停记录 / 设置... / 退出闪剪”；Template 图标在当前外观下显示，辅助功能树可访问 |
 | 暂停与恢复记录 | 通过 | 点击“暂停记录”后同一菜单项变为“恢复记录”，恢复后重新显示“暂停记录”；Headless 测试同时验证暂停期间排空事件但不读取正文 |
 | 关闭窗口后台常驻 | 通过 | 关闭主、快速、设置窗口后没有可见窗口，原 PID 和状态项继续存在；三类窗口均可由菜单/命令重新创建，重复关闭后再打开没有重复窗口 |
 | 第二实例激活 | 通过 | 首实例后台运行时启动第二实例，命令经每用户 Unix socket 收到确认并打开首实例主窗口；没有第二个持久 SnapBoard 进程 |
@@ -246,7 +246,7 @@ Threads=17->21; FileDescriptors=49->51
 
 01:57:32 通过应用自己的第二实例 `--close-windows` 命令关闭全部窗口，同一 AOT PID 继续运行；02:09:55 结束样本，关闭窗口阶段持续 12 分 23 秒。开始时 RSS 170,240 KiB（166.25 MiB）、15 线程、51 FD；结束时 RSS 99,264 KiB（96.94 MiB）、14 线程、47 FD，CPU 两端均为 0.0%。首个关闭后 `footprint` 样本为 138 MB，结束为 139 MB，Lifetime Peak 256 MB。RSS、线程和 FD 有回落，但 Physical Footprint 未低于 100 MB，因此 10 分钟时长完成、内存目标失败。
 
-随后使用 `--exit` 干净结束 PID 25766，并以同一 App Bundle `--background` 启动 PID 28621。重启前后实际数据库聚合完全一致：11 条历史、1 个文件路径、`capture_count` 总和 13、11 条 Unknown 来源，Finder `README.md` 完整路径仍为 1 条；`journal_mode=wal`、`quick_check=ok`。这证明本轮真实外部应用内容和 Unknown 来源投影跨进程重启保持一致。标签、置顶、使用次数、软删除和设置的非零状态由 9.1 的独立 APFS 集成测试验证；实际桌面样本这些字段均为零，未伪造非零交互结果。
+随后使用 `--exit` 干净结束 PID 25766，并以同一 App Bundle `--background` 启动 PID 28621。重启前后实际数据库聚合完全一致：11 条历史、1 个文件路径、`capture_count` 总和 13、11 条 Unknown 来源，Finder `README.md` 完整路径仍为 1 条；`journal_mode=wal`、`quick_check=ok`。这证明当时版本的真实外部应用内容和 Unknown 来源投影跨进程重启保持一致；2026-07-29 新增的最佳努力来源只作用于后续采集，不反向猜测或改写这批历史。标签、置顶、使用次数、软删除和设置的非零状态由 9.1 的独立 APFS 集成测试验证；实际桌面样本这些字段均为零，未伪造非零交互结果。
 
 重启后系统仍处于锁屏，无法补做快速窗口可见历史和全屏场景；它们继续保持自动测试通过/交互未完成的分级结论。
 
@@ -276,3 +276,11 @@ Threads=17->21; FileDescriptors=49->51
 最终 `osx-arm64` 开发包主程序 34,573,888 字节，SHA-256 `cbe826b2a850625c8d03829aa283f0d19a345150ea5a80a2566fd366e8c70186`；迁移器 8,326,528 字节，SHA-256 `cf330df4d0e2ed72ca5499707f160a29a86d78d4f292e64c698213f158a84c94`。DMG 30,290,823 字节，SHA-256 `01a98c67867594ef7b7b0ce2618851f605ffcd9f60698c328c964ff98e7d2c19`；PKG 27,020,393 字节，SHA-256 `30e6b1cf37cc7a0842e0f74575288aedb9abc2355ffb7ac4214490c181b35f67`。DMG CRC、挂载后启动、`codesign --deep --strict`、PKG 17 项 payload、Bundle ID 与 `/Applications` 安装位置通过；Bundle 仍为 Hardened Runtime ad-hoc，PKG 无签名，公证跳过。
 
 Release build 为 0 警告/0 错误，format 检查 342 个文件且无改动；启用两个 Apache 2.4.62 loopback WebDAV 端点后，全量 307 项中 287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败。CI Build/Test 矩阵已加入 `macos-15-intel`，但远程工作流尚未运行；Developer ID、公证、Gatekeeper、Intel 实机、8 小时和多显示器等限制不变。
+
+## 11. 2026-07-29 来源应用与系统显示名称补验
+
+- 监听器仅在未被自写反馈抑制的 `changeCount` 变化上查询一次前台 PID；正文读取时必须再次匹配同一序列，避免把陈旧 PID 绑定到更新后的剪贴板。
+- `NSRunningApplication` 提供最佳努力的本地化名称与可执行路径；`.app` 路径交给 `NSWorkspace` 读取原生图标，并转成固定 32 x 32 BGRA。图标结果使用 256 项有界缓存，空结果不缓存以保留瞬态失败重试。
+- 真实 TextEdit 复制的新记录在主窗口中显示“文本编辑”和 TextEdit 原生图标；来源依据为 `ForegroundWindowAtChange`。直接后台写入、复制后在一个轮询周期内切换应用、应用退出或路径不可用时仍可能 Unknown 或只保留名称，这是已记录的协议限制。
+- 裸 `dotnet run` 不是 macOS 应用包，Dock 可能继续使用内部可执行文件名 `SnapBoard.Desktop`；支持的发布启动方式是 `.app`。最终包的 `CFBundleDisplayName`/`CFBundleName`、运行时 `NSRunningApplication.localizedName`、窗口标题和应用菜单首项均实测为“闪剪”，Bundle ID 为 `com.wuliangtdi.snapboard`。
+- 旧历史记录不会通过当前前台应用反推来源；只有修复后新采集且序列匹配的记录会写入最佳努力身份。

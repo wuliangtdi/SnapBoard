@@ -313,3 +313,42 @@ scripts/macos/Measure-SnapBoardProcess.sh \
 255.63 MiB 的异常冷样本；随后三轮回到上表区间。该异常保留，不按离群点删除，也说明短测不能替代
 长期资源门槛。此次没有执行真实网络下载、已安装版本替换、10 分钟/8 小时长稳或 Windows/Linux
 测量；既有后台 `<= 80 MB` 目标和 8 小时门槛继续保持未完成。
+
+### 6.12 2026-07-29 macOS 来源身份与原生图标增量复测
+
+主机为 Mac mini（Apple M4 10 核、16 GiB）、macOS 26.2 (25C56)、arm64、.NET SDK
+10.0.302。构建为 Release、`osx-arm64` self-contained Native AOT，使用隔离
+`--storage-bootstrap-root`，不读取既有历史。来源实现每次检测到外部 `changeCount` 变化只增加一次
+`NSWorkspace.frontmostApplication` PID 查询；序列匹配的读取才解析 `NSRunningApplication`。App Bundle
+图标固定为 32 x 32 BGRA（4 KiB），以 256 项为缓存上限，理论像素上限约 1 MiB；空结果不缓存。
+
+最终 `.app` 使用 `Measure-SnapBoardProcess.sh` 执行三轮 5 秒可见窗口加 3 秒关窗后台短测：
+
+| 轮次 | 启动 | 窗口 Physical | 后台 Physical | 回落 | Lifetime Peak | 最大线程 | FD | 平均 CPU |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1600.92 ms | 205.59 MiB | 106.47 MiB | 99.12 MiB | 205.97 MiB | 20 | 45 | 0.024% |
+| 2 | 833.09 ms | 205.39 MiB | 106.25 MiB | 99.14 MiB | 209.67 MiB | 18 | 45 | 0.023% |
+| 3 | 865.14 ms | 205.86 MiB | 106.39 MiB | 99.47 MiB | 205.89 MiB | 19 | 45 | 0.023% |
+
+后两轮暖启动均值 849.12 ms，窗口 Physical 三轮均值 205.61 MiB，后台均值 106.37 MiB，
+FD 始终 45。空闲 CPU 和 FD 没有显示新增失控，但后台 Physical 明确超过 100 MiB 失败线，
+因此本轮内存门槛未通过。该短样本与 6.11 的构建内容、系统缓存和采样时点不同，不能把约 8 MiB
+差值单独归因于本次来源功能；也不能替代 10 分钟或 8 小时长稳。
+
+同一代码的 Native AOT 平台探针先预热 10,000 次，再计量 10,000 次写入，耗时 1965.02 ms。
+写入、抽样读回、来源标记、反馈事件和 Channel 丢弃均为 0 失败；Physical Footprint
+13.63 -> 17.64 MiB，增长 4.02 MiB，RSS 35.16 -> 39.92 MiB，线程 12 -> 13，FD 7 -> 7，
+满足平台探针 `< 8 MiB` 预算。该探针为同适配器自写，反馈保护会在来源 PID 查询前抑制事件，
+所以它证明既有写回/监听资源路径未回归，不把它伪装成外部来源压力。
+
+外部来源路径由真实 TextEdit 新记录验证：列表和详情显示“文本编辑”及原生图标；平台测试同时断言
+相同 Bundle 第二次解析复用同一缓存元数据，不重复分配 4 KiB 像素。当前没有执行 10,000 次外部
+应用切换、256 个不同 App Bundle、8 小时长稳或多应用矩阵；完整 UI 后台 `<= 80 MB` 目标继续未完成。
+
+最终主程序 35,862,528 字节，SHA-256
+`77cb788aaeb26f15cb0e92eafd081bed1d5ec16ab0c442cd9ef1102e84e4407c`；DMG 30,847,110 字节，
+SHA-256 `bc1afb313d204fcfc1c163f8243ccdaeeb4535d290b88e163265dd4e7de0ee07`；PKG
+27,545,801 字节，SHA-256 `20e139792f2f2409e93ec459f2cf863a224df51a7a1135af44c2618b3a2dbbad`。
+三者来自当前代码，主程序为 arm64 Mach-O，App Bundle `codesign --deep --strict` 通过；0 个
+trim/AOT 分析告警，仍有 2 个既有且已解释的 .NET Apple NativeAOT 静态库 clang module-cache
+调试信息告警。包仍为 ad-hoc/未公证开发包。

@@ -21,6 +21,7 @@ public sealed class MacOSClipboardAdapterLifecycleTests
 
         Assert.True(await moveNext.WaitAsync(cancellation.Token));
         Assert.Equal(11UL, enumerator.Current.SequenceNumber);
+        Assert.Equal(101, enumerator.Current.SourceHint.ForegroundProcessId);
 
         await delay.WaitForRequestAsync(cancellation.Token);
         await enumerator.DisposeAsync();
@@ -46,6 +47,30 @@ public sealed class MacOSClipboardAdapterLifecycleTests
 
         Assert.True(await moveNext.WaitAsync(cancellation.Token));
         Assert.Equal(6UL, enumerator.Current.SequenceNumber);
+    }
+
+    [Fact]
+    public async Task MissingForegroundProcessPublishesEmptySourceHint()
+    {
+        FakeMacOSPasteboardNative pasteboard = new() { ChangeCount = 20 };
+        FakeMacOSPasteNative pasteNative = new() { FrontmostProcessId = 0 };
+        ControlledAsyncDelay delay = new();
+        await using MacOSClipboardAdapter adapter = new(
+            MacOSPollingBackoffTests.CreateSettings(),
+            pasteboard,
+            pasteNative,
+            delay);
+        using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+        await using IAsyncEnumerator<ClipboardChangedEvent> enumerator =
+            adapter.WatchAsync(cancellation.Token).GetAsyncEnumerator();
+
+        Task<bool> moveNext = enumerator.MoveNextAsync().AsTask();
+        await delay.WaitForRequestAsync(cancellation.Token);
+        pasteboard.ChangeCount = 21;
+        delay.ReleaseNext();
+
+        Assert.True(await moveNext.WaitAsync(cancellation.Token));
+        Assert.Null(enumerator.Current.SourceHint.ForegroundProcessId);
     }
 
     [Fact]

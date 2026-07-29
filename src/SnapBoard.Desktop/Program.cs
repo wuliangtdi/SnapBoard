@@ -20,6 +20,11 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            MacOSApplicationIdentity.SetProcessName();
+        }
+
         VelopackBootstrap.Run(args);
 
         if (OperatingSystem.IsWindows())
@@ -112,6 +117,10 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new MacOSPlatformOptions
+            {
+                DisableSetProcessName = true,
+            })
 #if DEBUG
             .WithDeveloperTools()
 #endif

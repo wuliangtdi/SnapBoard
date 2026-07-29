@@ -12,6 +12,7 @@ using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Security;
 using SnapBoard.Platform.Abstractions.Storage;
 using SnapBoard.Platform.MacOS;
+using SnapBoard.Platform.MacOS.Clipboard;
 using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
@@ -168,6 +169,9 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IDesktopSystemEventService, MacOSDesktopSystemEventService>();
         services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
         services.AddSingleton<IPlatformSecretStore, MacOSKeychainSecretStore>();
+        services.AddSingleton<
+            IClipboardSourceApplicationMetadataResolver,
+            MacOSClipboardSourceApplicationMetadataResolver>();
         AddSyncServices(services);
         services.AddSingleton(provider => new ClipboardCaptureCoordinator(
             provider.GetRequiredService<IClipboardMonitor>(),

@@ -100,3 +100,29 @@ internal sealed class FakeMacOSPasteNative : IMacOSPasteNative
         return SendPasteResult;
     }
 }
+
+internal sealed class FakeMacOSClipboardSourceReader : IMacOSClipboardSourceReader
+{
+    public ClipboardSourceInfo Result { get; set; } = new(
+        101,
+        "测试应用",
+        "/Applications/Test.app/Contents/MacOS/Test",
+        ClipboardSourceAccessStatus.Identified,
+        AttributionKind: ClipboardSourceAttributionKind.ForegroundWindowAtChange);
+
+    public int CallCount { get; private set; }
+
+    public int? ProcessId { get; private set; }
+
+    public ClipboardSourceAttributionKind AttributionKind { get; private set; }
+
+    public ClipboardSourceInfo Read(
+        int? processId,
+        ClipboardSourceAttributionKind attributionKind)
+    {
+        CallCount++;
+        ProcessId = processId;
+        AttributionKind = attributionKind;
+        return Result;
+    }
+}

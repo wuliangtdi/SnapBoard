@@ -7,6 +7,7 @@ using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.Abstractions.Security;
 using SnapBoard.Platform.MacOS;
+using SnapBoard.Platform.MacOS.Clipboard;
 using SnapBoard.Platform.MacOS.Desktop;
 using SnapBoard.Platform.MacOS.Security;
 using SnapBoard.Platform.Windows;
@@ -29,7 +30,8 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IClipboardContentReader>());
             Assert.Same(adapter, provider.GetRequiredService<IClipboardWriter>());
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
-            Assert.Null(provider.GetService<IClipboardSourceApplicationMetadataResolver>());
+            Assert.IsType<MacOSClipboardSourceApplicationMetadataResolver>(
+                provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
             Assert.IsType<MacOSKeychainSecretStore>(
                 provider.GetRequiredService<IPlatformSecretStore>());
             Assert.IsType<MacOSDesktopSystemEventService>(

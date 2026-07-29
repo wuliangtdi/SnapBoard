@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.MacOS.Clipboard;
 
 namespace SnapBoard.Platform.MacOS.Tests;
 
@@ -123,7 +124,47 @@ public sealed class MacOSClipboardNativeIntegrationTests
     }
 
     [MacOSFact]
-    public async Task ListenerReceivesAnotherAdapterWriteAndSourceFallsBackToUnknown()
+    public void SourceHintIsUsedOnlyWhileItsSequenceMatchesThePasteboard()
+    {
+        FakeMacOSClipboardSourceReader sourceReader = new();
+        MacOSClipboardOptions options = new();
+        MacOSPasteboardNative native = new(
+            options.ToSettings(),
+            new MacOSClipboardOriginMarker(),
+            sourceReader);
+        ClipboardWriteResult write = native.Write(new ClipboardWriteRequest
+        {
+            Text = $"SnapBoard source hint {Guid.NewGuid():N}",
+        });
+
+        ClipboardReadResult matching = native.Read(new ClipboardChangedEvent(
+            write.SequenceNumber,
+            DateTimeOffset.UtcNow,
+            new ClipboardSourceProcessHint(ForegroundProcessId: 101)));
+        ClipboardContentSnapshot matchingSnapshot =
+            Assert.IsType<ClipboardContentSnapshot>(matching.Snapshot);
+
+        Assert.Equal(sourceReader.Result, matchingSnapshot.Source);
+        Assert.Equal(1, sourceReader.CallCount);
+        Assert.Equal(101, sourceReader.ProcessId);
+        Assert.Equal(
+            ClipboardSourceAttributionKind.ForegroundWindowAtChange,
+            sourceReader.AttributionKind);
+
+        ClipboardReadResult stale = native.Read(new ClipboardChangedEvent(
+            write.SequenceNumber + 1,
+            DateTimeOffset.UtcNow,
+            new ClipboardSourceProcessHint(ForegroundProcessId: 202)));
+        ClipboardContentSnapshot staleSnapshot =
+            Assert.IsType<ClipboardContentSnapshot>(stale.Snapshot);
+
+        Assert.Equal(ClipboardSourceAccessStatus.Unknown, staleSnapshot.Source.AccessStatus);
+        Assert.Equal(ClipboardSourceAttributionKind.Unknown, staleSnapshot.Source.AttributionKind);
+        Assert.Equal(1, sourceReader.CallCount);
+    }
+
+    [MacOSFact]
+    public async Task ListenerPreservesBestEffortForegroundIdentityOrUnknownFallback()
     {
         await using MacOSClipboardAdapter listener = new();
         await using MacOSClipboardAdapter writer = new();
@@ -142,7 +183,26 @@ public sealed class MacOSClipboardNativeIntegrationTests
         ClipboardContentSnapshot snapshot = Assert.IsType<ClipboardContentSnapshot>(read.Snapshot);
         Assert.Equal(text, snapshot.Text);
         Assert.False(snapshot.IsFromCurrentApplication);
-        Assert.Equal(ClipboardSourceAccessStatus.Unknown, snapshot.Source.AccessStatus);
+        if (snapshot.Source.AccessStatus == ClipboardSourceAccessStatus.Unknown)
+        {
+            Assert.Null(snapshot.Source.ProcessId);
+            Assert.Null(snapshot.Source.ProcessName);
+            Assert.Null(snapshot.Source.ExecutablePath);
+            Assert.Equal(
+                ClipboardSourceAttributionKind.Unknown,
+                snapshot.Source.AttributionKind);
+        }
+        else
+        {
+            Assert.True(snapshot.Source.AccessStatus is
+                ClipboardSourceAccessStatus.Identified or
+                ClipboardSourceAccessStatus.PathUnavailable);
+            Assert.True(snapshot.Source.ProcessId is > 0);
+            Assert.False(string.IsNullOrWhiteSpace(snapshot.Source.ProcessName));
+            Assert.Equal(
+                ClipboardSourceAttributionKind.ForegroundWindowAtChange,
+                snapshot.Source.AttributionKind);
+        }
     }
 
     [MacOSFact]

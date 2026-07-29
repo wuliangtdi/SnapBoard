@@ -1,7 +1,7 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-29
-> 当前阶段：共享 WebDAV 服务商迁移与 macOS 对等实现已关闭代码目标；跨平台分架构自动更新、GitHub/官方多源、P-256 签名 feed、设置 UI、安装编排及本机 `osx-arm64` Velopack 包已落地。正式已安装版本升级、自建官方源、远程 Runner、系统代码签名与发布继续收口
+> 当前阶段：共享 WebDAV 服务商迁移与 macOS 对等实现已关闭代码目标；macOS 来源应用最佳努力识别、原生图标和“闪剪”系统身份已落地。跨平台分架构自动更新、GitHub/官方多源、P-256 签名 feed、设置 UI、安装编排及本机 `osx-arm64` Velopack 包已落地；正式已安装版本升级、自建官方源、远程 Runner、系统代码签名与发布继续收口
 > 本次目标状态：已完成当前可用环境内的实现与验证；其余项目均为缺少对应设备、服务或发布身份的外部验收，继续如实列为待验证，但不阻塞本开发目标关闭
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
@@ -18,7 +18,7 @@
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI、共享 WebDAV 服务商迁移及 macOS 恢复触发已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期和开发包已验证，x64 AOT 已通过 Rosetta 启动预检；内存、物理睡眠/断网、8 小时、Intel Runner、Developer ID、公证和正式跨系统设备矩阵待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、最佳努力来源名称/图标、系统“闪剪”身份、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期和开发包已验证，x64 AOT 已通过 Rosetta 启动预检；内存目标、物理睡眠/断网、8 小时、Intel Runner、Developer ID、公证和正式跨系统设备矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -780,7 +780,40 @@ Native AOT：
   - 本阶段未实现或宣称 macOS 原生两槽注册、前台全屏检测或保护成功；整个跨平台功能仍保持未完成。
 ```
 
-## 26. 更新规则
+## 26. 2026-07-29 执行记录：macOS 来源应用与系统身份修正
+
+```text
+日期：2026-07-29
+阶段/任务：修复 macOS 历史来源应用、Dock 名称和应用菜单名称
+状态：[x] 代码、自动测试、真实 TextEdit、新版 .app 身份和本机 arm64 Native AOT 包通过；[~] 多应用矩阵与长期资源仍待实际条件
+开发基线：15c7f01（开发前已同步 main / origin/main）
+分支：codex/fix-macos-identity-and-source
+实现内容：
+  - 未被自写抑制的 NSPasteboard changeCount 变化只额外快照一次前台 PID；读取相同序列时通过 NSRunningApplication 解析本地化名称和可执行路径，归属依据明确保存为 ForegroundWindowAtChange。
+  - NSPasteboard 不可靠提供 clipboard owner；后台脚本、快速切换、PID 失效或序列不匹配继续 Unknown，不以当前前台应用回填旧记录。
+  - .app 来源图标通过 NSWorkspace 在平台主线程提取并固定光栅化为 32 x 32 BGRA；256 项有界缓存避免列表刷新重复原生解析，空图标不缓存。
+  - 启动前设置 macOS 进程显示名并阻止 Avalonia 恢复默认名；框架完成菜单构建后把应用菜单首项与子菜单标题设为“闪剪”。内部程序集名 SnapBoard.Desktop 和包内可执行文件 SnapBoard 保持不变。
+实际验证：
+  - 真实 TextEdit 新建测试文稿并复制生成文本，历史列表与详情显示“文本编辑”和原生 TextEdit 图标；无重叠或异常占位图。
+  - 裸开发进程的应用菜单辅助功能树显示“闪剪”。正式 SnapBoard.app 的窗口标题、应用菜单、CFBundleDisplayName、CFBundleName 和 NSRunningApplication.localizedName 均为“闪剪”，Bundle ID 为 com.wuliangtdi.snapboard；Dock/应用切换器读取该运行时名称。
+  - 裸 dotnet run 不属于 App Bundle，Dock 仍可能使用内部可执行文件名 SnapBoard.Desktop；正式支持路径必须从 .app 启动。
+自动与发布验证：
+  - macOS 平台测试 53/53，Desktop Headless 89/89；来源 PID、缺失 PID、序列门控、Unknown 降级、Bundle 路径、原生图标像素和缓存复用均有断言。
+  - Release build 0 警告/0 错误；全量 403 项中 380 项通过、22 项 Windows 原生测试及 1 项真实 WebDAV 测试按当前条件跳过、0 项失败；macOS 平台专项 53/53、Desktop Headless 89/89。format 与 diff check 通过。
+  - osx-arm64 Native AOT App/DMG/PKG 已从当前代码重新生成；主程序 35,862,528 字节、SHA-256 77cb788aaeb26f15cb0e92eafd081bed1d5ec16ab0c442cd9ef1102e84e4407c，为 arm64 Mach-O；codesign --deep --strict 通过，0 个 trim/AOT 分析告警，仍只有 2 个既有且已解释的 .NET Apple 静态库 clang module-cache 调试信息告警。
+性能与内存：
+  - 前台 PID 查询只发生在实际 changeCount 变化上，不进入空闲轮询；来源名称/路径只在序列匹配的正文读取时解析。图标固定为 4 KiB/项，缓存上限 256 项，像素上限约 1 MiB。
+  - 三轮最终 AOT 5 秒窗口 + 3 秒后台短测：窗口 Physical 205.59/205.39/205.86 MiB，后台 106.47/106.25/106.39 MiB，平均 CPU 0.024%/0.023%/0.023%，FD 均为 45；后台超过 100 MiB 失败线，内存门槛未通过。
+  - Native AOT 平台探针预热 10,000 次并计量 10,000 次：1965.02 ms，写入/读取/标记/反馈/丢弃均 0 失败，Physical 13.63 -> 17.64 MiB（+4.02 MiB），FD 7 -> 7。该同适配器自写探针不经过外部来源 PID 路径；真实 TextEdit 和缓存测试覆盖该增量能力。
+  - 短测和平台探针不替代既有 10 分钟、8 小时或完整外部应用压力门槛，也不改变完整 UI 后台内存仍未达到 <=80 MB 目标的结论。完整口径见 docs/PERFORMANCE.md 6.12。
+视觉复核：
+  - 最终 arm64 SnapBoard.app 的实际截图无重叠或溢出，新记录显示“文本编辑”及原生图标；窗口与应用菜单均为“闪剪”。独立设计评估结论 PASS，无阻塞视觉问题。
+限制：
+  - TextEdit 已形成真实证据；Finder、浏览器、截图工具、后台 CLI、复制后立即切换应用以及旧历史回填不宣称全部准确。来源字段是最佳努力前台归因，不是 NSPasteboard owner。
+  - 当前包仍为 ad-hoc 签名、PKG 未签名且未公证；Developer ID、Gatekeeper 正式接受、Intel Runner、多显示器/Retina、物理睡眠/断网和 8 小时长稳继续待实际条件。
+```
+
+## 27. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。
