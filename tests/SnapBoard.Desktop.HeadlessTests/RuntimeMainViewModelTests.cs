@@ -202,8 +202,8 @@ public sealed class RuntimeMainViewModelTests
                 ClipboardItemId.New()));
         }
 
-        await Task.Delay(
-            TimeSpan.FromMilliseconds(300),
+        await WaitUntilAsync(
+            () => service.SearchCount >= 2,
             TestContext.Current.CancellationToken);
         await viewModel.WaitForIdleAsync();
 
@@ -252,6 +252,19 @@ public sealed class RuntimeMainViewModelTests
     {
         started.TrySetResult();
         return await result.Task;
+    }
+
+    private static async Task WaitUntilAsync(
+        Func<bool> condition,
+        CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
     }
 
     private static ClipboardHistoryPage CreatePage(string preview)

@@ -23,9 +23,10 @@ jobs:
           - os: windows-latest
             rid: win-x64
             archive: SnapBoard-win-x64.zip
-          - os: ubuntu-latest
-            rid: linux-x64
-            archive: SnapBoard-linux-x64.tar.gz
+          # Linux 产品包暂时暂停：Infrastructure 的 Skia Linux 原生资产尚未纳入锁定依赖。
+          # - os: ubuntu-latest
+          #   rid: linux-x64
+          #   archive: SnapBoard-linux-x64.tar.gz
 
     steps:
       - uses: actions/checkout@v6

@@ -1,6 +1,6 @@
 # SnapBoard 执行进度
 
-> 最后更新：2026-07-29
+> 最后更新：2026-07-30
 > 当前阶段：共享 WebDAV 服务商迁移与 macOS 对等实现已关闭代码目标；macOS 来源应用最佳努力识别、原生图标和“闪剪”系统身份已落地。跨平台分架构自动更新、GitHub/官方多源、P-256 签名 feed、设置 UI、安装编排及本机 `osx-arm64` Velopack 包已落地；正式已安装版本升级、自建官方源、远程 Runner、系统代码签名与发布继续收口
 > 本次目标状态：已完成当前可用环境内的实现与验证；其余项目均为缺少对应设备、服务或发布身份的外部验收，继续如实列为待验证，但不阻塞本开发目标关闭
 > 总体状态：进行中
@@ -11,7 +11,7 @@
 | 阶段 | 状态 | 当前结论 |
 | --- | --- | --- |
 | Phase 0 规划与决策 | 已完成 | 名称、MIT、三期平台、WebDAV 和同步范围已确认 |
-| Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；GitHub Runner 待验证 |
+| Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；Ubuntu Build/Test、`linux-x64` AOT 和 Release Linux 产品包暂时注释，待补齐 Skia Linux 原生依赖后恢复 |
 | Phase 1.1 AOT/内存基线 | 进行中 | 最终历史构建三轮可见峰值 PWS 155.74/155.33/138.97 MiB，关闭窗口后为 103.32/110.13/94.82 MiB；Private Bytes 为 136.59/135.54/127.82 MiB，内存门槛未完成 |
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现，用户可见应用名统一为“闪剪”；托盘点击、Windows 任务管理器实机显示、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
 | Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
@@ -63,7 +63,7 @@
 | `osx-arm64` Native AOT | 本机通过 | 64 位文件系统 ABI 修复后的主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，挂载 DMG 后隔离 bootstrap 启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `osx-x64` Native AOT | Rosetta 预检通过 | 干净 checkout 交叉发布的主程序 35,727,960 字节、迁移器 8,554,488 字节，均为 x86_64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，Rosetta 下隔离 bootstrap 启动、`0700` 权限及 `--exit` 通过。匹配 Intel Runner 的测试、发布和打包仍待执行 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 40,080,384 字节、嵌套迁移器 4,513,280 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；已用全新隔离数据根启动完整主窗口并确认进程响应，Runner 待验证 |
-| `linux-x64` Native AOT | 待验证 | 交由 Ubuntu Runner 验证 |
+| `linux-x64` Native AOT | 暂停 | CI 矩阵暂时注释；恢复 `SkiaSharp.NativeAssets.Linux` 锁定依赖后再由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
 | macOS 窗口/后台内存 | 未达标 | AOT 平台探针 10,000 次增长 5.09 MiB、100,000 次增长 0.45 MiB，事件路径通过；完整桌面纯后台 41.4 MiB，首次开窗后关窗约 94-96 MiB，仍高于 80 MB 目标且有超过 100 MB 的历史波动；8 小时未执行 |
 
@@ -991,7 +991,27 @@ Native AOT：
   - data/、凭据、临时数据库、AOT 输出和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 均不进入提交。
 ```
 
-## 32. 更新规则
+## 32. 2026-07-30 执行记录：Linux CI 暂停与 macOS Intel 时序修复
+
+```text
+日期：2026-07-30
+阶段/任务：处理 GitHub Actions 30509956040 的 Ubuntu 与 macos-15-intel 失败
+状态：[x] Linux CI 入口按用户要求暂时注释；[x] Intel 两个时序失败已修复并完成本机重复验证；[ ] 新提交仍需 GitHub Intel Runner 复核
+根因与实现：
+  - Ubuntu 的 Infrastructure 图片测试缺少 libSkiaSharp.so；SnapBoard.Infrastructure 的锁文件只有 Win32/macOS 原生资产。按当前范围不补 Linux 包，CI 中 ubuntu-latest Build/Test、linux-x64 Native AOT 和 Release Linux 产品包均保留为注释，Linux 不记为验证通过。
+  - MacOSSingleInstanceCoordinator.StartListening 原先通过 Task.Run 延迟启动 AcceptAsync；慢 Intel Runner 上第二实例可能在服务循环被调度前耗尽短重试。现直接启动异步 accept 循环，使 StartListening 返回时监听已进入等待状态，仍保持异步、可取消和有界通知协议。
+  - HistoryChangeBurstIsCoalescedIntoOneReload 原先固定等待 300 ms；Intel Runner 高负载下 timer/UI 队列尚未完成。测试现等待第二次查询实际发生，再调用 WaitForIdleAsync 并保留“总计只能两次查询”的严格断言。
+验证：
+  - macOS Platform Release 测试 91/91；RuntimeMainViewModelTests 7/7。
+  - SecondaryInstanceNotifiesPrimaryWithBoundedCommand 连续 12 轮通过；HistoryChangeBurstIsCoalescedIntoOneReload 连续 12 轮通过。
+  - macOS 平台项目 Release build 0 警告、0 错误；完整解决方案 443 项通过、25 项按平台条件跳过、0 项失败。
+  - 本机 `osx-x64` Native AOT 发布通过：主程序 37,186,632 字节（SHA-256 `1d4fdd3ef544a237d0464ad5d6cfdcd6bb17287835f82ec9fa1053d6e6268e0e`），独立 StorageMigrator 8,554,488 字节（SHA-256 `8d9e3c6cf9bd0115cab759da91d611696ad38be470dba9630007d66df2920320`）；两者均为 x86_64 Mach-O，helper 无参数退出码 4，发布目录无 CoreCLR/hostfxr。仅有 2 条已解释的 .NET Apple NativeAOT clang module-cache 调试信息警告，无未解释 trim/AOT 警告。
+限制：
+  - 本机为 Apple Silicon，重复测试不能替代 GitHub macos-15-intel Runner；推送后的远程结果必须继续记录。
+  - Linux 失败被显式暂停而非修复；恢复 Linux CI 前必须补齐并锁定 Linux Skia 原生资产，再重新执行 Build/Test 与 Native AOT。
+```
+
+## 33. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

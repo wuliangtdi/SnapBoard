@@ -117,7 +117,9 @@ public sealed class MacOSSingleInstanceCoordinator : IDisposable
             return;
         }
 
-        _serverTask = Task.Run(() => RunServerAsync(_shutdown.Token), CancellationToken.None);
+        // AcceptAsync 在第一次未完成 await 前不会阻塞；直接启动异步循环可以让调用方返回时
+        // 监听已经进入 accept 状态，避免慢机器上第二实例在 Task.Run 尚未调度前耗尽重试窗口。
+        _serverTask = RunServerAsync(_shutdown.Token);
     }
 
     public void Dispose()

@@ -3,7 +3,7 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：快速窗口双击快捷键与全屏保护的阶段 B 已完成 macOS 原生实现、纯修饰键修复、自动验证和当前 Apple Silicon 环境内的窗口/AOT/应用内按钮验证；完成定义仍缺物理键盘长按、物理多显示器和 Retina 证据
+> 当前阶段：快速窗口双击快捷键与全屏保护的阶段 B 已完成 macOS 原生实现、纯修饰键修复、自动验证和当前 Apple Silicon 环境内的窗口/AOT/应用内按钮验证；完成定义仍缺物理键盘长按、物理多显示器和 Retina 证据；Linux CI 因 Skia 原生依赖暂时注释，未将 Linux 标记为已验证
 > 实现状态：Windows 保持既有共享两槽快捷键、双击状态机、前台检测和可组合暂停行为；macOS 已接入两个 Carbon Hot Key ID、modifier-only 状态变化边界、NSUserDefaults 当前格式、五态前台窗口检测、共享快捷键控制器、记录前置保护和分离状态文案，不读取开发期快捷键格式，也不使用全局键盘 Hook、Screen Recording 或窗口标题进行判定
 > 本次目标口径：实施 `docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md` 第 13.4 节阶段 B；代码与当前可用环境验证已完成，但整个跨平台功能保持部分完成，不能用单显示器非 Retina 与合成输入结果外推尚缺的真实硬件/物理输入验收
 > 总体顺序：Windows -> macOS -> Linux
@@ -539,6 +539,8 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 - [x] 创建显式 DI 组合根，不使用程序集扫描。
 
 退出条件：JIT 构建、单元测试和 Windows AOT 空壳发布全部通过，AOT 警告为零。
+
+当前 CI 说明：Ubuntu 的 Build/Test、`linux-x64` Native AOT 和 Release Linux 产品包矩阵项暂时保留为 YAML 注释，待 Infrastructure 锁定 `SkiaSharp.NativeAssets.Linux` 后恢复；Release 签名/发布编排 job 使用的 Ubuntu runner 不属于 Linux 产品构建，保留执行；Linux 平台仍按未开始处理。
 
 #### 1.1 AOT 与内存基线验证
 

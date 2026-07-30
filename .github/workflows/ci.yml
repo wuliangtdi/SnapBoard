@@ -24,7 +24,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-latest]
+        os:
+          - windows-latest
+          - macos-latest
+          - macos-15-intel
+          # Linux 暂停：Infrastructure 的 Skia Linux 原生资产尚未纳入锁定依赖。
+          # - ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
@@ -57,8 +62,9 @@ jobs:
             rid: osx-arm64
           - os: macos-15-intel
             rid: osx-x64
-          - os: ubuntu-latest
-            rid: linux-x64
+          # Linux 暂停：恢复 Linux 原生依赖后再重新启用。
+          # - os: ubuntu-latest
+          #   rid: linux-x64
 
     steps:
       - uses: actions/checkout@v6
