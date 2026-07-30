@@ -1012,7 +1012,40 @@ Native AOT：
   - Linux 失败被显式暂停而非修复；恢复 Linux CI 前必须补齐并锁定 Linux Skia 原生资产，再重新执行 Build/Test 与 Native AOT。
 ```
 
-## 33. 更新规则
+## 33. 2026-07-30 执行记录：首次公开 Release 与更新签名密钥轮换
+
+```text
+日期：2026-07-30
+阶段/任务：轮换遗失的更新签名私钥并发布首个公开版本 v0.1.0
+状态：[x] 新密钥、客户端信任根、GitHub Secret、远端 CI、Release 打包和公开附件验证完成；[~] Apple/Windows 系统代码签名与已安装版本升级仍待正式凭据和旧版本环境
+发布提交：1828f4da8629bb8df062a01910eb0d8dd8dfa023
+标签：v0.1.0
+Release：https://github.com/wuliangtdi/SnapBoard/releases/tag/v0.1.0
+
+密钥轮换：
+  - 原 P-256 私钥在仓库、GitHub Actions Secrets、本机 Keychain 和环境变量中均不存在，且不能从已提交公钥恢复；用户明确授权在首次公开 Release 前轮换。
+  - 新私钥保存在仓库外的维护者专用目录，目录权限 0700、私钥权限 0600；只把私钥内容写入 GitHub Actions Secret SNAPBOARD_UPDATE_SIGNING_PRIVATE_KEY_PEM，没有提交、打印或复制到构建产物。
+  - 新公钥 SubjectPublicKeyInfo SHA-256 为 25a66ae09889984b953aa3cb541384eafb18c796e10253ae75a5db5184a922a5。packaging PEM 与 UpdateEndpointOptions 客户端内置常量同步更新，并新增测试直接比较两者，避免发布端与客户端信任根再次漂移。
+  - scripts/updates/Sign-UpdateFeeds.sh 使用新私钥完成本地签名和公钥验签；从公开 Release 下载的 win-x64、osx-arm64、osx-x64 三份 releases.*.json 及签名也全部 Verified OK。
+
+本地验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format SnapBoard.slnx --verify-no-changes --no-restore、Release build 均通过；build 为 0 警告、0 错误。
+  - 全量 469 项：444 项通过、25 项按平台或外部服务条件跳过、0 项失败；Update 专项因新增公钥一致性测试增至 17/17。
+  - git diff --check 和发布脚本的公私钥指纹匹配检查通过。
+
+GitHub 验证：
+  - CI run 30512399402 全绿：Windows、macOS ARM、macOS Intel Build/Test 以及 win-x64、osx-arm64、osx-x64 Native AOT 六个 job 均成功。
+  - Release run 30512409589 全绿：osx-arm64 3m07s、osx-x64 3m48s、win-x64 4m10s；最终 job 成功下载汇总产物、签名并复验三个更新 feed、创建公开 Release。
+  - Release 共 30 个附件。主要用户产物为 SnapBoard-win-x64.zip 78,990,783 字节、Windows Setup.exe 33,561,692 字节、osx-arm64 DMG 31,166,463 字节/PKG 27,846,681 字节、osx-x64 DMG 33,014,727 字节/PKG 29,596,647 字节；GitHub 为每个附件记录 SHA-256 digest。
+  - 两套 macOS 包均包含 App/DMG/PKG、Velopack Portable.zip/full.nupkg 和架构独立 feed；Windows 包包含 Setup.exe、Portable.zip、full.nupkg、独立 Native AOT ZIP 和校验和。Linux 产品包按已确认范围未构建、未上传。
+
+限制：
+  - 仓库尚未配置 Apple Developer ID、Apple 公证凭据或 Windows 代码签名证书。当前 macOS 包是 ad-hoc/未签名 PKG，Gatekeeper 可能阻止直接打开；Windows 也可能显示 SmartScreen 警告。这些附件可用于当前测试发布，不能描述为经过操作系统发行身份认证的正式签名包。
+  - Release 尚未生成 SBOM；旧安装版到 v0.1.0 的下载、退出替换和重启升级没有执行。应用级更新 feed 签名已验证，但不能替代上述系统签名和实际升级矩阵。
+  - Linux CI 和产品包仍因 Linux Skia 原生资产缺失而暂停，不计入 v0.1.0 支持范围。
+```
+
+## 34. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。
