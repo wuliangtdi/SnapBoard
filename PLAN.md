@@ -640,8 +640,8 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [ ] 完成威胁建模和安全审查。
 - [ ] 完成 AOT、裁剪、冷启动、内存、CPU、句柄和磁盘基准。
 - [ ] 完成 8 小时稳定性和数据库压力测试。
-- [x] 生成 Windows x64 Native AOT 安装包和便携包；`v0.1.0` 已发布 Setup.exe、Velopack Portable.zip 和独立 Native AOT ZIP。
-- [~] Git 标签能够自动创建 GitHub Release，并已在 `v0.1.0` 上传 Windows 构建与 SHA-256；SBOM 尚未生成，Windows 代码签名证书也未配置。
+- [x] 生成 Windows x64 Native AOT 安装包和便携包；发布工作流保留一键 Setup.exe，并新增可选择当前用户/所有用户及安装父目录的 MSI，最终应用目录固定为所选父目录下的 `SnapBoard`。`v0.1.0` 早于该 MSI 工作流，只包含 Setup.exe、Velopack Portable.zip 和独立 Native AOT ZIP；可选目录 MSI 将由后续 Release 生成。
+- [~] Git 标签能够自动创建 GitHub Release，并已在 `v0.1.0` 上传 Windows 构建与 SHA-256；当前工作流还会验证并上传 `SnapBoard-win-x64-Installer.msi` 及其 SHA-256。SBOM 尚未生成，Windows 代码签名证书也未配置。
 - [x] 设计并实现自动更新、应用级签名、发布回退和数据库保护策略：客户端只内置 P-256 公钥，Release 私钥仅由发布端持有；安装目录与每用户数据目录分离，当前更新不改 Schema，失败版本采用撤下清单并发布更高修复版本的 roll-forward，未来不兼容数据库迁移必须先提供备份/恢复门槛。实际跨版本安装仍按正式发布验证项保留。
 - [ ] 完成用户文档、隐私说明和已知限制。
 

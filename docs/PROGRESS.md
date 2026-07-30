@@ -1045,7 +1045,41 @@ GitHub 验证：
   - Linux CI 和产品包仍因 Linux Skia 原生资产缺失而暂停，不计入 v0.1.0 支持范围。
 ```
 
-## 34. 更新规则
+## 34. 2026-07-30 执行记录：Windows 可选择目录 MSI
+
+```text
+日期：2026-07-30
+阶段/任务：在保留 Velopack 一键 Setup.exe 的同时，新增可选择安装范围和安装位置的 Windows MSI
+状态：[x] MSI 后处理、发布工作流、本地结构验证、正负向 UI、全量测试和 win-x64 Native AOT 完成；[ ] 尚未由后续标签触发远程 Release
+开发基线：3055988fbf7186d34b2ef46b2df73ae64d4f6513（开发前 main 与 origin/main 一致）
+分支：codex/windows-selectable-installer
+
+实现内容：
+  - Windows Release 的 vpk pack 继续生成一键 Setup.exe，同时启用 --msi 和 --instLocation Either，允许用户选择“仅为当前用户安装”或“为所有用户安装”。
+  - Velopack 1.2.0 的 Either 模板只有安装范围选择，没有安装目录入口。新增 Customize-VelopackMsi.ps1，在未签名 MSI 的事务中接入原生 BrowseDlg、只读最终路径和“浏览”按钮；用户选择父目录，最终应用根固定为 <父目录>\SnapBoard，避免把 D:\SoftWare 等共享目录直接交给卸载清理。
+  - 默认当前用户路径为 LocalAppData\Programs\SnapBoard，所有用户路径为 ProgramFiles64Folder\SnapBoard；VELOPACK_INSTALLDIR 仍表示调用方提供的精确最终路径，并会锁定浏览按钮。
+  - 修复目录选择阶段的三个 MSI 问题：PathEdit 间接绑定导致 2343 空路径、错误 Control_Next 链导致 2810，以及 RustValidatePath 与 InvalidDirDlg 在同一次按钮事件中读取旧值造成有效 D 盘路径假报错。当前在欢迎页、安装范围变化和 BrowseDlg 关闭前完成真实路径校验，主页面“下一步”只读取已完成的校验结果。
+  - Verify-VelopackMsi.ps1 检查固定 Velopack 表结构、两种安装范围、父目录隔离、只读直接路径绑定、命令行路径锁、控件顺序、三条预校验链、有效/无效结果分支及 ALLUSERS=2；Velopack 模板漂移会让 Release 直接失败。
+  - Release 将最终包统一命名为 SnapBoard-win-x64-Installer.msi，生成同名 .sha256 并沿既有 artifact glob 上传。手动 workflow_dispatch 的无效默认版本 0.0.0-dev 同步修正为 Velopack 接受的 0.0.1-dev。
+
+自动与产物验证：
+  - dotnet restore --locked-mode、dotnet format --verify-no-changes 和 Release build 通过；build 为 0 警告、0 错误。
+  - 首次全量测试中，正在运行的已安装 SnapBoard 占用纯修饰键全局快捷键，两个 RegisterHotKey 原生用例按预期返回 Conflict；通过该实例自己的 --exit 正常退出后，Windows Platform 101/101，全量 469 项为 447 项通过、22 项按当前平台或外部服务条件跳过、0 项失败。
+  - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 告警。SnapBoard.Desktop.exe 为 40,388,096 字节，SHA-256 dfca9798d8742fc312960140f6288df6a4260b424b67be8e4d9efe33db03ba97；隔离 bootstrap 冷启动和第二实例 --exit 通过。
+  - SnapBoard.StorageMigrator.exe 为 4,513,280 字节，SHA-256 311ed8b657306dd7a742686d619b055ca9216fccb993d11cb0af103c471157dc；无参数退出码 4，发布目录没有该迁移器的 .dll、.deps.json 或 .runtimeconfig.json。
+  - 锁定 Velopack 1.2.0 使用真实 AOT 目录同时生成 Setup.exe 和 MSI。最终 SnapBoard-win-x64-Installer.msi 为 27,594,752 字节，SHA-256 06fd8fcc57ddb85b9c2273fd885cee7844c8b1f7bb08c13e651cd6398f4b31a0；原一键 Setup.exe 仍存在。
+
+Windows UI 验证：
+  - 最终真实 MSI 选择 D:\SoftWare 后，日志中的最终路径为 D:\SoftWare\SnapBoard\，RustValidatePath 返回有效，InvalidDirDlg 为 0 次，并进入“已准备好安装”页；测试在 InstallInitialize 前终止，没有执行安装。
+  - 负向传入 VELOPACK_INSTALLDIR=\\invalid\share\SnapBoard 时，Windows Installer 明确提示路径无效并阻止推进，证明没有为消除假报错而关闭无效路径保护。
+
+限制：
+  - 已公开的 v0.1.0 早于本实现，仍只有一键 Setup.exe；远程 GitHub Actions 和含 MSI 的新 Release 尚未运行，不能把本地产物描述为已公开附件。
+  - 仓库没有 Windows Authenticode 证书，当前 Setup.exe/MSI 仍未签名，可能触发 SmartScreen；后续加入签名时必须在 MSI 表后处理之后签名。
+  - 本轮没有自动安装或卸载任何版本，也没有修改或删除用户数据；为释放 RegisterHotKey 测试冲突，仅通过现有安装实例的 --exit 正常退出。Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
+```
+
+## 35. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

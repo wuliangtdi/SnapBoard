@@ -46,7 +46,7 @@ jobs:
       - name: Publish Native AOT
         shell: bash
         run: |
-          version="0.0.0-dev"
+          version="0.0.1-dev"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
@@ -83,7 +83,7 @@ jobs:
       - name: Create self-updating package
         shell: bash
         run: |
-          version="0.0.0-dev"
+          version="0.0.1-dev"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
@@ -108,13 +108,35 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             dotnet tool run vpk -- "${common_args[@]}" \
               --mainExe SnapBoard.Desktop.exe \
-              --icon src/SnapBoard.Desktop/Assets/snapboard.ico
+              --icon src/SnapBoard.Desktop/Assets/snapboard.ico \
+              --msi \
+              --instLocation Either
           else
             dotnet tool run vpk -- "${common_args[@]}" \
               --mainExe SnapBoard.Desktop \
               --icon src/SnapBoard.Desktop/Assets/snapboard-app-icon.png \
               --categories Utility
           fi
+
+      - name: Customize selectable Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $packageDirectory = (Resolve-Path -LiteralPath "artifacts/velopack/${{ matrix.rid }}").Path
+          $msiPackages = @(Get-ChildItem -LiteralPath $packageDirectory -Filter "*.msi" -File)
+          if ($msiPackages.Count -ne 1) {
+            throw "Expected exactly one generated MSI, found $($msiPackages.Count)."
+          }
+
+          & "scripts/windows/Customize-VelopackMsi.ps1" -MsiPath $msiPackages[0].FullName
+
+          $installerName = "SnapBoard-${{ matrix.rid }}-Installer.msi"
+          $installerPath = Join-Path $packageDirectory $installerName
+          Move-Item -LiteralPath $msiPackages[0].FullName -Destination $installerPath
+          & "scripts/windows/Verify-VelopackMsi.ps1" -MsiPath $installerPath
+
+          $hash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $installerName" | Set-Content -LiteralPath "$installerPath.sha256"
 
       - name: Create Windows archive
         if: runner.os == 'Windows'
@@ -233,7 +255,7 @@ jobs:
       - name: Build App Bundle, DMG, and PKG
         shell: bash
         run: |
-          version="0.0.0-dev"
+          version="0.0.1-dev"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
@@ -272,7 +294,7 @@ jobs:
       - name: Create self-updating macOS package
         shell: bash
         run: |
-          version="0.0.0-dev"
+          version="0.0.1-dev"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
