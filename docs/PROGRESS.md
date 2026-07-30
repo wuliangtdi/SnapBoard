@@ -1036,7 +1036,7 @@ Release：https://github.com/wuliangtdi/SnapBoard/releases/tag/v0.1.0
 GitHub 验证：
   - CI run 30512399402 全绿：Windows、macOS ARM、macOS Intel Build/Test 以及 win-x64、osx-arm64、osx-x64 Native AOT 六个 job 均成功。
   - Release run 30512409589 全绿：osx-arm64 3m07s、osx-x64 3m48s、win-x64 4m10s；最终 job 成功下载汇总产物、签名并复验三个更新 feed、创建公开 Release。
-  - Release 共 30 个附件。主要用户产物为 SnapBoard-win-x64.zip 78,990,783 字节、Windows Setup.exe 33,561,692 字节、osx-arm64 DMG 31,166,463 字节/PKG 27,846,681 字节、osx-x64 DMG 33,014,727 字节/PKG 29,596,647 字节；GitHub 为每个附件记录 SHA-256 digest。
+  - Release 共 29 个附件。主要用户产物为 SnapBoard-win-x64.zip 78,990,783 字节、Windows Setup.exe 33,561,692 字节、osx-arm64 DMG 31,166,463 字节/PKG 27,846,681 字节、osx-x64 DMG 33,014,727 字节/PKG 29,596,647 字节；GitHub 为每个附件记录 SHA-256 digest。
   - 两套 macOS 包均包含 App/DMG/PKG、Velopack Portable.zip/full.nupkg 和架构独立 feed；Windows 包包含 Setup.exe、Portable.zip、full.nupkg、独立 Native AOT ZIP 和校验和。Linux 产品包按已确认范围未构建、未上传。
 
 限制：
