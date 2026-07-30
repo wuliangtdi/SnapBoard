@@ -15,4 +15,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\packaging\updates\update-signing-public.pem"
+          Link="packaging\updates\update-signing-public.pem"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

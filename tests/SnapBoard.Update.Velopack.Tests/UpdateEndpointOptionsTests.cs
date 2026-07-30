@@ -32,4 +32,21 @@ public sealed class UpdateEndpointOptionsTests
         Assert.Equal(encoded.Length, bytesRead);
         Assert.Equal(256, verifier.KeySize);
     }
+
+    [Fact]
+    public void ProductionPublicKeyMatchesReleaseSigningPublicKey()
+    {
+        string publicKeyPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "packaging",
+            "updates",
+            "update-signing-public.pem");
+        using ECDsa verifier = ECDsa.Create();
+
+        verifier.ImportFromPem(File.ReadAllText(publicKeyPath));
+
+        Assert.Equal(
+            UpdateEndpointOptions.ProductionPublicKeySubjectPublicKeyInfoBase64,
+            Convert.ToBase64String(verifier.ExportSubjectPublicKeyInfo()));
+    }
 }

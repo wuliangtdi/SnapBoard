@@ -10,8 +10,8 @@ public sealed record UpdateEndpointOptions(
 
     // 发布私钥只保存在维护者的密码库和 CI Secret；客户端仅携带此 P-256 公钥。
     public const string ProductionPublicKeySubjectPublicKeyInfoBase64 =
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdajcKAJ3BG6vpkLDNpw2WEREfraa" +
-        "utd7GvwRJMl70jxNeBUTtT4+cctPsELXUiusEknhJ9h0eN5GbjK3D7RxaQ==";
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE1zrQgi1dpMJ8pLZXn6HTtOS1yznE" +
+        "BYFHHO9bfMD20KVJ/iyCXxJrHTQsj9BLhUt23JXplOjaXRh5IXL8Xhw8Nw==";
 
     public static UpdateEndpointOptions CreateDefault()
     {
