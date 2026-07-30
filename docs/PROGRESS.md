@@ -18,7 +18,7 @@
 | Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
 | Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
 | Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI、共享 WebDAV 服务商迁移及 macOS 恢复触发已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、最佳努力来源名称/图标、系统“闪剪”身份、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期和开发包已验证，x64 AOT 已通过 Rosetta 启动预检；内存目标、物理睡眠/断网、8 小时、Intel Runner、Developer ID、公证和正式跨系统设备矩阵待完成 |
+| Phase 2 macOS | 进行中 | arm64 剪贴板、最佳努力来源名称/图标、系统“闪剪”身份、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期和开发包已验证，x64 AOT 与 macos-15-intel CI 已通过；内存目标、物理睡眠/断网、8 小时、Intel 实体机、Developer ID、公证和正式跨系统设备矩阵待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -61,7 +61,7 @@
 | 全量自动测试 | 通过 | macOS arm64 共 307 项：287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 95/95、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
 | macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/POSIX mode/真实扩展 ACL/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
 | `osx-arm64` Native AOT | 本机通过 | 64 位文件系统 ABI 修复后的主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，挂载 DMG 后隔离 bootstrap 启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
-| `osx-x64` Native AOT | Rosetta 预检通过 | 干净 checkout 交叉发布的主程序 35,727,960 字节、迁移器 8,554,488 字节，均为 x86_64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，Rosetta 下隔离 bootstrap 启动、`0700` 权限及 `--exit` 通过。匹配 Intel Runner 的测试、发布和打包仍待执行 |
+| `osx-x64` Native AOT | CI 通过 | 本机 Rosetta 预检和 GitHub `macos-15-intel` AOT 均通过；主程序与迁移器为 x86_64 Mach-O，无 CoreCLR/helper 托管配置，helper 无参数退出码 4。Intel 实体机交互验收仍待执行 |
 | `win-x64` Native AOT | 本机通过 | 最新独立包主程序 40,080,384 字节、嵌套迁移器 4,513,280 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；已用全新隔离数据根启动完整主窗口并确认进程响应，Runner 待验证 |
 | `linux-x64` Native AOT | 暂停 | CI 矩阵暂时注释；恢复 `SkiaSharp.NativeAssets.Linux` 锁定依赖后再由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
@@ -996,7 +996,7 @@ Native AOT：
 ```text
 日期：2026-07-30
 阶段/任务：处理 GitHub Actions 30509956040 的 Ubuntu 与 macos-15-intel 失败
-状态：[x] Linux CI 入口按用户要求暂时注释；[x] Intel 两个时序失败已修复并完成本机重复验证；[ ] 新提交仍需 GitHub Intel Runner 复核
+状态：[x] Linux CI 入口按用户要求暂时注释；[x] Intel 两个时序失败已修复；[x] GitHub macos-15-intel Runner 复核通过
 根因与实现：
   - Ubuntu 的 Infrastructure 图片测试缺少 libSkiaSharp.so；SnapBoard.Infrastructure 的锁文件只有 Win32/macOS 原生资产。按当前范围不补 Linux 包，CI 中 ubuntu-latest Build/Test、linux-x64 Native AOT 和 Release Linux 产品包均保留为注释，Linux 不记为验证通过。
   - MacOSSingleInstanceCoordinator.StartListening 原先通过 Task.Run 延迟启动 AcceptAsync；慢 Intel Runner 上第二实例可能在服务循环被调度前耗尽短重试。现直接启动异步 accept 循环，使 StartListening 返回时监听已进入等待状态，仍保持异步、可取消和有界通知协议。
@@ -1006,8 +1006,9 @@ Native AOT：
   - SecondaryInstanceNotifiesPrimaryWithBoundedCommand 连续 12 轮通过；HistoryChangeBurstIsCoalescedIntoOneReload 连续 12 轮通过。
   - macOS 平台项目 Release build 0 警告、0 错误；完整解决方案 443 项通过、25 项按平台条件跳过、0 项失败。
   - 本机 `osx-x64` Native AOT 发布通过：主程序 37,186,632 字节（SHA-256 `1d4fdd3ef544a237d0464ad5d6cfdcd6bb17287835f82ec9fa1053d6e6268e0e`），独立 StorageMigrator 8,554,488 字节（SHA-256 `8d9e3c6cf9bd0115cab759da91d611696ad38be470dba9630007d66df2920320`）；两者均为 x86_64 Mach-O，helper 无参数退出码 4，发布目录无 CoreCLR/hostfxr。仅有 2 条已解释的 .NET Apple NativeAOT clang module-cache 调试信息警告，无未解释 trim/AOT 警告。
+  - GitHub Actions [run 30511261556](https://github.com/wuliangtdi/SnapBoard/actions/runs/30511261556)（commit `912e660`）全绿：Windows/macOS ARM/Intel Build/Test 和 `win-x64`/`osx-arm64`/`osx-x64` Native AOT 均成功；macos-15-intel 共 468 项，其中 443 项通过、25 项按平台条件跳过，两个原失败用例均通过。
 限制：
-  - 本机为 Apple Silicon，重复测试不能替代 GitHub macos-15-intel Runner；推送后的远程结果必须继续记录。
+  - 本机为 Apple Silicon；GitHub macos-15-intel Runner 已通过自动测试，但仍不替代 Intel 实体机上的物理键盘、窗口和多显示器交互验收。
   - Linux 失败被显式暂停而非修复；恢复 Linux CI 前必须补齐并锁定 Linux Skia 原生资产，再重新执行 Build/Test 与 Native AOT。
 ```
 
