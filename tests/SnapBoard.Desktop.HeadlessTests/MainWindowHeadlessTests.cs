@@ -97,6 +97,31 @@ public sealed class MainWindowHeadlessTests
     }
 
     [AvaloniaFact]
+    public void QuickWindowButtonUsesTheExplicitApplicationCommand()
+    {
+        MainViewModel viewModel = new();
+        MainWindow window = CreateWindow(viewModel);
+        int requested = 0;
+        viewModel.QuickWindowRequested += (_, _) => requested++;
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Button quickWindowButton = window.FindControl<Button>("QuickWindowButton")!;
+            ActivateButton(window, quickWindowButton);
+
+            Assert.Equal(1, requested);
+            Assert.Equal("打开快速窗口", ToolTip.GetTip(quickWindowButton));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public void HeaderSearchAdaptsToWindowWidthWithoutOverlappingCommands()
     {
         HeaderLayout normal = MeasureHeaderLayout(

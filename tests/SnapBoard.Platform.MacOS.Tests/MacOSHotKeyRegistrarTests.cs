@@ -59,6 +59,195 @@ public sealed class MacOSHotKeyRegistrarTests
         Assert.Equal([false, true, true, false], events.Select(value => value.IsRepeat));
     }
 
+    [Theory]
+    [InlineData(
+        GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+        0x3Au,
+        0u)]
+    [InlineData(
+        GlobalHotKeyModifiers.Control |
+            GlobalHotKeyModifiers.Shift |
+            GlobalHotKeyModifiers.NoRepeat,
+        0x38u,
+        1u << 12)]
+    [InlineData(
+        GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+        0x07u,
+        1u << 11)]
+    public void ModifierMainKeyIsNotDuplicatedInCarbonModifierMask(
+        GlobalHotKeyModifiers modifiers,
+        uint virtualKey,
+        uint expectedCarbonModifiers)
+    {
+        FakeMacOSHotKeyNative native = new();
+        using MacOSHotKeyRegistrar registrar = new(native);
+        GlobalHotKeyGesture gesture = new(modifiers, virtualKey, "test");
+
+        GlobalHotKeyRegistrationResult result = registrar.Register(
+            GlobalHotKeySlot.Double,
+            gesture);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, result.Status);
+        Registration registration = Assert.Single(native.Registrations);
+        Assert.Equal(virtualKey, registration.VirtualKey);
+        Assert.Equal(expectedCarbonModifiers, registration.Modifiers);
+    }
+
+    [Fact]
+    public void ModifierEventsEmitOnlyOnCompletePressTransitions()
+    {
+        FakeMacOSHotKeyNative native = new();
+        using MacOSHotKeyRegistrar registrar = new(native);
+        List<MacOSHotKeyNativeEvent> events = [];
+        registrar.Triggered += events.Add;
+        registrar.Register(
+            GlobalHotKeySlot.Double,
+            new GlobalHotKeyGesture(
+                GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+                0x3A,
+                "Option"));
+        NativeEventHotKeyId identifier =
+            MacOSHotKeyRegistrar.CreateIdentifier(GlobalHotKeySlot.Double);
+
+        registrar.ProcessNativeEvent(5, identifier);
+        native.PressedKeys.Add(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Remove(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Add(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Remove(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+
+        Assert.Equal(2, events.Count);
+        Assert.All(events, value =>
+        {
+            Assert.Equal(GlobalHotKeySlot.Double, value.Source);
+            Assert.False(value.IsRepeat);
+        });
+    }
+
+    [Fact]
+    public void ModifierCombinationTriggersOnlyWhenOtherModifiersPrecedeMainKey()
+    {
+        FakeMacOSHotKeyNative native = new();
+        using MacOSHotKeyRegistrar registrar = new(native);
+        List<MacOSHotKeyNativeEvent> events = [];
+        registrar.Triggered += events.Add;
+        registrar.Register(
+            GlobalHotKeySlot.Double,
+            new GlobalHotKeyGesture(
+                GlobalHotKeyModifiers.Control |
+                    GlobalHotKeyModifiers.Shift |
+                    GlobalHotKeyModifiers.NoRepeat,
+                0x38,
+                "Control+Shift"));
+
+        native.PressedKeys.Add(0x38);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Add(0x3B);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Remove(0x38);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Add(0x38);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Remove(0x38);
+        registrar.ProcessNativeEvent(4, default);
+
+        MacOSHotKeyNativeEvent trigger = Assert.Single(events);
+        Assert.Equal(GlobalHotKeySlot.Double, trigger.Source);
+        Assert.False(trigger.IsRepeat);
+    }
+
+    [Fact]
+    public void ModifierEventsRejectUnexpectedAdditionalModifiers()
+    {
+        FakeMacOSHotKeyNative native = new();
+        using MacOSHotKeyRegistrar registrar = new(native);
+        List<MacOSHotKeyNativeEvent> events = [];
+        registrar.Triggered += events.Add;
+        registrar.Register(
+            GlobalHotKeySlot.Double,
+            new GlobalHotKeyGesture(
+                GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+                0x3A,
+                "Option"));
+
+        native.PressedKeys.UnionWith([0x3A, 0x3B]);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Clear();
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Add(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Clear();
+        registrar.ProcessNativeEvent(4, default);
+
+        MacOSHotKeyNativeEvent trigger = Assert.Single(events);
+        Assert.Equal(GlobalHotKeySlot.Double, trigger.Source);
+    }
+
+    [Fact]
+    public void OverlappingModifierBindingsRemainSlotSpecific()
+    {
+        FakeMacOSHotKeyNative native = new();
+        using MacOSHotKeyRegistrar registrar = new(native);
+        List<MacOSHotKeyNativeEvent> events = [];
+        registrar.Triggered += events.Add;
+        registrar.Register(
+            GlobalHotKeySlot.Primary,
+            new GlobalHotKeyGesture(
+                GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+                0x3A,
+                "Option"));
+        registrar.Register(
+            GlobalHotKeySlot.Double,
+            new GlobalHotKeyGesture(
+                GlobalHotKeyModifiers.Control |
+                    GlobalHotKeyModifiers.Alt |
+                    GlobalHotKeyModifiers.NoRepeat,
+                0x3A,
+                "Control+Option"));
+
+        native.PressedKeys.Add(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Clear();
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.UnionWith([0x3A, 0x3B]);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Clear();
+        registrar.ProcessNativeEvent(4, default);
+
+        Assert.Collection(
+            events,
+            primary => Assert.Equal(GlobalHotKeySlot.Primary, primary.Source),
+            doubleTrigger => Assert.Equal(GlobalHotKeySlot.Double, doubleTrigger.Source));
+    }
+
+    [Fact]
+    public void ClearingModifierSlotRemovesFallbackTrigger()
+    {
+        FakeMacOSHotKeyNative native = new();
+        using MacOSHotKeyRegistrar registrar = new(native);
+        List<MacOSHotKeyNativeEvent> events = [];
+        registrar.Triggered += events.Add;
+        registrar.Register(
+            GlobalHotKeySlot.Double,
+            new GlobalHotKeyGesture(
+                GlobalHotKeyModifiers.Alt | GlobalHotKeyModifiers.NoRepeat,
+                0x3A,
+                "Option"));
+
+        GlobalHotKeyRegistrationResult result = registrar.Clear(GlobalHotKeySlot.Double);
+        native.PressedKeys.Add(0x3A);
+        registrar.ProcessNativeEvent(4, default);
+        native.PressedKeys.Clear();
+        registrar.ProcessNativeEvent(4, default);
+
+        Assert.Equal(GlobalHotKeyRegistrationStatus.Registered, result.Status);
+        Assert.Empty(events);
+    }
+
     [Fact]
     public void ConflictAndFailedOldReleasePreservePreviousSlot()
     {
@@ -128,11 +317,17 @@ public sealed class MacOSHotKeyRegistrarTests
 
         public List<nint> UnregisteredReferences { get; } = [];
 
+        public HashSet<uint> PressedKeys { get; } = [];
+
         public int InstallEventHandler(
             delegate* unmanaged[Cdecl]<nint, nint, nint, int> handler,
+            delegate* unmanaged[Cdecl]<nint, void> modifierHandler,
             nint userData,
             out nint handlerReference)
         {
+            _ = handler;
+            _ = modifierHandler;
+            _ = userData;
             handlerReference = 1;
             return 0;
         }
@@ -174,6 +369,8 @@ public sealed class MacOSHotKeyRegistrarTests
             identifier = default;
             return false;
         }
+
+        public bool IsKeyPressed(uint virtualKey) => PressedKeys.Contains(virtualKey);
     }
 
     private sealed record Registration(

@@ -66,6 +66,13 @@ internal static partial class MacOSNativeMethods
         nuint argument);
 
     [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
+    internal static partial nint SendIntPtrWithNUIntIntPtr(
+        nint receiver,
+        nint selector,
+        nuint firstArgument,
+        nint secondArgument);
+
+    [LibraryImport(ObjectiveCRuntime, EntryPoint = "objc_msgSend")]
     internal static partial nint SendIntPtrWithInt32(
         nint receiver,
         nint selector,
@@ -198,6 +205,10 @@ internal static partial class MacOSNativeMethods
 
     [LibraryImport(CoreGraphics, EntryPoint = "CGEventPost")]
     internal static partial void CGEventPost(int tapLocation, nint keyboardEvent);
+
+    [LibraryImport(CoreGraphics, EntryPoint = "CGEventSourceKeyState")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static partial bool CGEventSourceKeyState(int stateId, ushort virtualKey);
 
     [LibraryImport(CoreGraphics, EntryPoint = "CGColorSpaceCreateDeviceRGB")]
     internal static partial nint CGColorSpaceCreateDeviceRGB();

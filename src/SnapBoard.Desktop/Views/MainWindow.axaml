@@ -89,6 +89,13 @@
                         </StackPanel>
                     </Button>
 
+                    <Button x:Name="QuickWindowButton"
+                            Classes="icon"
+                            Command="{Binding OpenQuickWindowCommand}"
+                            ToolTip.Tip="打开快速窗口">
+                        <materialIcons:MaterialIcon Width="21" Height="21" Kind="WindowOpen" />
+                    </Button>
+
                     <Button Classes="icon"
                             Command="{Binding ToggleRecordingPauseCommand}"
                             ToolTip.Tip="暂停或恢复剪贴板记录">

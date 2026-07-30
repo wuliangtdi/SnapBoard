@@ -3,8 +3,8 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：快速窗口双击快捷键与全屏保护的阶段 B 已完成 macOS 原生实现、自动验证和当前 Apple Silicon 环境内的窗口/AOT 验证；完成定义仍缺物理键盘长按、物理多显示器、Retina 及应用内按钮实机证据
-> 实现状态：Windows 保持既有共享两槽快捷键、双击状态机、前台检测和可组合暂停行为；macOS 已接入两个 Carbon Hot Key ID、NSUserDefaults 当前格式、五态前台窗口检测、共享快捷键控制器、记录前置保护和分离状态文案，不读取开发期快捷键格式，也不使用全局键盘 Hook、Screen Recording 或窗口标题进行判定
+> 当前阶段：快速窗口双击快捷键与全屏保护的阶段 B 已完成 macOS 原生实现、纯修饰键修复、自动验证和当前 Apple Silicon 环境内的窗口/AOT/应用内按钮验证；完成定义仍缺物理键盘长按、物理多显示器和 Retina 证据
+> 实现状态：Windows 保持既有共享两槽快捷键、双击状态机、前台检测和可组合暂停行为；macOS 已接入两个 Carbon Hot Key ID、modifier-only 状态变化边界、NSUserDefaults 当前格式、五态前台窗口检测、共享快捷键控制器、记录前置保护和分离状态文案，不读取开发期快捷键格式，也不使用全局键盘 Hook、Screen Recording 或窗口标题进行判定
 > 本次目标口径：实施 `docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md` 第 13.4 节阶段 B；代码与当前可用环境验证已完成，但整个跨平台功能保持部分完成，不能用单显示器非 Retina 与合成输入结果外推尚缺的真实硬件/物理输入验收
 > 总体顺序：Windows -> macOS -> Linux
 
@@ -560,7 +560,7 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 - [~] 实现开机启动、暂停记录和退出流程。
 - [x] 完成第一轮视觉评审和 Avalonia Headless 测试。
 - [x] 完成快速窗口双击快捷键与全屏保护阶段 A：共享两槽来源/状态机、Windows 双 `RegisterHotKey`、HKCU 本机设置、前台窗口分类、默认仅全屏保护、可选最大化保护、记录保护和可组合暂停原因均已接线并验证。
-- [~] 完成快速窗口双击快捷键与全屏保护阶段 B：macOS 两槽 Carbon、NSUserDefaults、前台五态检测、共享保护接线、真实普通/zoomed/原生全屏/无边框全屏/全屏视频、三轮多 Space 往返和双架构 AOT 已通过；物理长按、物理多显示器、Retina 与应用内按钮点击仍待匹配条件。
+- [~] 完成快速窗口双击快捷键与全屏保护阶段 B：macOS 两槽 Carbon、纯修饰键完整按下/松开、NSUserDefaults、前台五态检测、共享保护接线、真实普通/zoomed/原生全屏/无边框全屏/全屏视频、三轮多 Space 往返、应用内按钮点击和双架构 AOT 已通过；物理长按、物理多显示器与 Retina 仍待匹配条件。
 
 当前已实现每用户单实例及命名管道激活、托盘后台生命周期、按需创建并释放主/快速/设置窗口、原生全局快捷键、按键直接录入、冲突回滚、恢复默认、Per-Monitor V2 定位、前台目标保存、开机启动配置、暂停记录和明确退出。设置页和快捷搜索窗口已改用与主窗口一致的品牌、表面、间距、列表选中态和主次命令样式；WebDAV 设置按“创建/加入空间配置 -> 保存并验证 -> 迁移已有空间”排序，迁移状态机、字段和命令保持不变。Windows 主窗口打开设置时使用 owned modal，设置打开期间主窗口不接收输入，存储迁移确认与最终校验错误继续作为设置窗口的嵌套模态窗口。快捷键不再限定预设列表，Windows 平台层负责将普通单键、单个修饰键、只含修饰键的组合，以及字母、数字、数字键盘、F1-F24、导航、浏览器、媒体和常用标点组合映射为原生注册值；Primary 和 Double 使用同一录入能力，现有 Primary 默认值保持不变。第二槽默认未设置，使用独立且带 `MOD_NOREPEAT` 的注册 ID；共享控制器只在同一第二槽完整触发两次后打开一次快速窗口，超时、捕获、保护、配置变化和生命周期退出都会清理待定状态。Windows 前台检测按前台窗口所属显示器区分 Normal、Maximized、FullScreen、Unknown 与 Unavailable，并排除 SnapBoard 自身；默认范围只保护独占/原生全屏和整屏无边框全屏，严格范围可额外保护 Maximized；保护只拦截全局 Primary/Double，托盘、按钮和 `--quick` 保持显式放行。Windows 实机已用隔离 Chrome 原生最大化和本地 ffplay 全屏探针验证状态范围，自动测试覆盖默认放行与严格保护。原生热键冲突由两个真实 message-only window 验证。多个普通主键同时组成的 `A+B` 式全局组合仍受原生 API 限制且不会通过全局 Hook 实现。物理键盘人工长按、真实 HKCU 开机启动和 8 小时常驻仍待交互验收，因此其他组合条目保持部分完成。
 
@@ -658,9 +658,9 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] 实现 macOS 固定 bootstrap、legacy 数据根识别、APFS/文件身份/路径关系/私有权限/云盘边界和身份校验进程控制，并复用共享存储迁移状态机；真实扩展 ACL 已覆盖空目录清理、非空目录不修改及其他主体授权拒绝。
 - [x] macOS 组合根接入真实 `SyncService`、历史策略与存储管理；共享设置页四个区域可见，owner 存在时使用 modal，迁移准备、失败恢复和 ViewModel 释放顺序已由 Headless 测试覆盖。
 - [x] macOS 系统唤醒与网络全局状态变化通过平台抽象合并为 `SyncService.RequestSync()`；原生 observer/dynamic store 注册、非托管回调、重复启动与释放后解绑已测试，周期轮询继续作为失败兜底。
-- [~] 实现快速窗口双击快捷键与全屏保护阶段 B：已复用共享接口、状态机、ViewModel、UI 与可组合暂停原因，完成 macOS 原生两槽 Carbon、NSUserDefaults 当前格式、前台窗口五态检测和保护接线；当前 M4 实机的普通/zoomed/原生全屏 Space/无边框全屏/全屏视频、三轮多 Space 往返、权限允许与拒绝、菜单栏/`--quick` 放行及手动暂停组合已验证，物理长按、物理多显示器、Retina 与应用内按钮点击仍待条件。
+- [~] 实现快速窗口双击快捷键与全屏保护阶段 B：已复用共享接口、状态机、ViewModel、UI 与可组合暂停原因，完成 macOS 原生两槽 Carbon、纯修饰键状态变化边界、NSUserDefaults 当前格式、前台窗口五态检测和保护接线；当前 M4 实机的普通/zoomed/原生全屏 Space/无边框全屏/全屏视频、三轮多 Space 往返、权限允许与拒绝、纯 Option 前后台双击、菜单栏/应用内按钮/`--quick` 放行及手动暂停组合已验证，物理长按、物理多显示器与 Retina 仍待条件。
 
-当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。两槽热键只监听两个固定 Carbon ID 的 press/release，release 仅用于平台边界的重复识别；不安装全局 Hook。前台保护先取 `NSWorkspace.frontmostApplication` 的 PID，排除 SnapBoard 自身，再用不弹窗的 `AXIsProcessTrusted`、AX 位置/尺寸/全屏标志、CGWindow 元数据和 NSScreen 点坐标判定，不申请 Screen Recording，也不读取标题、游戏名、文档路径或剪贴板正文。轮询 tick 只读取 `changeCount`；发现变化时额外快照当时的前台 PID，并向有界 Channel 写入轻量事件，正文、SQLite 和网络不进入轮询路径。读取相同 `changeCount` 时才把该 PID 作为 `ForegroundWindowAtChange` 最佳努力来源，通过 `NSRunningApplication` 解析名称与可执行路径；这不是 NSPasteboard owner，后台脚本、快速切换或 PID 失效时必须降级 `Unknown`。App Bundle 图标通过 `NSWorkspace` 在平台主线程解析为固定 32 x 32 BGRA，并使用 256 项有界缓存。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。剪贴板完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`，本次快捷键与全屏保护证据见 `docs/PROGRESS.md` 第 30 节。
+当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。普通主键继续只处理两个固定 Carbon ID 的 press/release；修饰键作为主键时，活动态只接收 AppKit 本地 `flagsChanged`，非活动态只接收 Carbon `kEventRawKeyModifiersChanged`，再读取已配置修饰键的当前状态完成按下/松开边沿，不订阅 RawKeyDown/RawKeyUp/RawKeyRepeat、普通键或文本，也不安装 CGEventTap/全局 Hook。前台保护先取 `NSWorkspace.frontmostApplication` 的 PID，排除 SnapBoard 自身，再用不弹窗的 `AXIsProcessTrusted`、AX 位置/尺寸/全屏标志、CGWindow 元数据和 NSScreen 点坐标判定，不申请 Screen Recording，也不读取标题、游戏名、文档路径或剪贴板正文。轮询 tick 只读取 `changeCount`；发现变化时额外快照当时的前台 PID，并向有界 Channel 写入轻量事件，正文、SQLite 和网络不进入轮询路径。读取相同 `changeCount` 时才把该 PID 作为 `ForegroundWindowAtChange` 最佳努力来源，通过 `NSRunningApplication` 解析名称与可执行路径；这不是 NSPasteboard owner，后台脚本、快速切换或 PID 失效时必须降级 `Unknown`。App Bundle 图标通过 `NSWorkspace` 在平台主线程解析为固定 32 x 32 BGRA，并使用 256 项有界缓存。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。剪贴板完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`，本次快捷键与全屏保护证据见 `docs/PROGRESS.md` 第 30、31 节。
 
 #### 2.2 跨平台一致性
 

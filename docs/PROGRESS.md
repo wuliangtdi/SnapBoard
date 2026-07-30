@@ -949,7 +949,49 @@ Native AOT：
   - 因上述真实输入/硬件/UI 缺口，阶段 B 代码可合入并供后续匹配环境验收，但不满足文档的整个跨平台完成定义，PLAN.md 与本节均保持 [~]。
 ```
 
-## 31. 更新规则
+## 31. 2026-07-30 执行记录：macOS 纯修饰键快捷键与应用内入口修复
+
+```text
+日期：2026-07-30
+阶段/任务：补齐阶段 B 实机验收发现的纯 Option 不触发和应用内快速窗口入口缺口
+状态：[x] 代码、自动测试、前后台原生事件、arm64/x64 Native AOT 与应用内按钮实点完成；[ ] 物理键盘长按、物理多显示器和 Retina 仍按第 30 节保留为完成定义缺口
+开发基线：687febdca117e22b389a665ec9cda0e144b21f28（开发前 main 与 origin/main 一致，且包含第 30 节阶段 B 实现）
+分支：codex/macos-modifier-only-hotkey-fix
+用户配置：NSUserDefaults DoubleHotKey=16385|58|Option
+
+根因与实现：
+  - 设置录入、NSUserDefaults 校验和两槽共享状态机都已接受纯 Option；实际缺陷在 MacOSHotKeyRegistrar：Carbon RegisterEventHotKey 可以返回成功，但单独按下/松开修饰键不会稳定产生 HotKeyPressed/Released，因此“保存成功”不能证明物理事件可用。
+  - 普通主键继续使用签名固定、ID=1/2 的两组 Carbon Hot Key。修饰键作为主键时，Carbon 注册仍保留对应槽和冲突语义，但从 Carbon modifier mask 去掉主修饰键本身；实际完整触发由状态变化边沿补齐。
+  - SnapBoard 活动时仅安装 AppKit 本地 flagsChanged monitor，非活动时仅安装 Carbon kEventRawKeyModifiersChanged monitor；回调只查询已配置修饰键及四组平台修饰键当前状态。没有订阅 RawKeyDown、RawKeyUp、RawKeyRepeat、普通键、字符或文本，没有使用 CGEventTap/全局键盘 Hook，也没有新增持续 Timer 轮询。
+  - 每槽分别维护 held/armed。只有主修饰键从未按下变为按下、其他修饰键与配置精确匹配并再次松开，才发布一次 IsRepeat=false；长按和重复状态变化不重复发布，额外修饰键拒绝，Primary/Double 重叠组合仍按来源隔离，清除槽会清空边沿状态。
+  - AppKit block 使用显式原生布局和 UnmanagedCallersOnly 回调，返回原 NSEvent，不消费或改写应用键盘流；Carbon modifier 回调返回 eventNotHandledErr。处理器、block descriptor、GCHandle 和两个 Carbon 注册均在主线程生命周期内释放，JIT 正常退出和两架构 AOT 均已通过。
+  - 主窗口新增可见 WindowOpen 图标按钮，直接绑定既有 MainViewModel.OpenQuickWindowCommand；没有新增第二套窗口打开流程。Headless 用例验证按钮命令和“打开快速窗口”提示，arm64 AOT 主窗口实际点击验证窗口数从 1 增至 2。
+
+自动验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format --verify-no-changes、Release build 全部通过；build 为 0 警告、0 错误。
+  - 全量 468 项：443 项通过、25 项按当前平台/外部服务条件跳过、0 项失败。分项目为 Application 17/17、Architecture 2/2、Domain 4/4、Linux 1/1、Windows 77 通过/24 跳过、Update 16/16、Sync.WebDav 38/38、Infrastructure 94 通过/1 跳过、Desktop Headless 103/103、macOS Platform 91/91。
+  - macOS 新增测试覆盖主修饰键不重复进入 Carbon mask、完整按下/松开只发布一次、组合顺序、额外修饰键拒绝、两槽重叠来源隔离和清除槽；桌面新增测试覆盖可见按钮绑定显式应用命令。
+  - Windows 生产项目无代码差异，Windows Platform 既有 77 项在 macOS 通过、24 项仅因目标平台跳过；整个解决方案依赖边界保持成立。
+
+真实 macOS 与 AOT 证据：
+  - Release JIT 中，SnapBoard 前台和后台均得到窗口数 1 -> 1 -> 2：第一次完整 Option 只进入等待，第二次才创建一个快速窗口。长按 Option 1 秒期间、松开后超过双击时间以及连续两次 Control+Option 后均保持 1 个窗口；说明系统重复和不匹配组合不会完成 Double。
+  - 同一 JIT 进程运行约 2 分钟后的 ps 空闲样本为 0.0% CPU；实现没有此前 8 ms Timer 方案的持续约 1.5%-2.4% 空转开销。正常 Command+Q 退出成功，没有 block/Carbon 回调释放崩溃。
+  - osx-arm64 Native AOT 后台纯 Option 同样为 1 -> 1 -> 2，快速窗口为 680 x 512；关闭后从真实主窗口点击新增按钮，窗口数从 1 变为 2。该按钮、菜单栏和 --quick 均继续走显式 ShowExplicitly 路径，不受全局快捷键保护拦截。
+  - osx-x64 Native AOT 在 Rosetta 中前台和后台纯 Option 均为 1 -> 1 -> 2，并可正常退出。当前证据验证 x64 产物在 Apple Silicon/Rosetta 上运行，不等同 Intel 物理机验收。
+
+Native AOT：
+  - osx-arm64 Desktop 36,169,856 字节，SHA-256 4F11DD7A2B531F8EC1AC5557849059D506EB9AEC0AF6BF00451BD42ED804CEA4；独立 StorageMigrator 8,356,968 字节，SHA-256 D164169CD5793E9006E597F64D888303DB34CFF13D56FDC75538FAE39769F326。
+  - osx-x64 Desktop 37,186,640 字节，SHA-256 4C90381E606BF36DB8EA63E1A65007A3BFE3E62245715344301667D8F2E190E9；独立 StorageMigrator 8,554,488 字节，SHA-256 404D19CD043EDD8AE66288323F8207025C8BB7D0A03733EDBC060E979999107C。
+  - scripts/macos/Verify-NativePublish.sh 对两个 RID 均通过：主程序/helper 为正确 arm64/x86_64 Mach-O，helper 无参数退出码 4，发布目录没有 CoreCLR、hostfxr、deps.json 或 runtimeconfig.json。
+  - 两个 RID 均为 0 个 trim/AOT 分析告警。每个 Desktop 发布仍有 2 条已解释的 .NET 10.0.10 Apple NativeAOT 静态库 clang module-cache 调试信息告警；没有 suppression，也不是本次互操作代码产生的 trim/AOT 告警。
+
+剩余限制：
+  - 当前环境没有可用于人工验收的物理键盘设备；本节 Option、长按和组合均由 System Events 产生完整系统按下/松开事件，足以验证真实 AppKit/Carbon/AOT 回调链，但不冒充不同 HID 驱动下的物理长按证据。
+  - 物理多显示器、Retina、真实游戏和 Intel 物理机仍未新增证据，继续沿用第 30 节限制；因此整个跨平台功能在 PLAN.md 中保持 [~]，不提前标记完成。
+  - data/、凭据、临时数据库、AOT 输出和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 均不进入提交。
+```
+
+## 32. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

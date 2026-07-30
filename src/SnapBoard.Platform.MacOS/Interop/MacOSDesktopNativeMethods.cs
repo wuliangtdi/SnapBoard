@@ -60,6 +60,9 @@ internal static partial class MacOSNativeMethods
     [LibraryImport(Carbon, EntryPoint = "GetApplicationEventTarget")]
     internal static partial nint GetApplicationEventTarget();
 
+    [LibraryImport(Carbon, EntryPoint = "GetEventMonitorTarget")]
+    internal static partial nint GetEventMonitorTarget();
+
     [LibraryImport(Carbon, EntryPoint = "InstallEventHandler")]
     internal static unsafe partial int InstallEventHandler(
         nint target,
