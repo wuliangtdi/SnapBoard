@@ -21,7 +21,6 @@ public sealed class RuntimeMainViewModelTests
                 ? new ClipboardHistoryPage(
                     summaries[..50],
                     new ClipboardHistoryCursor(
-                        false,
                         summaries[49].CapturedAt.ToUnixTimeMilliseconds(),
                         summaries[49].Id),
                     summaries.Length)

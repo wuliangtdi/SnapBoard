@@ -1,6 +1,6 @@
 # SnapBoard 执行进度
 
-> 最后更新：2026-07-30
+> 最后更新：2026-07-31
 > 当前阶段：共享 WebDAV 服务商迁移与 macOS 对等实现已关闭代码目标；macOS 来源应用最佳努力识别、原生图标和“闪剪”系统身份已落地。跨平台分架构自动更新、GitHub/官方多源、P-256 签名 feed、设置 UI、安装编排及本机 `osx-arm64` Velopack 包已落地；正式已安装版本升级、自建官方源、远程 Runner、系统代码签名与发布继续收口
 > 本次目标状态：已完成当前可用环境内的实现与验证；其余项目均为缺少对应设备、服务或发布身份的外部验收，继续如实列为待验证，但不阻塞本开发目标关闭
 > 总体状态：进行中
@@ -393,7 +393,7 @@ SQLite v8 只保存计划 ID、epoch、远端指纹、阶段、水位和进度�
   - 新增版本化同步 DTO、源生成 JSON、HKDF-SHA256、AES-256-GCM、keyed-blob-id、Argon2id 恢复材料，以及 Windows Credential Manager 主密钥/完整连接配置分离存储；SQLite v7 不含 URL、用户名或密码字段。
   - 新增受限 WebDAV 客户端和 ISyncRemoteSession 适配器；实现不可变事件/Blob、严格 PROPFIND、同源重定向、证书固定、有限重试和稳定错误分类；精确指纹可接受自签名链但不接受主机名不匹配。
   - Desktop 组合根接入真实 SyncService；设置页支持创建/加入空间、恢复材料、连接验证和手动同步，主窗口只显示真实同步状态；存储迁移会暂停并排空同步。
-  - 新增 `history.capture` 与 `history.retention` 动态设置：内容类型默认全开，自动清理默认关闭；设置使用加密事件逐键 LWW 同步，清理跳过置顶项并产生跨设备删除墓碑。
+  - 新增 `history.capture` 与 `history.retention` 动态设置：内容类型默认全开，自动清理默认关闭；设置使用加密事件逐键 LWW 同步。当时清理固定跳过置顶项并产生跨设备删除墓碑，现已由第 38 节改为默认保留且可配置。
   - 新增 `sync.pollInterval` 动态设置：缺省使用 5 分钟，设置页可选 30 秒到 1 小时，修改后当前调度器立即生效并通过加密事件同步到其他设备；本地变化始终立即触发同步。
   - WebDAV 表单统一 40 px、6 px 圆角输入样式；创建/加入、同步频率、证书指纹、恢复码、空间 ID、密钥版本和恢复材料均有用途说明，创建结果显示并可复制空间 ID、打开恢复文件目录。
   - 主窗口搜索区随窗口宽度自适应；Windows 来源图标的空 Shell 结果不再进入长期缓存，具备路径或 AUMID 的列表项会进行一次有限重试。
@@ -1173,7 +1173,40 @@ Windows 实机迁移：
   - 当前公开 v0.1.1 安装包不包含本修复；上述实机验证使用本地最新 AOT 产物。
 ```
 
-## 38. 更新规则
+## 38. 2026-07-31 执行记录：收藏清理保护与纯时间顺序
+
+```text
+日期：2026-07-31
+阶段/任务：自动清理默认保留收藏；主窗口与快速窗口取消收藏排序优先级
+状态：[x] 共享设置、SQLite、设置 UI、自动测试、Windows Native AOT 与本机清理完成
+开发基线：7aa9b0a63fcc550a654111baa0ff2dc3ca2e26ba（开发前 main 与 origin/main 一致）
+
+实现内容：
+  - history.retention 新增 PreserveFavorites，默认开启并继续通过现有加密设置事件逐键同步；设置页“自动清理历史”下新增 settings-toggle，允许用户明确选择是否让收藏内容参与自动清理。
+  - ClipboardRetentionPolicy 与 SQLite 保留期候选集接入该选项。默认策略排除收藏；关闭保护后，收藏与普通记录共同参与天数、数量和容量限制，并产生原有 Delete 墓碑。
+  - 普通查询删除 is_pinned 排序和游标分段；FTS 查询删除“收藏阶段/非收藏阶段”两阶段分页，统一按 search_order_key 的时间顺序分页。收藏仍保留为独立筛选条件和记录属性。
+  - 当前数据库创建脚本的活动顺序索引改为 is_deleted + captured_at_utc + id，FTS 顺序索引不再包含 is_pinned。按产品决定不实现旧设置或旧数据库格式兼容。
+  - 同步协议和 PLAN 已更新为“自动清理默认关闭；开启时默认保留收藏，可由用户关闭保护”。
+
+验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format SnapBoard.slnx --verify-no-changes --no-restore 和 Release build 通过；build 0 警告、0 错误。
+  - 全量 481 项：459 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Infrastructure 101/102（1 条外部 WebDAV 跳过），Desktop Headless 106/106。
+  - 回归覆盖默认保留收藏、关闭后收藏参与年龄/数量/容量清理、选项持久化与重启恢复、false 值跨设备同步、普通列表双向时间排序、普通/FTS 收藏筛选跨页不重不漏，以及设置页默认状态/样式。
+  - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,420,352 字节，独立 SnapBoard.StorageMigrator.exe 为 4,514,304 字节；迁移器无 .dll、.deps.json 或 .runtimeconfig.json sidecar。
+  - AOT 使用独立 bootstrap 数据目录启动后进程可响应、主窗口句柄非零，并通过 --exit 以 0 退出；验证产物随后按用户要求删除。
+
+本机清理：
+  - 已通过产品码 {EA45DF46-E76D-4DD1-9BC6-B8284F9C7104} 卸载 0.1.1 MSI；HKCU/HKLM 卸载登记、D:\SoftWare\SnapBoard、桌面/开始菜单快捷方式均已消失。
+  - 已永久删除 D:\ProgramData\SnapBoard_Data、C:\Users\ozonechen\AppData\Local\SnapBoard（含 bootstrap 与迁移回滚备份）、HKCU\Software\SnapBoard、SnapBoard 开机启动值，以及仓库 artifacts/ 和 %TEMP% 下的 SnapBoard 测试残留。
+  - 复查结果为 0 个 SnapBoard 进程、0 个安装登记、0 个已知数据/配置/快捷方式/启动项残留；未发现 com.wuliangtdi.snapboard/ Credential Manager 条目。
+
+限制：
+  - 本轮按明确产品决定不保留或迁移任何旧本机数据；下次安装将创建全新数据库和设置。
+  - AOT 冒烟在独立数据目录执行，尚未对待 GitHub Actions 生成的新 MSI 做安装后人工界面验收。
+  - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
+```
+
+## 39. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

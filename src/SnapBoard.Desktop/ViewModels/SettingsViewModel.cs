@@ -391,6 +391,9 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public partial bool IsRetentionEnabled { get; set; }
 
     [ObservableProperty]
+    public partial bool PreserveFavoritesDuringRetention { get; set; } = true;
+
+    [ObservableProperty]
     public partial RetentionPeriodOption SelectedRetentionPeriod { get; set; } = ThirtyDays;
 
     [ObservableProperty]
@@ -864,14 +867,19 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             IsCaptureRichTextEnabled,
             IsCaptureImagesEnabled,
             IsCaptureFilesEnabled);
-        HistoryRetentionSettings retention = new(IsRetentionEnabled, retentionDays);
+        HistoryRetentionSettings retention = new(
+            IsRetentionEnabled,
+            retentionDays,
+            PreserveFavoritesDuringRetention);
         IsHistorySettingsBusy = true;
         try
         {
             await _historySettingsService.UpdateAsync(capture, retention, _lifetime.Token);
-            HistorySettingsStatus = IsRetentionEnabled
-                ? $"已保存并同步；置顶项保留，其他记录保留 {retentionDays} 天"
-                : "已保存并同步；历史不会自动清理";
+            HistorySettingsStatus = !IsRetentionEnabled
+                ? "已保存并同步；历史不会自动清理"
+                : PreserveFavoritesDuringRetention
+                    ? $"已保存并同步；收藏内容保留，其他记录保留 {retentionDays} 天"
+                    : $"已保存并同步；全部记录保留 {retentionDays} 天";
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
@@ -1825,13 +1833,16 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IsCaptureImagesEnabled = settings.Capture.Images;
         IsCaptureFilesEnabled = settings.Capture.Files;
         IsRetentionEnabled = settings.Retention.Enabled;
+        PreserveFavoritesDuringRetention = settings.Retention.PreserveFavorites;
         RetentionPeriodOption? preset = AvailableRetentionPeriods.FirstOrDefault(option =>
             !option.IsCustom && option.Days == settings.Retention.RetentionDays);
         SelectedRetentionPeriod = preset ?? AvailableRetentionPeriods[^1];
         CustomRetentionDays = settings.Retention.RetentionDays;
-        HistorySettingsStatus = settings.Retention.Enabled
-            ? $"置顶项不清理；其他记录保留 {settings.Retention.RetentionDays} 天"
-            : "历史不会自动清理";
+        HistorySettingsStatus = !settings.Retention.Enabled
+            ? "历史不会自动清理"
+            : settings.Retention.PreserveFavorites
+                ? $"收藏内容不清理；其他记录保留 {settings.Retention.RetentionDays} 天"
+                : $"全部记录保留 {settings.Retention.RetentionDays} 天";
     }
 
     private void OnSyncStatusChanged(object? sender, SyncStatusSnapshot status) =>

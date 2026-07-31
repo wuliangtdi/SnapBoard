@@ -48,7 +48,8 @@ public sealed partial class SqliteClipboardHistoryStore
                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                        ) AS retained_bytes
                 FROM clipboard_items
-                WHERE is_deleted = 0 AND is_pinned = 0
+                WHERE is_deleted = 0
+                  AND (@preservePinnedItems = 0 OR is_pinned = 0)
             )
             SELECT id
             FROM ranked
@@ -62,6 +63,9 @@ public sealed partial class SqliteClipboardHistoryStore
             (now - policy.MaximumAge).ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("@maximumItemCount", policy.MaximumItemCount);
         command.Parameters.AddWithValue("@maximumStorageBytes", policy.MaximumStorageBytes);
+        command.Parameters.AddWithValue(
+            "@preservePinnedItems",
+            policy.PreservePinnedItems ? 1 : 0);
         IReadOnlyList<string> identifiers = await ReadIdentifiersAsync(command, cancellationToken)
             .ConfigureAwait(false);
         return await DeleteItemsCoreAsync(connection, identifiers, cancellationToken)

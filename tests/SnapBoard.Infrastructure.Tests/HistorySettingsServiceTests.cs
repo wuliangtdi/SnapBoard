@@ -24,6 +24,7 @@ public sealed class HistorySettingsServiceTests
         await settings.InitializeAsync(CancellationToken.None);
 
         Assert.False(settings.Current.Retention.Enabled);
+        Assert.True(settings.Current.Retention.PreserveFavorites);
         Assert.Equal(
             Enum.GetValues<ClipboardContentKind>().Order(),
             captureOptions.EnabledContentKinds.Order());
@@ -90,6 +91,55 @@ public sealed class HistorySettingsServiceTests
                 CryptographicOperations.ZeroMemory(item.SerializedEvent);
             }
         }
+    }
+
+    [Fact]
+    public async Task RetentionFavoritePreferencePersistsAcrossRestart()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        ClipboardHistoryChangeNotifier notifier = new();
+        ClipboardHistoryService history = new(context.Store, notifier);
+        ClipboardCapturedItem favorite = CreateTextItem(
+            "favorite-to-clean",
+            DateTimeOffset.UtcNow.AddDays(-90));
+        await context.Store.SaveAsync(favorite, CancellationToken.None);
+        Assert.True(await context.Store.SetPinnedAsync(
+            favorite.Id,
+            true,
+            CancellationToken.None));
+
+        await using (HistorySettingsService first = new(
+            history,
+            context.Store,
+            new ClipboardCaptureOptions(),
+            notifier))
+        {
+            await first.InitializeAsync(CancellationToken.None);
+            await first.UpdateAsync(
+                HistoryCaptureSettings.Default,
+                new HistoryRetentionSettings(
+                    Enabled: true,
+                    RetentionDays: 60,
+                    PreserveFavorites: false),
+                CancellationToken.None);
+            Assert.Empty((await context.Store.SearchAsync(
+                new ClipboardHistoryQuery { PageSize = 10 },
+                CancellationToken.None)).Items);
+        }
+
+        await using HistorySettingsService restarted = new(
+            history,
+            context.Store,
+            new ClipboardCaptureOptions(),
+            notifier);
+        await restarted.InitializeAsync(CancellationToken.None);
+
+        Assert.Equal(
+            new HistoryRetentionSettings(
+                Enabled: true,
+                RetentionDays: 60,
+                PreserveFavorites: false),
+            restarted.Current.Retention);
     }
 
     private static ClipboardCapturedItem CreateTextItem(

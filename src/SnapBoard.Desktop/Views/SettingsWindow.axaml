@@ -729,7 +729,7 @@
                                         <TextBlock FontWeight="SemiBold" Text="自动清理历史" />
                                         <TextBlock FontSize="12"
                                                    Foreground="{DynamicResource SecondaryTextBrush}"
-                                                   Text="默认关闭。开启后只清理未置顶记录，删除状态会同步到其他设备。"
+                                                   Text="默认关闭。开启后按保留时间清理历史，删除状态会同步到其他设备。"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <ToggleSwitch Grid.Column="1"
@@ -737,6 +737,24 @@
                                                   OffContent="关闭"
                                                   OnContent="开启"
                                                   IsChecked="{Binding IsRetentionEnabled, Mode=TwoWay}" />
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,Auto"
+                                      IsVisible="{Binding IsRetentionEnabled}">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="自动清理时保留收藏内容" />
+                                        <TextBlock FontSize="12"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="默认开启。关闭后，收藏内容也会按保留时间自动清理。"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="PreserveFavoritesDuringRetentionToggle"
+                                                  Grid.Column="1"
+                                                  Classes="settings-toggle"
+                                                  OffContent="关闭"
+                                                  OnContent="开启"
+                                                  IsChecked="{Binding PreserveFavoritesDuringRetention, Mode=TwoWay}" />
                                 </Grid>
 
                                 <Grid ColumnDefinitions="*,*"

@@ -105,7 +105,7 @@ public sealed class SnapBoardDatabaseMigrator
                 tokenize = 'trigram'
             );
             """,
-            "CREATE INDEX ix_clipboard_items_active_order ON clipboard_items(is_deleted, is_pinned DESC, captured_at_utc DESC, id DESC);",
+            "CREATE INDEX ix_clipboard_items_active_order ON clipboard_items(is_deleted, captured_at_utc DESC, id DESC);",
             "CREATE INDEX ix_clipboard_items_hash_order ON clipboard_items(is_deleted, captured_at_utc DESC, id DESC, content_hash);",
             "CREATE INDEX ix_clipboard_items_source ON clipboard_items(is_deleted, source_process_name, captured_at_utc DESC);",
             "CREATE INDEX ix_clipboard_items_kind ON clipboard_items(is_deleted, primary_kind, display_category, captured_at_utc DESC);",
@@ -172,7 +172,7 @@ public sealed class SnapBoardDatabaseMigrator
             """,
             "CREATE UNIQUE INDEX ux_clipboard_items_search_order ON clipboard_items(search_order_key);",
             "CREATE INDEX ix_clipboard_items_capture_tie ON clipboard_items(captured_at_utc, search_order_key);",
-            "CREATE INDEX ix_clipboard_items_search_phase ON clipboard_items(is_deleted, is_pinned, search_order_key);",
+            "CREATE INDEX ix_clipboard_items_search_order ON clipboard_items(is_deleted, search_order_key);",
             "DROP TABLE clipboard_items_fts;",
             """
             CREATE VIRTUAL TABLE clipboard_items_fts USING fts5(

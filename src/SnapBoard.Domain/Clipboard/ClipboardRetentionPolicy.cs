@@ -1,7 +1,7 @@
 namespace SnapBoard.Domain.Clipboard;
 
 /// <summary>
-/// 本地历史的容量与过期边界。置顶记录由调用方显式豁免，不计入自动淘汰候选。
+/// 本地历史的容量与过期边界。
 /// </summary>
 public sealed record ClipboardRetentionPolicy
 {
@@ -11,7 +11,8 @@ public sealed record ClipboardRetentionPolicy
     public ClipboardRetentionPolicy(
         int maximumItemCount,
         TimeSpan maximumAge,
-        long maximumStorageBytes)
+        long maximumStorageBytes,
+        bool preservePinnedItems = true)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumItemCount);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maximumAge, TimeSpan.Zero);
@@ -19,6 +20,7 @@ public sealed record ClipboardRetentionPolicy
         MaximumItemCount = maximumItemCount;
         MaximumAge = maximumAge;
         MaximumStorageBytes = maximumStorageBytes;
+        PreservePinnedItems = preservePinnedItems;
     }
 
     public int MaximumItemCount { get; }
@@ -26,6 +28,8 @@ public sealed record ClipboardRetentionPolicy
     public TimeSpan MaximumAge { get; }
 
     public long MaximumStorageBytes { get; }
+
+    public bool PreservePinnedItems { get; }
 
     public static ClipboardRetentionPolicy Default { get; } = new(
         DefaultMaximumItemCount,

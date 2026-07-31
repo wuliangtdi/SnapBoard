@@ -602,7 +602,54 @@ public sealed class SqliteClipboardHistoryStoreTests
     }
 
     [Fact]
-    public async Task FtsPaginationCrossesPinnedBoundaryWithoutDuplicates()
+    public async Task SearchKeepsChronologicalOrderWhenOlderItemIsFavorite()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        DateTimeOffset start = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10);
+        ClipboardCapturedItem[] items = Enumerable.Range(0, 4)
+            .Select(index => CreateTextItem($"chronological-{index}", start.AddMinutes(index)))
+            .ToArray();
+        foreach (ClipboardCapturedItem item in items)
+        {
+            await context.Store.SaveAsync(item, CancellationToken.None);
+        }
+
+        Assert.True(await context.Store.SetPinnedAsync(items[0].Id, true, CancellationToken.None));
+        Assert.True(await context.Store.SetPinnedAsync(items[2].Id, true, CancellationToken.None));
+
+        ClipboardHistoryPage newestFirst = await context.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 10 },
+            CancellationToken.None);
+        Assert.Equal(items.Reverse().Select(item => item.Id),
+            newestFirst.Items.Select(item => item.Id));
+
+        ClipboardHistoryPage oldestFirst = await context.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 10, NewestFirst = false },
+            CancellationToken.None);
+        Assert.Equal(items.Select(item => item.Id), oldestFirst.Items.Select(item => item.Id));
+
+        List<ClipboardHistoryItemSummary> favorites = [];
+        ClipboardHistoryCursor? cursor = null;
+        do
+        {
+            ClipboardHistoryPage page = await context.Store.SearchAsync(
+                new ClipboardHistoryQuery
+                {
+                    Cursor = cursor,
+                    IsPinned = true,
+                    PageSize = 1,
+                },
+                CancellationToken.None);
+            favorites.AddRange(page.Items);
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+
+        Assert.Equal([items[2].Id, items[0].Id], favorites.Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task FtsPaginationKeepsChronologicalOrderAcrossFavorites()
     {
         await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
         DateTimeOffset capturedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
@@ -617,28 +664,44 @@ public sealed class SqliteClipboardHistoryStoreTests
         }
 
         Assert.True(await context.Store.SetPinnedAsync(items[1].Id, true, CancellationToken.None));
-        List<ClipboardHistoryItemSummary> all = [];
-        ClipboardHistoryCursor? cursor = null;
-        do
+        Assert.True(await context.Store.SetPinnedAsync(items[4].Id, true, CancellationToken.None));
+
+        async Task<List<ClipboardHistoryItemSummary>> ReadPagesAsync(
+            bool? isPinned,
+            int pageSize)
         {
-            ClipboardHistoryPage page = await context.Store.SearchAsync(
-                new ClipboardHistoryQuery
-                {
-                    SearchText = "shared-search",
-                    Cursor = cursor,
-                    PageSize = 2,
-                },
-                CancellationToken.None);
-            all.AddRange(page.Items);
-            cursor = page.NextCursor;
+            List<ClipboardHistoryItemSummary> results = [];
+            ClipboardHistoryCursor? cursor = null;
+            do
+            {
+                ClipboardHistoryPage page = await context.Store.SearchAsync(
+                    new ClipboardHistoryQuery
+                    {
+                        SearchText = "shared-search",
+                        Cursor = cursor,
+                        IsPinned = isPinned,
+                        PageSize = pageSize,
+                    },
+                    CancellationToken.None);
+                results.AddRange(page.Items);
+                cursor = page.NextCursor;
+            }
+            while (cursor is not null);
+
+            return results;
         }
-        while (cursor is not null);
+
+        List<ClipboardHistoryItemSummary> all = await ReadPagesAsync(null, pageSize: 2);
+        List<ClipboardHistoryItemSummary> favorites = await ReadPagesAsync(true, pageSize: 1);
+        List<ClipboardHistoryItemSummary> regular = await ReadPagesAsync(false, pageSize: 2);
 
         Assert.Equal(items.Length, all.Count);
         Assert.Equal(items.Length, all.Select(item => item.Id).Distinct().Count());
-        Assert.Equal(items[1].Id, all[0].Id);
-        Assert.True(all[0].IsPinned);
-        Assert.All(all.Skip(1), item => Assert.False(item.IsPinned));
+        Assert.Equal(items.Reverse().Select(item => item.Id), all.Select(item => item.Id));
+        Assert.Equal([items[4].Id, items[1].Id], favorites.Select(item => item.Id));
+        Assert.Equal(
+            [items[5].Id, items[3].Id, items[2].Id, items[0].Id],
+            regular.Select(item => item.Id));
     }
 
     [Fact]
@@ -832,6 +895,73 @@ public sealed class SqliteClipboardHistoryStoreTests
         Assert.Empty((await context.Store.SearchAsync(
             new ClipboardHistoryQuery { PageSize = 10 },
             CancellationToken.None)).Items);
+    }
+
+    [Fact]
+    public async Task RetentionCanIncludeFavoriteItems()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        DateTimeOffset old = DateTimeOffset.UtcNow - TimeSpan.FromDays(60);
+        ClipboardCapturedItem favorite = CreateTextItem("favorite-old", old);
+        ClipboardCapturedItem regular = CreateTextItem("regular-old", old.AddMinutes(1));
+        await context.Store.SaveAsync(favorite, CancellationToken.None);
+        await context.Store.SaveAsync(regular, CancellationToken.None);
+        Assert.True(await context.Store.SetPinnedAsync(
+            favorite.Id,
+            true,
+            CancellationToken.None));
+
+        int removed = await context.Store.ApplyRetentionAsync(
+            new ClipboardRetentionPolicy(
+                maximumItemCount: int.MaxValue,
+                maximumAge: TimeSpan.FromDays(30),
+                maximumStorageBytes: long.MaxValue,
+                preservePinnedItems: false),
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        Assert.Equal(2, removed);
+        Assert.Empty((await context.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 10 },
+            CancellationToken.None)).Items);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RetentionCanIncludeFavoriteForCountAndStorageLimits(
+        bool useItemCountLimit)
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        DateTimeOffset start = DateTimeOffset.UtcNow - TimeSpan.FromHours(1);
+        ClipboardCapturedItem favorite = CreateTextItem(
+            "favorite-content-that-exceeds-storage-limit",
+            start);
+        ClipboardCapturedItem regular = CreateTextItem("regular", start.AddMinutes(1));
+        await context.Store.SaveAsync(favorite, CancellationToken.None);
+        await context.Store.SaveAsync(regular, CancellationToken.None);
+        Assert.True(await context.Store.SetPinnedAsync(
+            favorite.Id,
+            true,
+            CancellationToken.None));
+
+        int removed = await context.Store.ApplyRetentionAsync(
+            new ClipboardRetentionPolicy(
+                maximumItemCount: useItemCountLimit ? 1 : int.MaxValue,
+                maximumAge: TimeSpan.FromDays(365),
+                maximumStorageBytes: useItemCountLimit
+                    ? long.MaxValue
+                    : regular.TotalSizeBytes,
+                preservePinnedItems: false),
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        Assert.Equal(1, removed);
+        ClipboardHistoryItemSummary remaining = Assert.Single((await context.Store.SearchAsync(
+            new ClipboardHistoryQuery { PageSize = 10 },
+            CancellationToken.None)).Items);
+        Assert.Equal(regular.Id, remaining.Id);
+        Assert.False(remaining.IsPinned);
     }
 
     private static ClipboardCapturedItem CreateTextItem(

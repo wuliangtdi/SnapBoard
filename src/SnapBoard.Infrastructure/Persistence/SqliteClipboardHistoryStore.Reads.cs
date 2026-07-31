@@ -84,7 +84,7 @@ public sealed partial class SqliteClipboardHistoryStore
             FROM clipboard_items i
             {pagePlan.JoinClause}
             WHERE {pagePlan.WhereClause}
-            ORDER BY i.is_pinned DESC, i.captured_at_utc {direction}, i.id {direction}
+            ORDER BY i.captured_at_utc {direction}, i.id {direction}
             LIMIT @pageLimit;
             """;
         AddParameters(pageCommand, pagePlan.Parameters);
@@ -114,41 +114,14 @@ public sealed partial class SqliteClipboardHistoryStore
             ? await CountMatchesAsync(connection, query, cancellationToken).ConfigureAwait(false)
             : -1;
         List<SearchSummaryRow> rows = [];
-        int maximumRows = query.PageSize + 1;
-        bool searchPinned = query.IsPinned != false &&
-            (query.Cursor is null || query.Cursor.IsPinned);
-        if (searchPinned)
-        {
-            long? pinnedCursor = query.Cursor is { IsPinned: true }
-                ? query.Cursor.SearchOrderKey
-                : null;
-            rows.AddRange(await ReadFtsPhaseAsync(
-                    connection,
-                    query,
-                    normalizedSearch,
-                    isPinned: true,
-                    pinnedCursor,
-                    maximumRows,
-                    cancellationToken)
-                .ConfigureAwait(false));
-        }
-
-        bool searchUnpinned = query.IsPinned != true;
-        if (searchUnpinned && rows.Count < maximumRows)
-        {
-            long? unpinnedCursor = query.Cursor is { IsPinned: false }
-                ? query.Cursor.SearchOrderKey
-                : null;
-            rows.AddRange(await ReadFtsPhaseAsync(
-                    connection,
-                    query,
-                    normalizedSearch,
-                    isPinned: false,
-                    unpinnedCursor,
-                    maximumRows - rows.Count,
-                    cancellationToken)
-                .ConfigureAwait(false));
-        }
+        rows.AddRange(await ReadOrderedFtsAsync(
+                connection,
+                query,
+                normalizedSearch,
+                query.Cursor?.SearchOrderKey,
+                query.PageSize + 1,
+                cancellationToken)
+            .ConfigureAwait(false));
 
         bool hasMore = rows.Count > query.PageSize;
         if (hasMore)
@@ -159,39 +132,25 @@ public sealed partial class SqliteClipboardHistoryStore
         return CreatePage(rows, hasMore, totalCount);
     }
 
-    private static async ValueTask<IReadOnlyList<SearchSummaryRow>> ReadFtsPhaseAsync(
+    private static async ValueTask<IReadOnlyList<SearchSummaryRow>> ReadOrderedFtsAsync(
         SqliteConnection connection,
         ClipboardHistoryQuery query,
         string normalizedSearch,
-        bool isPinned,
         long? cursor,
         int limit,
         CancellationToken cancellationToken)
     {
-        QueryPlan plan = BuildFtsPhasePlan(
-            query,
-            normalizedSearch,
-            isPinned,
-            cursor);
+        QueryPlan plan = BuildFtsPlan(query, normalizedSearch, cursor);
         string direction = query.NewestFirst ? "DESC" : "ASC";
-        string fromClause = isPinned
-            ? """
-                clipboard_items AS i INDEXED BY ix_clipboard_items_search_phase
-                CROSS JOIN clipboard_items_fts
-                """
-            : """
-                clipboard_items_fts
-                CROSS JOIN clipboard_items AS i
-                """;
-        string orderColumn = isPinned ? "i.search_order_key" : "clipboard_items_fts.rowid";
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT
                 {SummaryProjection}
-            FROM {fromClause}
+            FROM clipboard_items_fts
+            CROSS JOIN clipboard_items AS i
             WHERE clipboard_items_fts.rowid = i.search_order_key
               AND {plan.WhereClause}
-            ORDER BY {orderColumn} {direction}
+            ORDER BY clipboard_items_fts.rowid {direction}
             LIMIT @pageLimit;
             """;
         AddParameters(command, plan.Parameters);
@@ -225,7 +184,6 @@ public sealed partial class SqliteClipboardHistoryStore
     {
         ClipboardHistoryCursor? nextCursor = hasMore && rows.Count > 0
             ? new ClipboardHistoryCursor(
-                rows[^1].Summary.IsPinned,
                 rows[^1].Summary.CapturedAt.ToUnixTimeMilliseconds(),
                 rows[^1].Summary.Id,
                 rows[^1].SearchOrderKey)
@@ -462,19 +420,13 @@ public sealed partial class SqliteClipboardHistoryStore
             string idComparison = query.NewestFirst ? "<" : ">";
             predicates.Add($"""
                 (
-                    i.is_pinned < @cursorPinned
+                    i.captured_at_utc {capturedComparison} @cursorCapturedAt
                     OR (
-                        i.is_pinned = @cursorPinned
-                        AND i.captured_at_utc {capturedComparison} @cursorCapturedAt
-                    )
-                    OR (
-                        i.is_pinned = @cursorPinned
-                        AND i.captured_at_utc = @cursorCapturedAt
+                        i.captured_at_utc = @cursorCapturedAt
                         AND i.id {idComparison} @cursorId
                     )
                 )
                 """);
-            parameters.Add(new QueryParameter("@cursorPinned", cursor.IsPinned ? 1 : 0));
             parameters.Add(new QueryParameter(
                 "@cursorCapturedAt",
                 cursor.CapturedAtUnixMilliseconds));
@@ -484,29 +436,26 @@ public sealed partial class SqliteClipboardHistoryStore
         return new QueryPlan(join, string.Join(" AND ", predicates), parameters);
     }
 
-    private static QueryPlan BuildFtsPhasePlan(
+    private static QueryPlan BuildFtsPlan(
         ClipboardHistoryQuery query,
         string normalizedSearch,
-        bool isPinned,
         long? cursor)
     {
         List<string> predicates =
         [
             "i.is_deleted = 0",
-            "i.is_pinned = @phasePinned",
             "clipboard_items_fts MATCH @ftsQuery",
         ];
         List<QueryParameter> parameters =
         [
-            new QueryParameter("@phasePinned", isPinned ? 1 : 0),
             new QueryParameter("@ftsQuery", CreateFtsQuery(normalizedSearch)),
         ];
-        AddCommonFilterPredicates(query, predicates, parameters, includePinned: false);
+        AddCommonFilterPredicates(query, predicates, parameters, includePinned: true);
         if (cursor is { } orderKey)
         {
             string comparison = query.NewestFirst ? "<" : ">";
-            predicates.Add($"i.search_order_key {comparison} @phaseCursor");
-            parameters.Add(new QueryParameter("@phaseCursor", orderKey));
+            predicates.Add($"i.search_order_key {comparison} @ftsCursor");
+            parameters.Add(new QueryParameter("@ftsCursor", orderKey));
         }
 
         return new QueryPlan(string.Empty, string.Join(" AND ", predicates), parameters);

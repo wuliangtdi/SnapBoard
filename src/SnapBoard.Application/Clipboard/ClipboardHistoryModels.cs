@@ -82,7 +82,6 @@ public sealed class ClipboardCapturedItem
 }
 
 public sealed record ClipboardHistoryCursor(
-    bool IsPinned,
     long CapturedAtUnixMilliseconds,
     ClipboardItemId Id,
     long? SearchOrderKey = null);

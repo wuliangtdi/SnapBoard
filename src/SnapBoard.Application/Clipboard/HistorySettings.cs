@@ -53,7 +53,8 @@ public sealed record HistoryCaptureSettings(
 
 public sealed record HistoryRetentionSettings(
     bool Enabled = false,
-    int RetentionDays = 30)
+    int RetentionDays = 30,
+    bool PreserveFavorites = true)
 {
     public const int MinimumRetentionDays = 1;
     public const int MaximumRetentionDays = 3650;
@@ -67,7 +68,8 @@ public sealed record HistoryRetentionSettings(
             ? new ClipboardRetentionPolicy(
                 int.MaxValue,
                 TimeSpan.FromDays(RetentionDays),
-                long.MaxValue)
+                long.MaxValue,
+                preservePinnedItems: PreserveFavorites)
             : null;
     }
 

@@ -623,7 +623,8 @@ public sealed class SyncServiceEndToEndTests
                 Files: false);
             HistoryRetentionSettings expectedRetention = new(
                 Enabled: true,
-                RetentionDays: 90);
+                RetentionDays: 90,
+                PreserveFavorites: false);
             SyncPollingSettings expectedPolling = new(15 * 60);
             await firstSettings.UpdateAsync(
                 expectedCapture,

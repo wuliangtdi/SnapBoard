@@ -100,6 +100,8 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<Button>("ConfigureSyncButton"));
             Button saveHistory = Assert.IsType<Button>(
                 window.FindControl<Button>("SaveHistorySettingsButton"));
+            ToggleSwitch preserveFavorites = Assert.IsType<ToggleSwitch>(
+                window.FindControl<ToggleSwitch>("PreserveFavoritesDuringRetentionToggle"));
             ListBox syncPaneNavigation = Assert.IsType<ListBox>(
                 window.FindControl<ListBox>("SyncSettingsPaneList"));
             StackPanel syncOverviewPane = Assert.IsType<StackPanel>(
@@ -116,6 +118,8 @@ public sealed class SecondaryWindowHeadlessTests
                 window.FindControl<Button>("CheckForApplicationUpdatesButton"));
             Assert.IsType<Button>(
                 window.FindControl<Button>("DownloadApplicationUpdateButton"));
+            Assert.True(preserveFavorites.IsChecked is true);
+            Assert.Contains("settings-toggle", preserveFavorites.Classes);
             TextBox providerEndpoint = Assert.IsType<TextBox>(
                 window.FindControl<TextBox>("ProviderMigrationTargetEndpointTextBox"));
             StackPanel providerSection = Assert.IsType<StackPanel>(
@@ -1039,6 +1043,7 @@ public sealed class SecondaryWindowHeadlessTests
         viewModel.IsCaptureImagesEnabled = false;
         viewModel.IsCaptureFilesEnabled = false;
         viewModel.IsRetentionEnabled = true;
+        viewModel.PreserveFavoritesDuringRetention = false;
         viewModel.SelectedRetentionPeriod = Assert.Single(
             viewModel.RetentionPeriodOptions,
             option => option.Days == 90);
@@ -1049,9 +1054,13 @@ public sealed class SecondaryWindowHeadlessTests
         Assert.Equal(
             new HistoryCaptureSettings(Text: true, RichText: true, Images: false, Files: false),
             settings.Current.Capture);
-        Assert.Equal(new HistoryRetentionSettings(Enabled: true, RetentionDays: 90),
+        Assert.Equal(new HistoryRetentionSettings(
+                Enabled: true,
+                RetentionDays: 90,
+                PreserveFavorites: false),
             settings.Current.Retention);
         Assert.Contains("保留 90 天", viewModel.HistorySettingsStatus, StringComparison.Ordinal);
+        Assert.Contains("全部记录", viewModel.HistorySettingsStatus, StringComparison.Ordinal);
     }
 
     [Fact]
