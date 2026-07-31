@@ -241,6 +241,10 @@ internal static class StorageDatabaseVerifier
                     SELECT COUNT(*)
                     FROM clipboard_items AS items
                     WHERE items.thumbnail_blob_hash = blobs.hash
+                ) + (
+                    SELECT COUNT(*)
+                    FROM clipboard_items AS items
+                    WHERE items.source_application_icon_blob_hash = blobs.hash
                 ) AS actual_ref_count
             FROM content_blobs AS blobs
             ORDER BY blobs.hash;

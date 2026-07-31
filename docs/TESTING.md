@@ -185,3 +185,11 @@ AOT 产物证据：
 | osx-x64 | SnapBoard.StorageMigrator | 8,554,496 | `3a4ce9ed359da687b08317a5c2935321a2ef55fbba1416e120e3252a6724e67d` |
 
 两个 RID 均没有 trim/AOT 警告。链接阶段各出现两条来自官方 .NET Apple NativeAOT 静态库的 clang module-cache 调试信息警告（Foundation 与 `_SwiftConcurrencyShims` 的 `.pcm` 不存在）；它们只影响调试信息，仓库已有同类记录，不影响原生文件、启动或校验结论。x64 测试与 AOT 在 Apple Silicon 的 Rosetta x64 运行时执行，不冒充 Intel 匹配硬件；更广泛的两台正式安装、真实 WebDAV 和可视 UI 双机矩阵仍属于整体验收限制，不改变本阶段当前协议的双向像素往返结论。
+
+## 10. 数据目录迁移的来源应用图标引用验证
+
+2026-07-31 在 Windows 11 x64、.NET SDK 10.0.302 上修复 SQLite v9 迁移复检遗漏。`content_blobs.ref_count` 必须同时等于正文表示、缩略图和 `clipboard_items.source_application_icon_blob_hash` 的引用总数；只校验前两类会使包含来源应用图标的有效数据库以 `verification-failed` 回滚。
+
+`StorageMigrationExecutorTests.MigratesSourceApplicationIconBlobReferences` 通过完整复制、迁移器进程确认和目标库复检，覆盖一个图标引用及三条记录共享一个图标 Blob。测试同时断言迁移状态为 `Completed`、目标记录的 4096 字节像素保持不变，且目标库引用计数分别为 1 和 3。该测试只使用共享 SQLite 与伪平台服务，会进入 GitHub 的 Windows、Apple Silicon macOS 和 Intel macOS 测试矩阵。
+
+本轮 locked restore、format、Release build 和完整测试通过：全量 497 项中 475 项通过、22 项按平台或外部服务条件跳过、0 项失败。`win-x64` Native AOT 为 0 个 trim/AOT 警告；桌面主程序和独立迁移器均生成，迁移器无托管 sidecar且无参数退出码为 4。macOS 两个 RID 的 Native AOT 仍必须由提交后的 GitHub 对应 Runner 验证。

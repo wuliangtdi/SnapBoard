@@ -1273,7 +1273,33 @@ Native AOT：
   - Data/、临时数据库、构建产物、恢复材料和凭据不进入提交。
 ```
 
-## 41. 更新规则
+## 41. 2026-07-31 执行记录：修复来源应用图标导致数据目录迁移回滚
+
+```text
+日期：2026-07-31
+阶段/任务：修复 SQLite v9 来源应用图标 Blob 引用校验遗漏
+状态：[x] 根因、共享修复、回归测试、完整测试和 Windows Native AOT 验证完成；[ ] GitHub macOS Runner 待提交后验证
+开发基线：fb9ceccf0b42978aa3da8badeff6f96a77013a4b（开发前 main 与 origin/main 一致）
+
+根因与修复：
+  - SQLite v9 的 content_blobs.ref_count 同时统计正文表示、缩略图和来源应用图标引用；StorageDatabaseVerifier 迁移后复检只统计前两类。
+  - 只要历史中存在来源应用图标，复制后的数据库就会被误判为引用计数不一致，迁移以 verification-failed 回滚，locatorSwitched 保持 false。
+  - 校验查询现已计入 clipboard_items.source_application_icon_blob_hash；没有改变 schema、同步协议、迁移状态机或平台接口。
+  - 新增完整迁移回归，分别验证一个引用和三条记录共享同一个图标 Blob；迁移完成后逐条读取像素，并直接确认目标库 ref_count 精确等于引用数。
+
+验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format SnapBoard.slnx --verify-no-changes --no-restore 和 Release build 通过；build 0 警告、0 错误。
+  - 全量 497 项：475 项通过、22 项按当前平台或外部 WebDAV 条件跳过、0 项失败；Infrastructure 112 项通过、1 项跳过。
+  - win-x64 self-contained PublishAot 通过，0 个 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,489,472 字节，SHA-256 C68A71E0C5B84F2049409A4D68C2DEEFA3A5D2E55C4DDECA5984EBDE3E4F7F33；SnapBoard.StorageMigrator.exe 为 4,514,816 字节，SHA-256 870802D98A7C998DCBEA4AD566D743E406DC68DF2A22E7FA659B423D3B93CF21。
+  - 迁移器没有 .dll、.deps.json 或 .runtimeconfig.json sidecar，独立无参数运行退出码为 4。
+
+限制：
+  - Windows 本机无法执行 GitHub 的 osx-arm64/osx-x64 Native AOT；本次生产改动仅为共享 SQLite 查询，新增回归不调用 Windows API，将由提交后的 macOS CI Runner 继续验证。
+  - 当前已安装 v0.1.2 不包含本修复；需使用包含本次提交的新构建重新执行界面迁移。没有修改或删除现有数据、回滚状态与 D:\ProgramData\SnapBoard_Data。
+  - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
+```
+
+## 42. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

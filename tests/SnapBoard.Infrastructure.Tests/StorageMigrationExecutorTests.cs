@@ -1,9 +1,12 @@
 using System.Security.Cryptography;
+using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Storage;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Infrastructure.Storage;
+using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Storage;
+using SnapBoard.Sync.Contracts;
 
 namespace SnapBoard.Infrastructure.Tests;
 
@@ -89,6 +92,58 @@ public sealed class StorageMigrationExecutorTests
             Path.Combine(normalizedTarget, $"..staging-{context.Manifest.MigrationId}")));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task MigratesSourceApplicationIconBlobReferences(int referenceCount)
+    {
+        await using MigrationTestContext context = await MigrationTestContext.CreateAsync(
+            sourceApplicationIconReferenceCount: referenceCount);
+        context.Platform.Started = async process =>
+        {
+            await context.LocationStore.WriteStartupAcknowledgementAsync(
+                new StorageStartupAcknowledgementDocument(
+                    StorageDocumentVersions.StartupAcknowledgement,
+                    context.Manifest.MigrationId,
+                    context.Manifest.StorageInstanceId,
+                    process,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    string.Empty),
+                CancellationToken.None);
+        };
+
+        StorageMigrationExecutionResult result = await new StorageMigrationExecutor(
+            context.Platform).ExecuteAsync(context.ManifestPath, CancellationToken.None);
+
+        Assert.Equal(StorageMigrationExecutionStatus.Completed, result.Status);
+        ClipboardSourceApplicationIcon expected = CreateSourceApplicationIcon(0x4D);
+        await using HistoryStoreTestContext migrated = await HistoryStoreTestContext.CreateAsync(
+            context.Manifest.TargetDataRoot);
+        foreach (ClipboardItemId itemId in context.ItemIds)
+        {
+            ClipboardSourceApplicationIcon actual =
+                Assert.IsType<ClipboardSourceApplicationIcon>(
+                    await migrated.Store.GetAsync(itemId, CancellationToken.None));
+            Assert.Equal(expected.BgraPixels.ToArray(), actual.BgraPixels.ToArray());
+        }
+
+        await using SqliteConnection connection = await migrated.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ref_count
+            FROM content_blobs
+            WHERE media_type = @mediaType;
+            """;
+        command.Parameters.AddWithValue(
+            "@mediaType",
+            SyncProtocol.SourceApplicationIconMediaType);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(referenceCount, reader.GetInt64(0));
+        Assert.False(await reader.ReadAsync());
+    }
+
     [Fact]
     public async Task MissingStartupAcknowledgementRollsBackAndQuarantinesTarget()
     {
@@ -150,14 +205,14 @@ public sealed class StorageMigrationExecutorTests
             FakeMigrationPlatformService platform,
             StorageMigrationManifest manifest,
             string manifestPath,
-            ClipboardItemId itemId)
+            IReadOnlyList<ClipboardItemId> itemIds)
         {
             Root = root;
             LocationStore = locationStore;
             Platform = platform;
             Manifest = manifest;
             ManifestPath = manifestPath;
-            ItemId = itemId;
+            ItemIds = itemIds;
         }
 
         public string Root { get; }
@@ -170,11 +225,15 @@ public sealed class StorageMigrationExecutorTests
 
         public string ManifestPath { get; }
 
-        public ClipboardItemId ItemId { get; }
+        public ClipboardItemId ItemId => ItemIds[0];
+
+        public IReadOnlyList<ClipboardItemId> ItemIds { get; }
 
         public static async ValueTask<MigrationTestContext> CreateAsync(
-            bool targetWithTrailingSeparator = false)
+            bool targetWithTrailingSeparator = false,
+            int sourceApplicationIconReferenceCount = 0)
         {
+            ArgumentOutOfRangeException.ThrowIfNegative(sourceApplicationIconReferenceCount);
             string root = Path.Combine(
                 Path.GetTempPath(),
                 $"SnapBoard.Migration.Tests.{Guid.NewGuid():N}");
@@ -198,15 +257,26 @@ public sealed class StorageMigrationExecutorTests
                 startupMigrationId: null,
                 CancellationToken.None);
 
-            ClipboardItemId itemId;
+            List<ClipboardItemId> itemIds = [];
             await using (HistoryStoreTestContext history = await HistoryStoreTestContext.CreateAsync(
                 active.Paths.RootDirectory,
                 deleteOnDispose: false))
             {
-                ClipboardHistorySaveResult saved = await history.Store.SaveAsync(
-                    CreateLargeHtmlItem(),
-                    CancellationToken.None);
-                itemId = saved.ItemId;
+                int itemCount = Math.Max(1, sourceApplicationIconReferenceCount);
+                ClipboardSourceApplicationIcon? sourceIcon =
+                    sourceApplicationIconReferenceCount == 0
+                        ? null
+                        : CreateSourceApplicationIcon(0x4D);
+                for (int index = 0; index < itemCount; index++)
+                {
+                    ClipboardCapturedItem item = CreateLargeHtmlItem(index);
+                    item.SourceApplicationIcon = sourceIcon;
+                    ClipboardHistorySaveResult saved = await history.Store.SaveAsync(
+                        item,
+                        CancellationToken.None);
+                    itemIds.Add(saved.ItemId);
+                }
+
                 await history.Store.PrepareForMigrationAsync(CancellationToken.None);
             }
 
@@ -258,7 +328,7 @@ public sealed class StorageMigrationExecutorTests
                 platform,
                 manifest,
                 manifestPath,
-                itemId);
+                itemIds);
         }
 
         public async ValueTask DisposeAsync()
@@ -361,9 +431,9 @@ public sealed class StorageMigrationExecutorTests
         public bool OpenDirectory(string path) => false;
     }
 
-    private static ClipboardCapturedItem CreateLargeHtmlItem()
+    private static ClipboardCapturedItem CreateLargeHtmlItem(int variant = 0)
     {
-        byte[] html = Enumerable.Repeat((byte)'h', 70 * 1024).ToArray();
+        byte[] html = Enumerable.Repeat(checked((byte)('h' + variant)), 70 * 1024).ToArray();
         ClipboardItemId id = ClipboardItemId.New();
         return new ClipboardCapturedItem
         {
@@ -376,8 +446,8 @@ public sealed class StorageMigrationExecutorTests
                 Convert.ToHexStringLower(SHA256.HashData(html))),
             PrimaryKind = ClipboardContentKind.Html,
             DisplayCategory = ClipboardHistoryDisplayCategory.Text,
-            PreviewText = "large html",
-            SearchableText = "large html migration",
+            PreviewText = $"large html {variant}",
+            SearchableText = $"large html migration {variant}",
             Representations =
             [
                 new ClipboardCapturedRepresentation(
@@ -390,4 +460,10 @@ public sealed class StorageMigrationExecutorTests
             TotalSizeBytes = html.Length,
         };
     }
+
+    private static ClipboardSourceApplicationIcon CreateSourceApplicationIcon(byte value) => new(
+        ClipboardSourceApplicationIconRules.Width,
+        ClipboardSourceApplicationIconRules.Height,
+        ClipboardSourceApplicationIconRules.Stride,
+        Enumerable.Repeat(value, ClipboardSourceApplicationIconRules.ByteLength).ToArray());
 }
