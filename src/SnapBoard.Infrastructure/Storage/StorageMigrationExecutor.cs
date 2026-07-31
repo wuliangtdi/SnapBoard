@@ -62,12 +62,14 @@ public sealed class StorageMigrationExecutor
             .ConfigureAwait(false) ?? throw new StorageMetadataException(
                 "The migration manifest is missing.");
         ValidateManifest(manifest, canonicalManifestPath, bootstrapPaths);
+        manifest = NormalizeManifestPaths(manifest);
 
         StorageMigrationStateDocument state = await locationStore
             .ReadMigrationStateAsync(cancellationToken)
             .ConfigureAwait(false) ?? throw new StorageMetadataException(
                 "The migration state is missing.");
         ValidateInitialState(state, manifest);
+        state = NormalizeStatePaths(state);
 
         bool mainProcessExited = false;
         bool destinationPromoted = false;
@@ -856,12 +858,29 @@ public sealed class StorageMigrationExecutor
 
     private static string GetStagingDirectory(string targetRoot, string migrationId)
     {
-        string canonicalTarget = Path.GetFullPath(targetRoot);
+        string canonicalTarget = NormalizeDirectoryPath(targetRoot);
         string parent = Path.GetDirectoryName(canonicalTarget) ??
             throw new StorageMetadataException("The target root has no parent.");
         string name = Path.GetFileName(canonicalTarget);
         return Path.Combine(parent, $".{name}.staging-{migrationId}");
     }
+
+    private static StorageMigrationManifest NormalizeManifestPaths(
+        StorageMigrationManifest manifest) => manifest with
+        {
+            SourceDataRoot = NormalizeDirectoryPath(manifest.SourceDataRoot),
+            TargetDataRoot = NormalizeDirectoryPath(manifest.TargetDataRoot),
+        };
+
+    private static StorageMigrationStateDocument NormalizeStatePaths(
+        StorageMigrationStateDocument state) => state with
+        {
+            SourceDataRoot = NormalizeDirectoryPath(state.SourceDataRoot),
+            TargetDataRoot = NormalizeDirectoryPath(state.TargetDataRoot),
+        };
+
+    private static string NormalizeDirectoryPath(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
     private static void EnsureOwnedStagingDoesNotExist(string stagingDirectory)
     {

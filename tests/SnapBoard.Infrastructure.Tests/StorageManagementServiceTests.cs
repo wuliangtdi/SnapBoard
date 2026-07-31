@@ -76,6 +76,32 @@ public sealed class StorageManagementServiceTests
     }
 
     [Fact]
+    public async Task PrepareMigrationNormalizesTrailingDirectorySeparator()
+    {
+        await using ManagementTestContext context = await ManagementTestContext.CreateAsync();
+        string target = context.CreateDirectory("target");
+        string mainExecutable = context.CreateFile("install/SnapBoard.Desktop.exe");
+        string migratorExecutable = context.CreateFile("install/SnapBoard.StorageMigrator.exe");
+        StorageProcessIdentity process = new(
+            1234,
+            DateTimeOffset.UtcNow.UtcTicks,
+            mainExecutable,
+            "test-user");
+
+        StorageMigrationLaunchPlan plan = await context.Service.PrepareMigrationAsync(
+            target + Path.DirectorySeparatorChar,
+            process,
+            mainExecutable,
+            migratorExecutable,
+            CancellationToken.None);
+
+        StorageMigrationManifest manifest = Assert.IsType<StorageMigrationManifest>(
+            await context.Store.ReadManifestAsync(plan.ManifestPath, CancellationToken.None));
+        string normalizedTarget = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
+        Assert.Equal(normalizedTarget, manifest.TargetDataRoot);
+    }
+
+    [Fact]
     public async Task PrepareMigrationRejectsTargetThatBecameNonEmptyAfterSelection()
     {
         await using ManagementTestContext context = await ManagementTestContext.CreateAsync();

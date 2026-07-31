@@ -55,6 +55,41 @@ public sealed class StorageMigrationExecutorTests
     }
 
     [Fact]
+    public async Task MigratesManifestWithTrailingTargetSeparator()
+    {
+        await using MigrationTestContext context =
+            await MigrationTestContext.CreateAsync(targetWithTrailingSeparator: true);
+        context.Platform.Started = async process =>
+        {
+            await context.LocationStore.WriteStartupAcknowledgementAsync(
+                new StorageStartupAcknowledgementDocument(
+                    StorageDocumentVersions.StartupAcknowledgement,
+                    context.Manifest.MigrationId,
+                    context.Manifest.StorageInstanceId,
+                    process,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    string.Empty),
+                CancellationToken.None);
+        };
+
+        StorageMigrationExecutionResult result = await new StorageMigrationExecutor(
+            context.Platform).ExecuteAsync(context.ManifestPath, CancellationToken.None);
+
+        Assert.Equal(StorageMigrationExecutionStatus.Completed, result.Status);
+        string normalizedTarget = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(context.Manifest.TargetDataRoot));
+        StorageLocationDocument location = Assert.IsType<StorageLocationDocument>(
+            await context.LocationStore.ReadLocationAsync(CancellationToken.None));
+        StorageMigrationStateDocument state = Assert.IsType<StorageMigrationStateDocument>(
+            await context.LocationStore.ReadMigrationStateAsync(CancellationToken.None));
+        Assert.Equal(normalizedTarget, location.CurrentDataRoot);
+        Assert.Equal(normalizedTarget, state.TargetDataRoot);
+        Assert.True(File.Exists(Path.Combine(normalizedTarget, "snapboard.db")));
+        Assert.False(Directory.Exists(
+            Path.Combine(normalizedTarget, $"..staging-{context.Manifest.MigrationId}")));
+    }
+
+    [Fact]
     public async Task MissingStartupAcknowledgementRollsBackAndQuarantinesTarget()
     {
         await using MigrationTestContext context = await MigrationTestContext.CreateAsync();
@@ -137,7 +172,8 @@ public sealed class StorageMigrationExecutorTests
 
         public ClipboardItemId ItemId { get; }
 
-        public static async ValueTask<MigrationTestContext> CreateAsync()
+        public static async ValueTask<MigrationTestContext> CreateAsync(
+            bool targetWithTrailingSeparator = false)
         {
             string root = Path.Combine(
                 Path.GetTempPath(),
@@ -174,8 +210,11 @@ public sealed class StorageMigrationExecutorTests
                 await history.Store.PrepareForMigrationAsync(CancellationToken.None);
             }
 
-            string target = Path.Combine(root, "migrated-data");
-            Directory.CreateDirectory(target);
+            string targetDirectory = Path.Combine(root, "migrated-data");
+            Directory.CreateDirectory(targetDirectory);
+            string target = targetWithTrailingSeparator
+                ? targetDirectory + Path.DirectorySeparatorChar
+                : targetDirectory;
             string migrationId = $"m-{Guid.NewGuid():N}";
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             StorageMigrationManifest manifest = new(

@@ -1141,7 +1141,33 @@ GitHub 验证：
   - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
 ```
 
-## 37. 更新规则
+## 37. 2026-07-31 执行记录：修复 Windows 数据目录迁移尾部路径回滚
+
+```text
+日期：2026-07-31
+阶段/任务：修复选择带尾部目录分隔符的 Windows 数据目录后迁移必然回滚
+状态：[x] 根因、代码修复、回归测试、完整测试和 Windows Native AOT 验证完成
+开发基线：ecbd206fcdad7c4f6ccda44b5c42712be930373c（开发前 main 与 origin/main 一致）
+
+根因：
+  - Windows 文件夹选择器将目标写成 D:\ProgramData\SnapBoard_Data\；StorageMigrationExecutor.GetStagingDirectory 直接对带尾分隔符的路径调用 GetDirectoryName/GetFileName，结果把 .staging-* 目录建到了目标目录内部。
+  - 随后的“目标必须仍为空”安全复检必然抛出 StorageMetadataException，统一错误码为 verification-failed；locatorSwitched=false，所以回滚后原目录继续生效。
+
+修复：
+  - StorageManagementService 在生成迁移计划前使用 Path.TrimEndingDirectorySeparator 规范化目标路径。
+  - StorageMigrationExecutor 对清单中的源/目标路径再次规范化，并在计算暂存目录时保留防御性规范化，兼容已经生成的带尾分隔符清单。
+  - 新增管理服务 manifest 规范化测试，以及直接带尾分隔符 manifest 的完整迁移测试。
+
+验证：
+  - dotnet format SnapBoard.slnx --verify-no-changes --no-restore 通过；Release build 0 警告、0 错误。
+  - 全量 476 项：454 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Infrastructure 存储迁移相关测试 12/12。
+  - win-x64 self-contained PublishAot 独立输出通过，0 个未解释 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,415,744 字节，SnapBoard.StorageMigrator.exe 为 4,514,304 字节；迁移器无 .dll、.deps.json 或 .runtimeconfig.json sidecar。
+
+限制：
+  - 本轮只修复代码并验证，没有再次触发用户数据迁移；现有 D:\ProgramData\SnapBoard_Data 回滚状态和原数据保持不变。
+```
+
+## 38. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

@@ -76,7 +76,7 @@ public sealed class StorageManagementService : IStorageManagementService
         string canonicalTarget;
         try
         {
-            canonicalTarget = Path.GetFullPath(targetDirectory);
+            canonicalTarget = NormalizeDirectoryPath(targetDirectory);
         }
         catch (Exception exception) when (exception is
             ArgumentException or NotSupportedException or PathTooLongException)
@@ -540,6 +540,9 @@ public sealed class StorageManagementService : IStorageManagementService
         RequiredBytes: 0,
         error,
         code);
+
+    private static string NormalizeDirectoryPath(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
     private bool IsFileSystemRoot(string path) =>
         IsSamePath(path, Path.GetPathRoot(path) ?? path);
