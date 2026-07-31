@@ -192,4 +192,4 @@ AOT 产物证据：
 
 `StorageMigrationExecutorTests.MigratesSourceApplicationIconBlobReferences` 通过完整复制、迁移器进程确认和目标库复检，覆盖一个图标引用及三条记录共享一个图标 Blob。测试同时断言迁移状态为 `Completed`、目标记录的 4096 字节像素保持不变，且目标库引用计数分别为 1 和 3。该测试只使用共享 SQLite 与伪平台服务，会进入 GitHub 的 Windows、Apple Silicon macOS 和 Intel macOS 测试矩阵。
 
-本轮 locked restore、format、Release build 和完整测试通过：全量 497 项中 475 项通过、22 项按平台或外部服务条件跳过、0 项失败。`win-x64` Native AOT 为 0 个 trim/AOT 警告；桌面主程序和独立迁移器均生成，迁移器无托管 sidecar且无参数退出码为 4。macOS 两个 RID 的 Native AOT 仍必须由提交后的 GitHub 对应 Runner 验证。
+本轮 locked restore、format、Release build 和完整测试通过：全量 497 项中 475 项通过、22 项按平台或外部服务条件跳过、0 项失败。`win-x64` Native AOT 为 0 个 trim/AOT 警告；桌面主程序和独立迁移器均生成，迁移器无托管 sidecar且无参数退出码为 4。GitHub CI run 30625363781 的 Windows、macOS arm64、macOS Intel 构建/测试及三个对应 RID 的 Native AOT 全部成功；v0.1.3 Release run 30625720554 也完成全部四个 job 并发布 31 个附件。

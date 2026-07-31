@@ -1278,7 +1278,7 @@ Native AOT：
 ```text
 日期：2026-07-31
 阶段/任务：修复 SQLite v9 来源应用图标 Blob 引用校验遗漏
-状态：[x] 根因、共享修复、回归测试、完整测试和 Windows Native AOT 验证完成；[ ] GitHub macOS Runner 待提交后验证
+状态：[x] 根因、共享修复、回归测试、完整测试、三平台 GitHub CI 和 v0.1.3 Release 完成
 开发基线：fb9ceccf0b42978aa3da8badeff6f96a77013a4b（开发前 main 与 origin/main 一致）
 
 根因与修复：
@@ -1292,10 +1292,11 @@ Native AOT：
   - 全量 497 项：475 项通过、22 项按当前平台或外部 WebDAV 条件跳过、0 项失败；Infrastructure 112 项通过、1 项跳过。
   - win-x64 self-contained PublishAot 通过，0 个 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,489,472 字节，SHA-256 C68A71E0C5B84F2049409A4D68C2DEEFA3A5D2E55C4DDECA5984EBDE3E4F7F33；SnapBoard.StorageMigrator.exe 为 4,514,816 字节，SHA-256 870802D98A7C998DCBEA4AD566D743E406DC68DF2A22E7FA659B423D3B93CF21。
   - 迁移器没有 .dll、.deps.json 或 .runtimeconfig.json sidecar，独立无参数运行退出码为 4。
+  - GitHub CI run 30625363781 在提交 9e60b3c 上完成且六个 job 全绿：Windows、macOS arm64、macOS Intel 的构建/测试，以及 win-x64、osx-arm64、osx-x64 Native AOT 均成功。
+  - v0.1.3 Release run 30625720554 四个 job 全绿；公开 Release 为非草稿、非预发布，共 31 个附件且全部 uploaded。Windows 可选目录 MSI、Native AOT ZIP、两个 macOS 架构的 DMG/PKG、Velopack 包和已签名更新源均已生成。
 
 限制：
-  - Windows 本机无法执行 GitHub 的 osx-arm64/osx-x64 Native AOT；本次生产改动仅为共享 SQLite 查询，新增回归不调用 Windows API，将由提交后的 macOS CI Runner 继续验证。
-  - 当前已安装 v0.1.2 不包含本修复；需使用包含本次提交的新构建重新执行界面迁移。没有修改或删除现有数据、回滚状态与 D:\ProgramData\SnapBoard_Data。
+  - 当前已安装 v0.1.2 不包含本修复；尚未在本机安装公开 v0.1.3 并重新执行界面迁移。没有修改或删除现有数据、回滚状态与 D:\ProgramData\SnapBoard_Data。
   - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
 ```
 
