@@ -1163,8 +1163,14 @@ GitHub 验证：
   - 全量 476 项：454 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Infrastructure 存储迁移相关测试 12/12。
   - win-x64 self-contained PublishAot 独立输出通过，0 个未解释 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,415,744 字节，SnapBoard.StorageMigrator.exe 为 4,514,304 字节；迁移器无 .dll、.deps.json 或 .runtimeconfig.json sidecar。
 
+Windows 实机迁移：
+  - 使用修复后的 AOT 从原 C 盘数据根迁移到 D:\ProgramData\SnapBoard_Data，迁移 ID 为 m-1f443da5de94489bbe6f120c87e1d645；约 1 秒内完成并由新主进程确认启动。
+  - 最终状态为 Completed，locatorSwitched=true、startupAcknowledged=true、errorCode 为空；定位文件中的目标路径已去除尾分隔符。
+  - 目标和回滚备份的 SQLite integrity_check 均为 ok，逻辑计数一致：52 条记录、20 个 Blob、0 个 Outbox；目标包含 24 个文件、20 个 Blob，共 30,190,114 字节。
+  - 原目录已保留为 C:\Users\ozonechen\AppData\Local\SnapBoard\data.backup-m-1f443da5de94489bbe6f120c87e1d645，未删除回滚备份。
+
 限制：
-  - 本轮只修复代码并验证，没有再次触发用户数据迁移；现有 D:\ProgramData\SnapBoard_Data 回滚状态和原数据保持不变。
+  - 当前公开 v0.1.1 安装包不包含本修复；上述实机验证使用本地最新 AOT 产物。
 ```
 
 ## 38. 更新规则
