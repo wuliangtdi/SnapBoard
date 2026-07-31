@@ -1050,7 +1050,7 @@ GitHub 验证：
 ```text
 日期：2026-07-30
 阶段/任务：在保留 Velopack 一键 Setup.exe 的同时，新增可选择安装范围和安装位置的 Windows MSI
-状态：[x] MSI 后处理、发布工作流、本地结构验证、正负向 UI、全量测试和 win-x64 Native AOT 完成；[ ] 尚未由后续标签触发远程 Release
+状态：[x] MSI 后处理、发布工作流、本地结构验证、正负向 UI、全量测试和 win-x64 Native AOT 完成；[x] `v0.1.1` 已触发远程 Release 并公开上传 MSI
 开发基线：3055988fbf7186d34b2ef46b2df73ae64d4f6513（开发前 main 与 origin/main 一致）
 分支：codex/windows-selectable-installer
 
@@ -1074,12 +1074,48 @@ Windows UI 验证：
   - 负向传入 VELOPACK_INSTALLDIR=\\invalid\share\SnapBoard 时，Windows Installer 明确提示路径无效并阻止推进，证明没有为消除假报错而关闭无效路径保护。
 
 限制：
-  - 已公开的 v0.1.0 早于本实现，仍只有一键 Setup.exe；远程 GitHub Actions 和含 MSI 的新 Release 尚未运行，不能把本地产物描述为已公开附件。
+  - `v0.1.1` 已公开上传 `SnapBoard-win-x64-Installer.msi` 及校验和；详细远程证据见第 35 节。
   - 仓库没有 Windows Authenticode 证书，当前 Setup.exe/MSI 仍未签名，可能触发 SmartScreen；后续加入签名时必须在 MSI 表后处理之后签名。
   - 本轮没有自动安装或卸载任何版本，也没有修改或删除用户数据；为释放 RegisterHotKey 测试冲突，仅通过现有安装实例的 --exit 正常退出。Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
 ```
 
-## 35. 更新规则
+## 35. 2026-07-31 执行记录：发布 v0.1.1
+
+```text
+日期：2026-07-31
+阶段/任务：修复 Windows 发布门槛竞态并公开发布 v0.1.1
+状态：[x] 代码修复、本地验证、主 CI、双架构 macOS/Windows 打包、更新 feed 签名和公开附件审计完成；[~] 系统代码签名与已安装版跨版本升级仍待真实凭据/环境
+发布提交：31ec20e48746769e10a50ead8c17b3ce435f36aa
+标签：v0.1.1
+Release：https://github.com/wuliangtdi/SnapBoard/releases/tag/v0.1.1
+
+发布门槛修复：
+  - 原 main CI run 30535506679 及失败 job 重跑都在 WindowsClipboardNativeIntegrationTests.SelfWriteDoesNotProduceMonitorEvent 失败；通知在 17 ms 内到达，确认不是 500 ms 窗口内的偶发外部剪贴板事件。
+  - 根因是 SetClipboardData 可在 writer 把新序列号写入 ClipboardFeedbackGuard 之前向消息线程投递 WM_CLIPBOARDUPDATE。原生通知现同时快照 clipboard owner HWND，adapter 在序列号逻辑前精确过滤自己的消息窗口。
+  - 新单元测试确认自己 HWND 被抑制，而同进程的另一 HWND 仍正常发布；原生“两 adapter 互相监听”行为不回退。
+
+本地验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format --verify-no-changes、Release build 和 git diff --check 通过；build 0 警告、0 错误。
+  - 全量 470 项：445 项通过、25 项按平台或外部服务条件跳过、0 项失败。
+  - osx-arm64 Native AOT 主程序 36,169,856 字节，独立 StorageMigrator 8,356,968 字节；均为 arm64 Mach-O，helper 无参数退出码 4。无 trim/AOT 分析告警；Desktop 只有 2 条已解释的 Apple NativeAOT clang module-cache 调试信息警告。
+
+GitHub 验证：
+  - 主 CI run 30599181462（commit 31ec20e）六个 job 全绿：Windows 共 470 项，448 通过/22 条件跳过，Windows Platform 102/102；macos-15-intel 共 470 项，445 通过/25 条件跳过；win-x64、osx-arm64、osx-x64 Native AOT 全部通过。
+  - 两个 macOS AOT job 各只有 2 条同类 clang module-cache 调试信息警告，Windows 无告警；三个 RID 均无 IL2xxx/IL3xxx 或其他未解释 trim/AOT 告警。
+  - Release run 30599467309 全绿：osx-arm64 2m25s、osx-x64 5m26s、win-x64 4m22s，最终签名/发布 job 41s。Windows 实际执行并通过可选目录 MSI 定制与验证。
+
+公开产物：
+  - Release 为非草稿、非预发布，共 31 个附件且全部 uploaded。Windows MSI 为 27,590,656 字节（SHA-256 02992acbfbbfebb9c2248735ad6663c98da3ff20045ae0a219d266b94f279b37），Setup.exe 33,562,441 字节，独立 Native AOT ZIP 78,990,522 字节。
+  - osx-arm64 DMG/PKG 为 30,899,970/27,846,716 字节；osx-x64 DMG/PKG 为 33,022,809/29,596,659 字节。两个架构均同时包含 Velopack Portable.zip、full.nupkg 和 Setup.pkg。
+  - 从公开 Release 重新下载 win-x64、osx-arm64、osx-x64 三份 releases.*.json 和签名，使用 packaging/updates/update-signing-public.pem 独立验签均为 Verified OK；每份 feed 只指向版本 0.1.1 与对应 RID 的 full.nupkg。
+
+限制：
+  - Apple Developer ID/公证凭据和 Windows Authenticode 证书仍未配置；macOS 导入身份与公证步骤按预期跳过，Windows 仍可能显示 SmartScreen 警告。
+  - 尚未在已安装 v0.1.0 上执行下载、退出替换、重启和数据保留的 v0.1.1 升级矩阵；Release 仍未生成 SBOM。
+  - Linux Build/Test、Native AOT 和产品包继续按已确认范围暂停。data/ 测试材料保持未跟踪，未删除也未进入任何提交或发布产物。
+```
+
+## 36. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

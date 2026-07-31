@@ -640,8 +640,8 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [ ] 完成威胁建模和安全审查。
 - [ ] 完成 AOT、裁剪、冷启动、内存、CPU、句柄和磁盘基准。
 - [ ] 完成 8 小时稳定性和数据库压力测试。
-- [x] 生成 Windows x64 Native AOT 安装包和便携包；发布工作流保留一键 Setup.exe，并新增可选择当前用户/所有用户及安装父目录的 MSI，最终应用目录固定为所选父目录下的 `SnapBoard`。`v0.1.0` 早于该 MSI 工作流，只包含 Setup.exe、Velopack Portable.zip 和独立 Native AOT ZIP；可选目录 MSI 将由后续 Release 生成。
-- [~] Git 标签能够自动创建 GitHub Release，并已在 `v0.1.0` 上传 Windows 构建与 SHA-256；当前工作流还会验证并上传 `SnapBoard-win-x64-Installer.msi` 及其 SHA-256。SBOM 尚未生成，Windows 代码签名证书也未配置。
+- [x] 生成 Windows x64 Native AOT 安装包和便携包；发布工作流保留一键 Setup.exe，并新增可选择当前用户/所有用户及安装父目录的 MSI，最终应用目录固定为所选父目录下的 `SnapBoard`。`v0.1.1` 已公开发布 Setup.exe、Velopack Portable.zip、独立 Native AOT ZIP 和 `SnapBoard-win-x64-Installer.msi`。
+- [~] Git 标签能够自动创建 GitHub Release，并已在 `v0.1.1` 上传 Windows 构建、可选目录 MSI 与 SHA-256；发布后公开附件审计通过。SBOM 尚未生成，Windows 代码签名证书也未配置。
 - [x] 设计并实现自动更新、应用级签名、发布回退和数据库保护策略：客户端只内置 P-256 公钥，Release 私钥仅由发布端持有；安装目录与每用户数据目录分离，当前更新不改 Schema，失败版本采用撤下清单并发布更高修复版本的 roll-forward，未来不兼容数据库迁移必须先提供备份/恢复门槛。实际跨版本安装仍按正式发布验证项保留。
 - [ ] 完成用户文档、隐私说明和已知限制。
 
@@ -671,13 +671,13 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写。macOS 新记录保存最佳努力前台进程名称、路径和 `ForegroundWindowAtChange` 依据，无法确定时保持 Unknown；Windows 专属 AUMID/Package Family 继续为 NULL，既有 Unknown 历史不反向猜测或改写。
 - [~] 验证 Intel 与 Apple Silicon：Apple M4 上的 `osx-arm64` 原生测试、AOT 与开发包通过；`macos-15-intel` Runner 已完成自动测试、`osx-x64` Native AOT 和发布打包，同机 Rosetta 也完成私有存储冷启动和单实例退出。Intel 实体机上的物理键盘、窗口与多显示器交互仍未执行。
-- [x] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：本机与 GitHub 两个 RID 的主程序和独立迁移器验证均通过，`v0.1.0` 已发布两套 App/DMG/PKG/Velopack 包；无未解释 trim/AOT 分析告警。
+- [x] 完成 `osx-x64` 和 `osx-arm64` Native AOT 发布：本机与 GitHub 两个 RID 的主程序和独立迁移器验证均通过，`v0.1.1` 已发布两套 App/DMG/PKG/Velopack 包；无未解释 trim/AOT 分析告警。
 
 #### 2.3 发布
 
 - [~] 完成应用签名、Hardened Runtime、公证和 DMG/PKG：稳定 Bundle ID、标准 `.icns`、Template 状态图标、嵌套迁移器先签名、Hardened Runtime、DMG `/Applications` 链接、PKG `/Applications` 安装位置、payload 与校验和均已本机验证；当前仅 ad-hoc 签名且 PKG 未签名，`spctl` 按预期拒绝，无 Developer ID 身份和公证凭据，正式签名/公证未执行。
-- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：`v0.1.0` 已由 arm64/x64 Runner 构建并上传 DMG、PKG、便携包和更新包，Intel Runner 实际通过；仓库尚无 Apple Developer ID 与公证凭据，因此当前只完成 ad-hoc/未签名包，正式签名和公证仍待执行。
-- [~] 实现稳定版/测试版自动更新：Velopack 启动钩子、架构隔离通道、GitHub/官方多源、签名清单、包哈希校验、设置页下载和退出安装编排已完成；`v0.1.0` 远程 Release 的 win-x64、osx-arm64、osx-x64 feed 均由 GitHub Secret 中的 P-256 私钥签名，并已用客户端内置公钥复验。旧版到新版的已安装 App 升级和 Developer ID 正式包仍未实测。
+- [~] GitHub Actions macOS Runner 自动构建、签名、公证并上传 Release：`v0.1.1` 已由 arm64/x64 Runner 构建并上传 DMG、PKG、便携包和更新包，Intel Runner 实际通过；仓库尚无 Apple Developer ID 与公证凭据，因此当前只完成 ad-hoc/未签名包，正式签名和公证仍待执行。
+- [~] 实现稳定版/测试版自动更新：Velopack 启动钩子、架构隔离通道、GitHub/官方多源、签名清单、包哈希校验、设置页下载和退出安装编排已完成；`v0.1.1` 远程 Release 的 win-x64、osx-arm64、osx-x64 feed 均由 GitHub Secret 中的 P-256 私钥签名，并已从公开 Release 重新下载后用客户端内置公钥复验。已安装 `v0.1.0` 到 `v0.1.1` 的替换重启和 Developer ID 正式包仍未实测。
 - [~] 完成 macOS 内存、CPU、权限、睡眠唤醒和多桌面测试：Native AOT 平台探针 10,000 次事件 Physical 增长 5.09 MiB、FD 不变，100,000 次计量阶段增长 0.45 MiB，排除按事件线性泄漏；系统唤醒与网络变化的原生注册、回调和 AOT 初始化已自动验证。快速窗口保护已覆盖普通、zoomed、原生全屏 Space、三轮多 Space 往返、无边框全屏、全屏视频及辅助功能权限允许/拒绝。完整桌面纯后台为 41.4 MiB，首次开窗后关窗约 94-96 MiB，100 轮快速窗口无单调增长，但历史三次 3 秒样本和 12 分 23 秒样本仍曾超过 100 MB，尚未达到 `<= 80 MB` 目标。8 小时、真实睡眠唤醒/断网恢复、物理多显示器和 Retina 仍待验证。
 - [x] 更新平台支持矩阵和已知限制。
 
