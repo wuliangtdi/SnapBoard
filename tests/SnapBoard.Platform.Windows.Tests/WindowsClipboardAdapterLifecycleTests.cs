@@ -51,6 +51,32 @@ public sealed class WindowsClipboardAdapterLifecycleTests
     }
 
     [Fact]
+    public async Task OwnMessageWindowUpdateIsSuppressedButAnotherWindowIsPublished()
+    {
+        FakeClipboardMessageHost host = new();
+        await using WindowsClipboardAdapter adapter = CreateAdapter(host);
+        using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+        await using IAsyncEnumerator<ClipboardChangedEvent> enumerator =
+            adapter.WatchAsync(cancellation.Token).GetAsyncEnumerator();
+
+        Task<bool> moveNext = enumerator.MoveNextAsync().AsTask();
+        await host.Started.Task.WaitAsync(cancellation.Token);
+        host.RaiseClipboardUpdated(
+            17,
+            Environment.ProcessId,
+            Environment.ProcessId,
+            host.WindowHandle);
+        host.RaiseClipboardUpdated(
+            18,
+            Environment.ProcessId,
+            Environment.ProcessId,
+            host.WindowHandle + 1);
+
+        Assert.True(await moveNext.WaitAsync(cancellation.Token));
+        Assert.Equal(18UL, enumerator.Current.SequenceNumber);
+    }
+
+    [Fact]
     public async Task CancellationDuringStartupStopsMessageHost()
     {
         CancelableStartupClipboardMessageHost host = new();

@@ -284,11 +284,13 @@ internal sealed class NativeClipboardMessageHost : IClipboardMessageHost
         uint sequenceNumber = WindowsNativeMethods.GetClipboardSequenceNumber();
         if (sequenceNumber != 0)
         {
+            nint clipboardOwnerWindow = WindowsNativeMethods.GetClipboardOwner();
             // 消息回调只抓 HWND/PID 数值线索；进程、包身份和文件系统查询全部留给后台 reader。
             ClipboardUpdated?.Invoke(new ClipboardUpdateObservation(
                 sequenceNumber,
-                GetWindowProcessId(WindowsNativeMethods.GetClipboardOwner()),
-                GetWindowProcessId(WindowsNativeMethods.GetForegroundWindow())));
+                GetWindowProcessId(clipboardOwnerWindow),
+                GetWindowProcessId(WindowsNativeMethods.GetForegroundWindow()),
+                clipboardOwnerWindow));
         }
     }
 

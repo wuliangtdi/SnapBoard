@@ -37,11 +37,13 @@ internal sealed class FakeClipboardMessageHost : IClipboardMessageHost
     public void RaiseClipboardUpdated(
         uint sequenceNumber,
         int? clipboardOwnerProcessId = null,
-        int? foregroundProcessId = null) =>
+        int? foregroundProcessId = null,
+        nint clipboardOwnerWindowHandle = 0) =>
         ClipboardUpdated?.Invoke(new ClipboardUpdateObservation(
             sequenceNumber,
             clipboardOwnerProcessId,
-            foregroundProcessId));
+            foregroundProcessId,
+            clipboardOwnerWindowHandle));
 
     public void FailMessageLoop(Exception error) => MessageLoopStopped?.Invoke(error);
 }

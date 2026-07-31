@@ -155,6 +155,13 @@ public sealed class WindowsClipboardAdapter :
 
     private void OnClipboardUpdated(ClipboardUpdateObservation observation)
     {
+        // SetClipboardData 可能在 writer 记录新序列号前就投递通知，因此还需按本适配器的所有者 HWND 封住竞态窗口。
+        if (observation.ClipboardOwnerWindowHandle != 0 &&
+            observation.ClipboardOwnerWindowHandle == _messageHost.WindowHandle)
+        {
+            return;
+        }
+
         if (!_sequenceDeduplicator.TryAccept(observation.SequenceNumber) ||
             _feedbackGuard.TryConsume(observation.SequenceNumber))
         {

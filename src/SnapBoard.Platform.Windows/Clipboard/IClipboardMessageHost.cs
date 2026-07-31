@@ -3,7 +3,8 @@ namespace SnapBoard.Platform.Windows.Clipboard;
 internal readonly record struct ClipboardUpdateObservation(
     uint SequenceNumber,
     int? ClipboardOwnerProcessId,
-    int? ForegroundProcessId);
+    int? ForegroundProcessId,
+    nint ClipboardOwnerWindowHandle);
 
 internal interface IClipboardMessageHost : IAsyncDisposable
 {
