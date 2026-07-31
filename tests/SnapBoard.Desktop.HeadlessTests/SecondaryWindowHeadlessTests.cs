@@ -736,7 +736,7 @@ public sealed class SecondaryWindowHeadlessTests
                 AvailableBytes: 0,
                 RequiredBytes: 0,
                 StorageLocationValidationError.InsecurePermissions,
-                "insecure-acl"),
+                "acl-hardening-failed"),
         };
         using SettingsViewModel viewModel = new(
             new FakeGlobalHotKeyService(),
@@ -752,7 +752,9 @@ public sealed class SecondaryWindowHeadlessTests
         Assert.False(viewModel.CanConfirmStorageMigration);
         Assert.Equal("无法使用所选目录", viewModel.StorageTargetTitle);
         Assert.Equal(target, viewModel.SelectedStorageDirectory);
-        Assert.Contains("权限", viewModel.StorageTargetDetails, StringComparison.Ordinal);
+        Assert.Equal(
+            "无法收紧所选目录权限；请选择当前用户拥有的空目录",
+            viewModel.StorageTargetDetails);
         Assert.StartsWith("未更改位置", viewModel.StorageStatus, StringComparison.Ordinal);
         viewModel.SelectedSettingsSectionIndex = (int)SettingsSection.Storage;
 

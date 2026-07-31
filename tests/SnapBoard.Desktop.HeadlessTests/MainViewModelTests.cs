@@ -53,6 +53,35 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public void FavoritesFilterKeepsOnlyPinnedRecords()
+    {
+        MainViewModel viewModel = new();
+
+        viewModel.SelectFilterCommand.Execute("Favorites");
+
+        Assert.True(viewModel.IsFavoritesFilterSelected);
+        Assert.Equal(ClipboardHistoryFilter.Favorites, viewModel.SelectedFilter);
+        Assert.Equal(2, viewModel.VisibleItems.Count);
+        Assert.All(viewModel.VisibleItems, item => Assert.True(item.IsPinned));
+    }
+
+    [Fact]
+    public async Task RemovingFavoriteImmediatelyRemovesItFromFavoritesFilter()
+    {
+        MainViewModel viewModel = new();
+        viewModel.SelectFilterCommand.Execute("Favorites");
+        ClipboardHistoryItemViewModel selected = Assert.IsType<ClipboardHistoryItemViewModel>(
+            viewModel.SelectedItem);
+
+        await viewModel.TogglePinCommand.ExecuteAsync(null);
+
+        Assert.False(selected.IsPinned);
+        Assert.DoesNotContain(selected, viewModel.VisibleItems);
+        Assert.Single(viewModel.VisibleItems);
+        Assert.Equal("已取消收藏", viewModel.StatusMessage);
+    }
+
+    [Fact]
     public void CompactModeCollapsesPreviewColumn()
     {
         MainViewModel viewModel = new();

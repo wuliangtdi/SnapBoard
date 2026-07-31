@@ -7,6 +7,8 @@ using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Material.Icons;
+using Material.Icons.Avalonia;
 using SnapBoard.Desktop.Controls;
 using SnapBoard.Desktop.ViewModels;
 using SnapBoard.Desktop.Views;
@@ -81,8 +83,18 @@ public sealed class MainWindowHeadlessTests
             ToggleButton codeFilterButton = window.FindControl<ToggleButton>("CodeFilterButton")!;
             ActivateButton(window, codeFilterButton);
 
-            Assert.Equal(ClipboardItemType.Code, viewModel.SelectedFilter);
+            Assert.Equal(ClipboardHistoryFilter.Code, viewModel.SelectedFilter);
             Assert.All(viewModel.VisibleItems, item => Assert.Equal(ClipboardItemType.Code, item.Type));
+
+            ToggleButton favoriteFilterButton = window.FindControl<ToggleButton>(
+                "FavoriteFilterButton")!;
+            MaterialIcon favoriteFilterIcon = window.FindControl<MaterialIcon>(
+                "FavoriteFilterIcon")!;
+            Assert.Equal(MaterialIconKind.StarBorder, favoriteFilterIcon.Kind);
+            ActivateButton(window, favoriteFilterButton);
+
+            Assert.True(viewModel.IsFavoritesFilterSelected);
+            Assert.All(viewModel.VisibleItems, item => Assert.True(item.IsPinned));
 
             Button compactModeButton = window.FindControl<Button>("CompactModeButton")!;
             ActivateButton(window, compactModeButton);
@@ -163,11 +175,27 @@ public sealed class MainWindowHeadlessTests
             Assert.NotNull(window.FindControl<TextBlock>("QuickSearchDescription"));
             Assert.NotNull(window.FindControl<TextBox>("QuickSearchBox"));
             Assert.NotNull(window.FindControl<Button>("QuickClearSearchButton"));
+            Assert.NotNull(window.FindControl<ToggleButton>("QuickAllFilterButton"));
+            Assert.NotNull(window.FindControl<ToggleButton>("QuickTextFilterButton"));
+            Assert.NotNull(window.FindControl<ToggleButton>("QuickImageFilterButton"));
+            Assert.NotNull(window.FindControl<ToggleButton>("QuickCodeFilterButton"));
+            Assert.NotNull(window.FindControl<ToggleButton>("QuickLinkFilterButton"));
+            ToggleButton favoriteFilterButton = window.FindControl<ToggleButton>(
+                "QuickFavoriteFilterButton")!;
+            MaterialIcon favoriteFilterIcon = window.FindControl<MaterialIcon>(
+                "QuickFavoriteFilterIcon")!;
+            Assert.Equal(MaterialIconKind.StarBorder, favoriteFilterIcon.Kind);
             ListBox historyList = window.FindControl<ListBox>("QuickHistoryList")!;
             Assert.Equal(viewModel.VisibleItems.Count, historyList.ItemCount);
             Assert.NotNull(viewModel.SelectedItem);
             Assert.IsType<Button>(window.FindControl<Button>("QuickPlainTextPasteButton"));
             Assert.IsType<Button>(window.FindControl<Button>("QuickPasteButton"));
+
+            ActivateButton(window, favoriteFilterButton);
+
+            Assert.True(viewModel.IsFavoritesFilterSelected);
+            Assert.Equal(2, historyList.ItemCount);
+            Assert.All(viewModel.VisibleItems, item => Assert.True(item.IsPinned));
 
             using var frame = window.CaptureRenderedFrame();
             Assert.NotNull(frame);
@@ -243,7 +271,10 @@ public sealed class MainWindowHeadlessTests
             TextBox searchBox = window.FindControl<TextBox>("QuickSearchBox")!;
             Button plainTextButton = window.FindControl<Button>("QuickPlainTextPasteButton")!;
             Button pasteButton = window.FindControl<Button>("QuickPasteButton")!;
+            ToggleButton favoriteFilterButton = window.FindControl<ToggleButton>(
+                "QuickFavoriteFilterButton")!;
             Assert.True(IsInsideWindow(searchBox, window));
+            Assert.True(IsInsideWindow(favoriteFilterButton, window));
             Assert.True(IsInsideWindow(plainTextButton, window));
             Assert.True(IsInsideWindow(pasteButton, window));
 

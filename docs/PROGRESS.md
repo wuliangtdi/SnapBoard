@@ -1115,7 +1115,33 @@ GitHub 验证：
   - Linux Build/Test、Native AOT 和产品包继续按已确认范围暂停。data/ 测试材料保持未跟踪，未删除也未进入任何提交或发布产物。
 ```
 
-## 36. 更新规则
+## 36. 2026-07-31 执行记录：收藏筛选与 Windows 数据目录 ACL 修复
+
+```text
+日期：2026-07-31
+阶段/任务：主窗口与快速窗口收藏筛选；修复现有用户自有目录因缺少 WRITE_OWNER 被错误拒绝
+状态：[x] 代码、自动测试、Headless 视觉验证和 win-x64 Native AOT 完成；[~] D:\ProgramData\SnapBoard_Data 已收紧权限，实际数据迁移因用户停止界面自动化而未执行
+开发基线：7ab3331b2e83a7b3d3efb70031b75e09bc310e1d（开发前 main 与 origin/main 一致）
+
+实现内容：
+  - 主窗口现有“全部、文本、图片、代码、链接”筛选后新增“收藏”，快速窗口增加同语义的紧凑筛选栏；两处复用 MainViewModel 和 ClipboardHistoryQuery.IsPinned，不增加数据库字段、同步事件或第二套查询流程。
+  - 收藏按钮根据当前记录显示实心/空心星标和“收藏/取消收藏”提示；在收藏筛选中取消收藏会立即移除该记录并保留操作反馈。
+  - WindowsStoragePlatformService 对现有目录先验证所有者。当前用户、SYSTEM 或 Administrators 已拥有目录时只收紧 DACL，不再无条件重写所有者；不可信所有者仍必须成功接管后才可使用。最终私有性复检同时校验可信所有者与访问规则。
+  - 设置页区分“无法收紧所选目录权限”和“目录权限仍可能暴露数据”，避免把所有失败都描述为目录本身不可用。
+
+验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format SnapBoard.slnx --verify-no-changes --no-restore、Release build 和 git diff --check 通过；build 0 警告、0 错误。
+  - 全量 474 项：452 项通过、22 项按当前平台或外部服务条件跳过、0 项失败；Windows Platform 103/103，Desktop Headless 106/106。
+  - Headless 真实 Skia 截图覆盖主窗口、680 x 480 快速窗口和 560 x 380 最小快速窗口；六个筛选项均完整可见，列表、滚动区域和底栏无重叠。
+  - win-x64 self-contained PublishAot 通过，0 个未解释 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,415,744 字节；独立 SnapBoard.StorageMigrator.exe 为 4,513,792 字节，且没有 .dll、.deps.json 或 .runtimeconfig.json sidecar。
+  - Windows 原生回归用例复现“当前用户拥有、继承 Authenticated Users Modify、没有 WRITE_OWNER”的目录并验证收紧成功。D:\ProgramData\SnapBoard_Data 已确认是空的非重解析点，并已收紧为当前用户、SYSTEM 和 Administrators 完全控制。
+
+限制：
+  - 用户在自动操作设置窗口迁移流程时按下 Esc，Computer Use 随即停止；本轮没有声称数据已经迁移。目标目录仍为空，需由用户在应用内重新选择并确认迁移。
+  - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
+```
+
+## 37. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

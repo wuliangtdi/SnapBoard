@@ -2334,7 +2334,11 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             StorageLocationValidationError.UnsupportedVolume => "首个版本只支持本地固定磁盘",
             StorageLocationValidationError.ReparsePoint => "目录路径包含符号链接、联接或重解析点",
             StorageLocationValidationError.InsufficientSpace => "目标磁盘空间不足，无法保留校验和回滚余量",
-            StorageLocationValidationError.InsecurePermissions => "目录权限可能向其他本机用户暴露数据",
+            StorageLocationValidationError.InsecurePermissions when
+                validation.ErrorCode == "acl-hardening-failed" =>
+                "无法收紧所选目录权限；请选择当前用户拥有的空目录",
+            StorageLocationValidationError.InsecurePermissions =>
+                "目录权限仍可能向其他本机用户暴露数据",
             StorageLocationValidationError.ExistingStorage when
                 validation.ErrorCode == "target-not-empty" =>
                 "所选目录中已有文件或子目录；为避免覆盖现有内容，请选择一个空目录",

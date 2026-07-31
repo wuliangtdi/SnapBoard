@@ -315,6 +315,15 @@
             <Setter Property="Foreground" Value="White" />
         </Style>
 
+        <Style Selector="ToggleButton.filter.quick-filter">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
         <Style Selector="TextBox.search-box">
             <Setter Property="Height" Value="50" />
             <Setter Property="Padding" Value="46,0,42,0" />

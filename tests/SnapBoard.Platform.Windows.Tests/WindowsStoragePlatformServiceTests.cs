@@ -97,4 +97,58 @@ public sealed class WindowsStoragePlatformServiceTests
             }
         }
     }
+
+    [WindowsFact]
+    public async Task ExistingOwnedDirectoryWithoutWriteOwnerCanBeHardened()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"SnapBoard.Windows.Storage.Owner.Tests.{Guid.NewGuid():N}");
+        string parent = Path.Combine(root, "shared-parent");
+        string target = Path.Combine(parent, "target");
+        Directory.CreateDirectory(parent);
+        WindowsStoragePlatformService service = new();
+        try
+        {
+            SecurityIdentifier currentUser = WindowsIdentity.GetCurrent().User ??
+                throw new InvalidOperationException("The test user SID is unavailable.");
+            DirectorySecurity parentSecurity = new();
+            parentSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            parentSecurity.SetOwner(currentUser);
+            parentSecurity.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+                FileSystemRights.Modify,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow));
+            new DirectoryInfo(parent).SetAccessControl(parentSecurity);
+            Directory.CreateDirectory(target);
+
+            DirectorySecurity targetSecurity = new DirectoryInfo(target).GetAccessControl(
+                AccessControlSections.Access | AccessControlSections.Owner);
+            Assert.Equal(
+                currentUser,
+                targetSecurity.GetOwner(typeof(SecurityIdentifier)));
+            Assert.False((await service.InspectPathAsync(
+                target,
+                probeWriteCapabilities: false,
+                CancellationToken.None)).IsPrivateToCurrentUser);
+
+            await service.EnsurePrivateDirectoryAsync(target, CancellationToken.None);
+
+            StoragePathInspection hardened = await service.InspectPathAsync(
+                target,
+                probeWriteCapabilities: true,
+                CancellationToken.None);
+            Assert.True(hardened.IsPrivateToCurrentUser);
+            Assert.True(hardened.SupportsWriteThroughAndAtomicRename);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

@@ -76,6 +76,36 @@ public sealed class RuntimeMainViewModelTests
     }
 
     [Fact]
+    public async Task FavoritesFilterMapsToPinnedHistoryQuery()
+    {
+        ClipboardHistoryQuery? observed = null;
+        FakeHistoryService service = new()
+        {
+            SearchHandler = (query, _) =>
+            {
+                observed = query;
+                ClipboardHistoryItemSummary item = CreateSummary(
+                    "favorite",
+                    DateTimeOffset.UtcNow,
+                    isPinned: true);
+                return ValueTask.FromResult(new ClipboardHistoryPage([item], null, 1));
+            },
+        };
+        using MainViewModel viewModel = new(service);
+        viewModel.Start();
+        await viewModel.WaitForIdleAsync();
+
+        viewModel.SelectFilterCommand.Execute("Favorites");
+        await viewModel.WaitForIdleAsync();
+
+        Assert.NotNull(observed);
+        Assert.True(observed.IsPinned);
+        Assert.Null(observed.DisplayCategory);
+        Assert.True(viewModel.IsFavoritesFilterSelected);
+        Assert.True(Assert.Single(viewModel.VisibleItems).IsPinned);
+    }
+
+    [Fact]
     public async Task SelectedWriteRequestRestoresStoredFormatsOnDemand()
     {
         ClipboardHistoryItemSummary summary = CreateSummary("multi-format", DateTimeOffset.UtcNow);
@@ -278,14 +308,15 @@ public sealed class RuntimeMainViewModelTests
         DateTimeOffset capturedAt,
         string? sourceExecutablePath = null,
         string? sourceApplicationUserModelId = null,
-        string sourceApplication = "test-app") => new(
+        string sourceApplication = "test-app",
+        bool isPinned = false) => new(
         ClipboardItemId.New(),
         ClipboardContentKind.Text,
         ClipboardHistoryDisplayCategory.Text,
         capturedAt,
         sourceApplication,
         preview,
-        false,
+        isPinned,
         Array.Empty<string>(),
         0,
         null,

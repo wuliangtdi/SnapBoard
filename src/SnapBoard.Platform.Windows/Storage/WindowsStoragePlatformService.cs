@@ -196,18 +196,34 @@ public sealed class WindowsStoragePlatformService : IStoragePlatformService
         SecurityIdentifier administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
         DirectorySecurity security = new();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.SetOwner(currentUser);
         AddFullControlRule(security, currentUser);
         AddFullControlRule(security, system);
         AddFullControlRule(security, administrators);
 
         if (!Directory.Exists(canonicalPath))
         {
+            security.SetOwner(currentUser);
             FileSystemAclExtensions.CreateDirectory(security, canonicalPath);
         }
         else
         {
-            new DirectoryInfo(canonicalPath).SetAccessControl(security);
+            DirectoryInfo directory = new(canonicalPath);
+            IdentityReference? ownerReference = directory
+                .GetAccessControl(AccessControlSections.Owner)
+                .GetOwner(typeof(SecurityIdentifier));
+            if (ownerReference is not SecurityIdentifier owner)
+            {
+                throw new InvalidOperationException("The directory owner is unavailable.");
+            }
+
+            if (!IsTrustedIdentity(owner, currentUser, system, administrators))
+            {
+                security.SetOwner(currentUser);
+            }
+
+            // 可信所有者可收紧 DACL，但普通进程通常没有 WRITE_OWNER。此时不重复
+            // 写 owner，避免 ProgramData 等继承公共 ACL 的用户自有目录被误拒绝。
+            directory.SetAccessControl(security);
         }
     }
 
@@ -227,6 +243,13 @@ public sealed class WindowsStoragePlatformService : IStoragePlatformService
         SecurityIdentifier administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
         DirectorySecurity security = new DirectoryInfo(path).GetAccessControl(
             AccessControlSections.Access | AccessControlSections.Owner);
+        IdentityReference? ownerReference = security.GetOwner(typeof(SecurityIdentifier));
+        if (ownerReference is not SecurityIdentifier owner ||
+            !IsTrustedIdentity(owner, currentUser, system, administrators))
+        {
+            return false;
+        }
+
         AuthorizationRuleCollection rules = security.GetAccessRules(
             includeExplicit: true,
             includeInherited: true,
@@ -250,6 +273,15 @@ public sealed class WindowsStoragePlatformService : IStoragePlatformService
 
         return true;
     }
+
+    private static bool IsTrustedIdentity(
+        SecurityIdentifier identity,
+        SecurityIdentifier currentUser,
+        SecurityIdentifier system,
+        SecurityIdentifier administrators) =>
+        identity.Equals(currentUser) ||
+        identity.Equals(system) ||
+        identity.Equals(administrators);
 
     private static bool ProbeWriteCapabilities(string path)
     {

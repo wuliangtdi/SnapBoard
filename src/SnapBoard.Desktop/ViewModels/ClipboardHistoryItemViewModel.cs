@@ -35,7 +35,8 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
         bool hasColorSwatch = false,
         string? sourceExecutablePath = null,
         string? sourceApplicationUserModelId = null,
-        string? sourcePackageFamilyName = null)
+        string? sourcePackageFamilyName = null,
+        bool isPinned = false)
     {
         Id = ClipboardItemId.New();
         Type = type;
@@ -55,6 +56,7 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
         Notes = notes;
         HasThumbnail = hasThumbnail;
         HasColorSwatch = hasColorSwatch;
+        IsPinned = isPinned;
         LineNumbers = string.Join(Environment.NewLine, Enumerable.Range(1, Math.Max(1, content.Split('\n').Length)));
     }
 
@@ -158,6 +160,12 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsPinned { get; set; }
 
+    public MaterialIconKind FavoriteIcon => IsPinned
+        ? MaterialIconKind.Star
+        : MaterialIconKind.StarBorder;
+
+    public string FavoriteActionLabel => IsPinned ? "取消收藏" : "收藏";
+
     [ObservableProperty]
     public partial Bitmap? Thumbnail { get; set; }
 
@@ -175,6 +183,12 @@ public sealed partial class ClipboardHistoryItemViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasSourceIconBitmap));
         OnPropertyChanged(nameof(HasSourceIconFallback));
+    }
+
+    partial void OnIsPinnedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(FavoriteIcon));
+        OnPropertyChanged(nameof(FavoriteActionLabel));
     }
 
     internal bool TryBeginThumbnailLoad() =>

@@ -14,7 +14,7 @@
         WindowStartupLocation="Manual"
         Background="{DynamicResource AppBackgroundBrush}"
         Title="闪剪">
-    <Grid RowDefinitions="104,*,60">
+    <Grid RowDefinitions="104,48,*,60">
         <Border Grid.Row="0"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource DividerBrush}"
@@ -78,8 +78,84 @@
             </Grid>
         </Border>
 
+        <Border Grid.Row="1"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="20,0" ColumnDefinitions="*,*,*,*,*,*">
+                <ToggleButton x:Name="QuickAllFilterButton"
+                              Classes="filter quick-filter"
+                              Command="{Binding SelectFilterCommand}"
+                              CommandParameter="All"
+                              IsChecked="{Binding IsAllFilterSelected, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon Width="16" Height="16" Kind="ClipboardMultipleOutline" />
+                        <TextBlock VerticalAlignment="Center" Text="全部" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="QuickTextFilterButton"
+                              Grid.Column="1"
+                              Classes="filter quick-filter"
+                              Command="{Binding SelectFilterCommand}"
+                              CommandParameter="Text"
+                              IsChecked="{Binding IsTextFilterSelected, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon Width="16" Height="16" Kind="FormatText" />
+                        <TextBlock VerticalAlignment="Center" Text="文本" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="QuickImageFilterButton"
+                              Grid.Column="2"
+                              Classes="filter quick-filter"
+                              Command="{Binding SelectFilterCommand}"
+                              CommandParameter="Image"
+                              IsChecked="{Binding IsImageFilterSelected, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon Width="16" Height="16" Kind="ImageMultipleOutline" />
+                        <TextBlock VerticalAlignment="Center" Text="图片" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="QuickCodeFilterButton"
+                              Grid.Column="3"
+                              Classes="filter quick-filter"
+                              Command="{Binding SelectFilterCommand}"
+                              CommandParameter="Code"
+                              IsChecked="{Binding IsCodeFilterSelected, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon Width="16" Height="16" Kind="CodeTags" />
+                        <TextBlock VerticalAlignment="Center" Text="代码" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="QuickLinkFilterButton"
+                              Grid.Column="4"
+                              Classes="filter quick-filter"
+                              Command="{Binding SelectFilterCommand}"
+                              CommandParameter="Link"
+                              IsChecked="{Binding IsLinkFilterSelected, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon Width="16" Height="16" Kind="LinkBoxOutline" />
+                        <TextBlock VerticalAlignment="Center" Text="链接" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="QuickFavoriteFilterButton"
+                              Grid.Column="5"
+                              Classes="filter quick-filter"
+                              Command="{Binding SelectFilterCommand}"
+                              CommandParameter="Favorites"
+                              IsChecked="{Binding IsFavoritesFilterSelected, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon x:Name="QuickFavoriteFilterIcon"
+                                                    Width="16"
+                                                    Height="16"
+                                                    Kind="StarBorder" />
+                        <TextBlock VerticalAlignment="Center" Text="收藏" />
+                    </StackPanel>
+                </ToggleButton>
+            </Grid>
+        </Border>
+
         <ListBox x:Name="QuickHistoryList"
-                 Grid.Row="1"
+                 Grid.Row="2"
                  Classes="history-list"
                  DoubleTapped="OnHistoryDoubleTapped"
                  ItemsSource="{Binding VisibleItems}"
@@ -169,7 +245,7 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource DividerBrush}"
                 BorderThickness="0,1,0,0">

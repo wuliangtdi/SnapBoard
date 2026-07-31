@@ -175,6 +175,19 @@
                             <TextBlock VerticalAlignment="Center" Text="链接" />
                         </StackPanel>
                     </ToggleButton>
+                    <ToggleButton x:Name="FavoriteFilterButton"
+                                  Classes="filter"
+                                  Command="{Binding SelectFilterCommand}"
+                                  CommandParameter="Favorites"
+                                  IsChecked="{Binding IsFavoritesFilterSelected, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <materialIcons:MaterialIcon x:Name="FavoriteFilterIcon"
+                                                        Width="18"
+                                                        Height="18"
+                                                        Kind="StarBorder" />
+                            <TextBlock VerticalAlignment="Center" Text="收藏" />
+                        </StackPanel>
+                    </ToggleButton>
                 </StackPanel>
 
                 <Button Grid.Column="1"
@@ -431,8 +444,10 @@
                             <Button Classes="icon"
                                     Command="{Binding TogglePinCommand}"
                                     Foreground="{DynamicResource WarningBrush}"
-                                    ToolTip.Tip="置顶">
-                                <materialIcons:MaterialIcon Width="20" Height="20" Kind="StarBorder" />
+                                    ToolTip.Tip="{Binding SelectedItem.FavoriteActionLabel}">
+                                <materialIcons:MaterialIcon Width="20"
+                                                            Height="20"
+                                                            Kind="{Binding SelectedItem.FavoriteIcon}" />
                             </Button>
                             <Button Classes="icon"
                                     Command="{Binding CopyCommand}"

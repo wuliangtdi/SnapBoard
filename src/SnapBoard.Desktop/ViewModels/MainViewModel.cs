@@ -21,6 +21,16 @@ public sealed record ClipboardSelectedWriteRequest(
     ClipboardItemId ItemId,
     ClipboardWriteRequest Request);
 
+public enum ClipboardHistoryFilter
+{
+    All = 0,
+    Text = 1,
+    Image = 2,
+    Code = 3,
+    Link = 4,
+    Favorites = 5,
+}
+
 public partial class MainViewModel : ViewModelBase, IDisposable
 {
     private const int PageSize = 50;
@@ -132,7 +142,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public partial string SearchText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial ClipboardItemType? SelectedFilter { get; set; }
+    public partial ClipboardHistoryFilter SelectedFilter { get; set; }
 
     [ObservableProperty]
     public partial ClipboardHistoryItemViewModel? SelectedItem { get; set; }
@@ -190,15 +200,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     public bool HasNoVisibleItems => !IsLoading && VisibleItems.Count == 0;
 
-    public bool IsAllFilterSelected => SelectedFilter is null;
+    public bool IsAllFilterSelected => SelectedFilter == ClipboardHistoryFilter.All;
 
-    public bool IsTextFilterSelected => SelectedFilter == ClipboardItemType.Text;
+    public bool IsTextFilterSelected => SelectedFilter == ClipboardHistoryFilter.Text;
 
-    public bool IsImageFilterSelected => SelectedFilter == ClipboardItemType.Image;
+    public bool IsImageFilterSelected => SelectedFilter == ClipboardHistoryFilter.Image;
 
-    public bool IsCodeFilterSelected => SelectedFilter == ClipboardItemType.Code;
+    public bool IsCodeFilterSelected => SelectedFilter == ClipboardHistoryFilter.Code;
 
-    public bool IsLinkFilterSelected => SelectedFilter == ClipboardItemType.Link;
+    public bool IsLinkFilterSelected => SelectedFilter == ClipboardHistoryFilter.Link;
+
+    public bool IsFavoritesFilterSelected => SelectedFilter == ClipboardHistoryFilter.Favorites;
 
     public string RecordingStateText => IsForegroundProtectionActive
         ? "全屏保护中，暂不记录"
@@ -233,13 +245,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    partial void OnSelectedFilterChanged(ClipboardItemType? value)
+    partial void OnSelectedFilterChanged(ClipboardHistoryFilter value)
     {
         OnPropertyChanged(nameof(IsAllFilterSelected));
         OnPropertyChanged(nameof(IsTextFilterSelected));
         OnPropertyChanged(nameof(IsImageFilterSelected));
         OnPropertyChanged(nameof(IsCodeFilterSelected));
         OnPropertyChanged(nameof(IsLinkFilterSelected));
+        OnPropertyChanged(nameof(IsFavoritesFilterSelected));
         if (_historyService is null)
         {
             RefreshDesignItems();
@@ -290,11 +303,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         SelectedFilter = filterName switch
         {
-            "Text" => ClipboardItemType.Text,
-            "Image" => ClipboardItemType.Image,
-            "Code" => ClipboardItemType.Code,
-            "Link" => ClipboardItemType.Link,
-            _ => null,
+            "Text" => ClipboardHistoryFilter.Text,
+            "Image" => ClipboardHistoryFilter.Image,
+            "Code" => ClipboardHistoryFilter.Code,
+            "Link" => ClipboardHistoryFilter.Link,
+            "Favorites" => ClipboardHistoryFilter.Favorites,
+            _ => ClipboardHistoryFilter.All,
         };
     }
 
@@ -357,12 +371,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 nextValue,
                 _lifetime.Token))
         {
-            StatusMessage = "置顶状态更新失败";
+            StatusMessage = "收藏状态更新失败";
             return;
         }
 
         selected.IsPinned = nextValue;
-        StatusMessage = nextValue ? "已置顶" : "已取消置顶";
+        if (SelectedFilter == ClipboardHistoryFilter.Favorites && !nextValue)
+        {
+            if (_historyService is null)
+            {
+                RefreshDesignItems();
+            }
+            else
+            {
+                ScheduleReload(debounce: false);
+            }
+        }
+
+        StatusMessage = nextValue ? "已收藏" : "已取消收藏";
     }
 
     [RelayCommand]
@@ -863,12 +889,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         SearchText = SearchText,
         DisplayCategory = SelectedFilter switch
         {
-            ClipboardItemType.Text => ClipboardHistoryDisplayCategory.Text,
-            ClipboardItemType.Image => ClipboardHistoryDisplayCategory.Image,
-            ClipboardItemType.Code => ClipboardHistoryDisplayCategory.Code,
-            ClipboardItemType.Link => ClipboardHistoryDisplayCategory.Link,
+            ClipboardHistoryFilter.Text => ClipboardHistoryDisplayCategory.Text,
+            ClipboardHistoryFilter.Image => ClipboardHistoryDisplayCategory.Image,
+            ClipboardHistoryFilter.Code => ClipboardHistoryDisplayCategory.Code,
+            ClipboardHistoryFilter.Link => ClipboardHistoryDisplayCategory.Link,
             _ => null,
         },
+        IsPinned = SelectedFilter == ClipboardHistoryFilter.Favorites ? true : null,
         Cursor = cursor,
         PageSize = PageSize,
         NewestFirst = IsNewestFirst,
@@ -1112,10 +1139,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         IEnumerable<ClipboardHistoryItemViewModel> query = _designItems;
 
-        if (SelectedFilter is { } selectedFilter)
+        query = SelectedFilter switch
         {
-            query = query.Where(item => item.Type == selectedFilter);
-        }
+            ClipboardHistoryFilter.Text => query.Where(item => item.Type == ClipboardItemType.Text),
+            ClipboardHistoryFilter.Image => query.Where(item => item.Type == ClipboardItemType.Image),
+            ClipboardHistoryFilter.Code => query.Where(item => item.Type == ClipboardItemType.Code),
+            ClipboardHistoryFilter.Link => query.Where(item => item.Type == ClipboardItemType.Link),
+            ClipboardHistoryFilter.Favorites => query.Where(item => item.IsPinned),
+            _ => query,
+        };
 
         string search = SearchText.Trim();
         if (search.Length > 0)
@@ -1175,7 +1207,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 mainViewModelCode,
                 "C#",
                 "Program.cs",
-                "剪贴板历史"),
+                "剪贴板历史",
+                isPinned: true),
             new(
                 ClipboardItemType.Text,
                 MaterialIconKind.FormatText,
@@ -1199,7 +1232,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 "https://docs.avaloniaui.net/",
                 "URL",
                 "Avalonia Documentation",
-                "剪贴板历史"),
+                "剪贴板历史",
+                isPinned: true),
             new(
                 ClipboardItemType.Image,
                 MaterialIconKind.ImageMultipleOutline,
