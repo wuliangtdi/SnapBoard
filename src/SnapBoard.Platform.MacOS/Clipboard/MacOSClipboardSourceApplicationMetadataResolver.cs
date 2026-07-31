@@ -11,7 +11,9 @@ namespace SnapBoard.Platform.MacOS.Clipboard;
 /// </summary>
 [SupportedOSPlatform("macos")]
 public sealed class MacOSClipboardSourceApplicationMetadataResolver(
-    IPlatformMainThreadDispatcher dispatcher) : IClipboardSourceApplicationMetadataResolver
+    IPlatformMainThreadDispatcher dispatcher) :
+    IClipboardSourceApplicationMetadataResolver,
+    IClipboardSourceApplicationIconProvider
 {
     private const int IconSize = 32;
     private const int MaximumCacheEntries = 256;
@@ -45,6 +47,11 @@ public sealed class MacOSClipboardSourceApplicationMetadataResolver(
             }
         }, cancellationToken);
     }
+
+    public async ValueTask<ClipboardSourceApplicationIcon?> CaptureAsync(
+        ClipboardSourceApplicationIdentity identity,
+        CancellationToken cancellationToken) =>
+        (await ResolveAsync(identity, cancellationToken).ConfigureAwait(false)).Icon;
 
     internal static string? FindEnclosingAppBundle(string? executablePath)
     {

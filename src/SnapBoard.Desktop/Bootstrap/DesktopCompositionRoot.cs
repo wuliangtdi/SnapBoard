@@ -190,9 +190,11 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IDesktopSystemEventService, MacOSDesktopSystemEventService>();
         services.AddSingleton<ILaunchContextService, MacOSLaunchContextService>();
         services.AddSingleton<IPlatformSecretStore, MacOSKeychainSecretStore>();
-        services.AddSingleton<
-            IClipboardSourceApplicationMetadataResolver,
-            MacOSClipboardSourceApplicationMetadataResolver>();
+        services.AddSingleton<MacOSClipboardSourceApplicationMetadataResolver>();
+        services.AddSingleton<IClipboardSourceApplicationMetadataResolver>(provider =>
+            provider.GetRequiredService<MacOSClipboardSourceApplicationMetadataResolver>());
+        services.AddSingleton<IClipboardSourceApplicationIconProvider>(provider =>
+            provider.GetRequiredService<MacOSClipboardSourceApplicationMetadataResolver>());
         AddSyncServices(services);
         services.AddSingleton(provider => new ClipboardCaptureCoordinator(
             provider.GetRequiredService<IClipboardMonitor>(),

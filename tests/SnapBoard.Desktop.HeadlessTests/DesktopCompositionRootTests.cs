@@ -30,8 +30,12 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IClipboardContentReader>());
             Assert.Same(adapter, provider.GetRequiredService<IClipboardWriter>());
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
-            Assert.IsType<MacOSClipboardSourceApplicationMetadataResolver>(
-                provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
+            IClipboardSourceApplicationMetadataResolver resolver =
+                Assert.IsType<MacOSClipboardSourceApplicationMetadataResolver>(
+                    provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
+            Assert.Same(
+                resolver,
+                provider.GetRequiredService<IClipboardSourceApplicationIconProvider>());
             Assert.IsType<MacOSKeychainSecretStore>(
                 provider.GetRequiredService<IPlatformSecretStore>());
             Assert.IsType<MacOSDesktopSystemEventService>(
@@ -46,8 +50,12 @@ public sealed class DesktopCompositionRootTests
             Assert.Same(adapter, provider.GetRequiredService<IClipboardContentReader>());
             Assert.Same(adapter, provider.GetRequiredService<IClipboardWriter>());
             Assert.Same(adapter, provider.GetRequiredService<IAutomaticPasteService>());
-            Assert.IsType<WindowsClipboardSourceApplicationMetadataResolver>(
-                provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
+            IClipboardSourceApplicationMetadataResolver resolver =
+                Assert.IsType<WindowsClipboardSourceApplicationMetadataResolver>(
+                    provider.GetRequiredService<IClipboardSourceApplicationMetadataResolver>());
+            Assert.Same(
+                resolver,
+                provider.GetRequiredService<IClipboardSourceApplicationIconProvider>());
             Assert.IsType<SyncService>(provider.GetRequiredService<ISyncService>());
             AssertSyncMigrationServices(provider);
         }

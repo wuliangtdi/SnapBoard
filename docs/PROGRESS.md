@@ -1,8 +1,8 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-31
-> 当前阶段：来源应用图标跨设备同步的 Windows 与共享层已完成；macOS 可以消费同步快照，但本机新记录生成快照仍待原生阶段实施。共享 WebDAV 服务商迁移、跨平台更新与安装编排继续保持既有状态
-> 本次目标状态：Windows 原生采集、SQLite v9、当前 v1 同步载荷、加密 Blob 生命周期、主/快速窗口消费、自动测试与 win-x64 Native AOT 已验证；macOS 阶段和真实双安装外部应用矩阵未完成
+> 当前阶段：来源应用图标跨设备同步阶段 A/B 已全部完成；Windows 与 macOS 新记录生成同一规范快照，并复用 SQLite v9、加密 Blob 和当前 v1 协议双向同步。共享 WebDAV 服务商迁移、跨平台更新与安装编排继续保持既有状态
+> 本次目标状态：macOS TextEdit/Finder 原生采集、AppKit 主线程与缓存、Windows -> macOS/macOS -> Windows 像素往返、arm64/x64 Release 测试与 Native AOT 已验证；整个来源应用图标跨平台功能标记完成
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -1234,7 +1234,46 @@ Windows 实机迁移：
   - 本次不生成或提交 Data/、临时数据库、构建产物、恢复材料、凭据或 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md。
 ```
 
-## 40. 更新规则
+## 40. 2026-07-31 执行记录：来源应用图标跨设备同步阶段 B
+
+```text
+日期：2026-07-31
+阶段/任务：来源应用图标跨设备同步的 macOS 原生采集与双向验证
+状态：[x] macOS 本机快照、双向像素往返、实机 TextEdit/Finder、osx-arm64/osx-x64 Release 与 Native AOT 完成；整个跨平台来源应用图标功能完成
+开发基线：6d2c240d043c07dfb95897b2b4adce6a8642271d（开发前 main 与 origin/main 一致）
+
+实现内容：
+  - MacOSClipboardSourceApplicationMetadataResolver 同时实现元数据解析器和 IClipboardSourceApplicationIconProvider；CaptureAsync 复用同一次 NSWorkspace/App Bundle 解析与 256 项有界缓存，不建立第二套识别逻辑。
+  - Desktop macOS 组合根将两个端口别名到同一解析器单例。AppKit 访问继续经过 IPlatformMainThreadDispatcher，输出沿用现有固定 32 x 32、stride 128、4096 字节 BGRA8888 预乘 Alpha 格式。
+  - macOS 快照直接进入既有 ClipboardCaptureCoordinator、SQLite v9、内容寻址 Blob、引用计数、加密同步和主/快速窗口消费路径；没有兼容层、迁移代码、历史回填或平台专用持久化。
+  - 当前同步协议继续为 v1，远端根目录继续为 SnapBoard/v1。来源 EXE/App Bundle 路径仍只用于本机解析，不进入同步载荷。
+  - Windows 生产解析、采集和组合根语义未修改；仅在共享组合根回归测试中继续断言 Windows 元数据与图标端口保持同一实例。
+
+自动验证：
+  - arm64 SDK 和官方 x64 SDK（Rosetta）均执行 locked restore、Release build/test；两轮都是 469 项通过、26 项按 Windows 原生环境或外部 WebDAV 条件跳过、0 项失败。x64 Host 明确为 Architecture x64、RID osx-x64，build 0 警告、0 错误。
+  - macOS 原生测试直接解析系统 TextEdit/Finder，验证规范尺寸、非空像素、AppKit InvokeAsync 边界以及 ResolveAsync/CaptureAsync 的缓存复用。
+  - 双设备端到端测试先执行 Windows -> macOS，再执行 macOS -> Windows；目标设备来源可执行路径均为 null，宽、高、stride 和 4096 字节像素完全一致，远端 Blob 数量、删除墓碑和引用生命周期保持正确。
+  - 持久化快照优先测试改为 AvaloniaFact，在真实 Headless 平台初始化下继续证明同步快照优先于本机解析器；生产降级行为未改变。
+
+macOS 实机：
+  - 环境为 Mac mini Apple M4、macOS 26.2 (25C56)、arm64。arm64 AOT App Bundle 使用随机隔离数据根启动，未访问默认用户数据库。
+  - TextEdit 唯一文本记录保存“文本编辑”、/System/Applications/TextEdit.app/Contents/MacOS/TextEdit、ForegroundWindowAtChange 和图标哈希 74482fd5a867827b325b951a1dee89aee1042d0e3e922a9a3fd6a7ded38f7f7b。
+  - Finder 复制 data/SOURCE_APPLICATION_ICON_SYNC_REQUIREMENTS.md 的记录保存“访达”、/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder、ForegroundWindowAtChange 和图标哈希 7d73b7da2611bcd2d63026bb3c20346f6db226d4af8b6b5c4b8955d8a5b0f6f8。
+  - 两个图标 Blob 都是 application/vnd.snapboard.source-icon-bgra32、4096 字节；落盘 SHA-256 与数据库键一致，AOT 主窗口可见对应来源名称与图标。
+
+Native AOT：
+  - osx-arm64：SnapBoard.Desktop 36,252,640 字节，SHA-256 d5921f9fc43ddf6d454c6120b696e168a371588dac4c6d6abe62395ceef894d8；SnapBoard.StorageMigrator 8,356,968 字节，SHA-256 eec02eccbe5b4a9b1a104101371bbf61d970d70dafa4a80ff605e7087d179e04。
+  - osx-x64：由 x64 SDK 在 Rosetta 下原生发布；SnapBoard.Desktop 37,281,072 字节，SHA-256 9943361f4fb24d4cd65736f29123b0708c32a2328d35e08e9e6a61b55ef4dceb；SnapBoard.StorageMigrator 8,554,496 字节，SHA-256 3a4ce9ed359da687b08317a5c2935321a2ef55fbba1416e120e3252a6724e67d。
+  - Verify-NativePublish.sh 确认两端主程序和迁移器均为对应架构 Mach-O，迁移器无参数退出码为 4，未发现 CoreCLR、hostfxr 或迁移器托管 sidecar。两个 RID 均无 trim/AOT 警告。
+  - 链接阶段各有两条官方 .NET Apple NativeAOT 静态库的 clang module-cache 调试信息警告（Foundation 与 _SwiftConcurrencyShims .pcm 不存在）；只影响调试信息，属于仓库既有已解释警告。
+
+限制：
+  - x64 Release 与 AOT 使用 Apple Silicon 上的 Rosetta x64 SDK 和实际 x86_64 进程，不冒充 Intel 匹配硬件。
+  - 当前阶段的双向协议、格式与像素往返由两份隔离存储自动验证；正式 Windows 与 macOS 两台安装经真实 WebDAV 的人工可视矩阵仍属于更广泛的跨平台验收限制。
+  - Data/、临时数据库、构建产物、恢复材料和凭据不进入提交。
+```
+
+## 41. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

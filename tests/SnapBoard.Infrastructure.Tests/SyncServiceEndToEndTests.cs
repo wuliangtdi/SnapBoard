@@ -315,7 +315,7 @@ public sealed class SyncServiceEndToEndTests
     }
 
     [Fact]
-    public async Task TwoDevicesJoinUploadBlobDownloadAndApplyTombstone()
+    public async Task WindowsAndMacOSRoundTripSourceApplicationIconsAndApplyTombstone()
     {
         await using HistoryStoreTestContext firstContext =
             await HistoryStoreTestContext.CreateAsync();
@@ -361,10 +361,10 @@ public sealed class SyncServiceEndToEndTests
             Assert.Equal(SyncSetupStatus.Success, joined.Status);
             Assert.NotEqual(created.DeviceId, joined.DeviceId);
 
-            ClipboardSourceApplicationIcon expectedIcon = CreateSourceApplicationIcon(0x48);
-            ClipboardCapturedItem item = CreateHtmlItem(html);
-            item.SourceApplicationIcon = expectedIcon;
-            await firstContext.Store.SaveAsync(item, CancellationToken.None);
+            ClipboardSourceApplicationIcon windowsIcon = CreateSourceApplicationIcon(0x48);
+            ClipboardCapturedItem windowsItem = CreateHtmlItem(html);
+            windowsItem.SourceApplicationIcon = windowsIcon;
+            await firstContext.Store.SaveAsync(windowsItem, CancellationToken.None);
             SyncStatusSnapshot firstUpload = await first.SynchronizeNowAsync(
                 CancellationToken.None);
             Assert.Equal(SyncServiceState.Idle, firstUpload.State);
@@ -379,18 +379,41 @@ public sealed class SyncServiceEndToEndTests
             ClipboardHistoryItemSummary downloaded = Assert.Single((await secondContext.Store.SearchAsync(
                 new ClipboardHistoryQuery { PageSize = 10 },
                 CancellationToken.None)).Items);
-            Assert.Equal(item.Id, downloaded.Id);
+            Assert.Equal(windowsItem.Id, downloaded.Id);
             Assert.Null(downloaded.SourceExecutablePath);
             ClipboardHistoryContent downloadedContent = Assert.IsType<ClipboardHistoryContent>(
-                await secondContext.Store.GetContentAsync(item.Id, CancellationToken.None));
+                await secondContext.Store.GetContentAsync(windowsItem.Id, CancellationToken.None));
             Assert.Equal(html, downloadedContent.Html.ToArray());
-            ClipboardSourceApplicationIcon downloadedIcon =
+            ClipboardSourceApplicationIcon downloadedWindowsIcon =
                 Assert.IsType<ClipboardSourceApplicationIcon>(
-                    await secondContext.Store.GetAsync(item.Id, CancellationToken.None));
-            Assert.Equal(expectedIcon.BgraPixels.ToArray(), downloadedIcon.BgraPixels.ToArray());
+                    await secondContext.Store.GetAsync(windowsItem.Id, CancellationToken.None));
+            AssertSourceApplicationIconsEqual(windowsIcon, downloadedWindowsIcon);
+
+            ClipboardSourceApplicationIcon macOSIcon = CreateSourceApplicationIcon(0x91);
+            ClipboardCapturedItem macOSItem = CreateTextItem("macos-source-icon-roundtrip");
+            macOSItem.SourceApplicationIcon = macOSIcon;
+            await secondContext.Store.SaveAsync(macOSItem, CancellationToken.None);
+            SyncStatusSnapshot macOSUpload = await second.SynchronizeNowAsync(
+                CancellationToken.None);
+            Assert.Equal(SyncServiceState.Idle, macOSUpload.State);
+            Assert.Equal(1, macOSUpload.UploadedEvents);
+            Assert.Equal(3, remote.Blobs.Count);
+
+            SyncStatusSnapshot windowsDownload = await first.SynchronizeNowAsync(
+                CancellationToken.None);
+            Assert.Equal(SyncServiceState.Idle, windowsDownload.State);
+            Assert.Equal(1, windowsDownload.DownloadedEvents);
+            ClipboardHistoryItemSummary downloadedMacOSItem = await GetItemAsync(
+                firstContext,
+                macOSItem.Id);
+            Assert.Null(downloadedMacOSItem.SourceExecutablePath);
+            ClipboardSourceApplicationIcon downloadedMacOSIcon =
+                Assert.IsType<ClipboardSourceApplicationIcon>(
+                    await firstContext.Store.GetAsync(macOSItem.Id, CancellationToken.None));
+            AssertSourceApplicationIconsEqual(macOSIcon, downloadedMacOSIcon);
 
             Assert.True(await firstContext.Store.SoftDeleteAsync(
-                item.Id,
+                windowsItem.Id,
                 CancellationToken.None));
             Assert.Equal(
                 SyncServiceState.Idle,
@@ -398,10 +421,13 @@ public sealed class SyncServiceEndToEndTests
             SyncStatusSnapshot tombstoneDownload = await second.SynchronizeNowAsync(
                 CancellationToken.None);
             Assert.Equal(1, tombstoneDownload.DownloadedEvents);
-            Assert.Empty((await secondContext.Store.SearchAsync(
-                new ClipboardHistoryQuery { PageSize = 10 },
-                CancellationToken.None)).Items);
-            Assert.Null(await secondContext.Store.GetAsync(item.Id, CancellationToken.None));
+            Assert.DoesNotContain(
+                windowsItem.Id,
+                await GetVisibleItemsAsync(secondContext));
+            Assert.Contains(macOSItem.Id, await GetVisibleItemsAsync(secondContext));
+            Assert.Null(await secondContext.Store.GetAsync(
+                windowsItem.Id,
+                CancellationToken.None));
 
             SyncConfigurationSnapshot secondConfiguration =
                 Assert.IsType<SyncConfigurationSnapshot>(
@@ -415,7 +441,7 @@ public sealed class SyncServiceEndToEndTests
                 CancellationToken.None);
             Assert.Equal(3, checkpoint.AppliedSequence);
             Assert.Equal(4, firstConfiguration.NextSequence);
-            Assert.Equal(1, secondConfiguration.NextSequence);
+            Assert.Equal(2, secondConfiguration.NextSequence);
         }
         finally
         {
@@ -860,6 +886,16 @@ public sealed class SyncServiceEndToEndTests
         ClipboardSourceApplicationIconRules.Height,
         ClipboardSourceApplicationIconRules.Stride,
         Enumerable.Repeat(value, ClipboardSourceApplicationIconRules.ByteLength).ToArray());
+
+    private static void AssertSourceApplicationIconsEqual(
+        ClipboardSourceApplicationIcon expected,
+        ClipboardSourceApplicationIcon actual)
+    {
+        Assert.Equal(expected.Width, actual.Width);
+        Assert.Equal(expected.Height, actual.Height);
+        Assert.Equal(expected.Stride, actual.Stride);
+        Assert.Equal(expected.BgraPixels.ToArray(), actual.BgraPixels.ToArray());
+    }
 
     private static async Task SynchronizeUntilConvergedAsync(
         SyncService first,

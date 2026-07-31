@@ -1,10 +1,10 @@
 # macOS 剪贴板与桌面二期验收记录
 
-> 最后更新：2026-07-28
+> 最后更新：2026-07-31
 > 环境：Mac mini，Apple M4 10 核，16 GB，macOS 26.2 (25C56)，arm64
 > SDK：.NET SDK 10.0.302（由 `global.json` 锁定）
 > 历史基线分支：`phase2/macos-completion`
-> 当前验证分支：`phase2/macos-history-search-validation`，基线提交 `3be5faa5707c72d80dfc9d7fc01b81edeb9eb66e`
+> 当前验证基线：`main` 与 `origin/main` 均为 `6d2c240d043c07dfb95897b2b4adce6a8642271d`
 
 ## 1. 本轮范围
 
@@ -284,3 +284,22 @@ Release build 为 0 警告/0 错误，format 检查 342 个文件且无改动；
 - 真实 TextEdit 复制的新记录在主窗口中显示“文本编辑”和 TextEdit 原生图标；来源依据为 `ForegroundWindowAtChange`。直接后台写入、复制后在一个轮询周期内切换应用、应用退出或路径不可用时仍可能 Unknown 或只保留名称，这是已记录的协议限制。
 - 裸 `dotnet run` 不是 macOS 应用包，Dock 可能继续使用内部可执行文件名 `SnapBoard.Desktop`；支持的发布启动方式是 `.app`。最终包的 `CFBundleDisplayName`/`CFBundleName`、运行时 `NSRunningApplication.localizedName`、窗口标题和应用菜单首项均实测为“闪剪”，Bundle ID 为 `com.wuliangtdi.snapboard`。
 - 旧历史记录不会通过当前前台应用反推来源；只有修复后新采集且序列匹配的记录会写入最佳努力身份。
+
+## 12. 2026-07-31 来源应用图标同步阶段 B 验收
+
+macOS 组合根将既有 `MacOSClipboardSourceApplicationMetadataResolver` 同实例注册为 `IClipboardSourceApplicationMetadataResolver` 和 `IClipboardSourceApplicationIconProvider`。采集继续复用 `NSWorkspace`、App Bundle 定位、AppKit 主线程调度和 256 项有界缓存；输出固定为 32 x 32、stride 128、4096 字节 BGRA8888 预乘 Alpha。共享 SQLite v9、内容寻址 Blob、加密同步和 UI 消费路径未增加 macOS 分支，Windows 生产实现未修改。
+
+原生自动测试直接解析系统 TextEdit 与 Finder 可执行文件，验证两者生成非空规范快照，`CaptureAsync` 与元数据解析返回同一缓存图标，且每次解析入口都经过 `IPlatformMainThreadDispatcher.InvokeAsync`。同步端到端测试在两个隔离存储间依次执行 Windows -> macOS 和 macOS -> Windows；目标存储的来源可执行路径为空，格式版本、宽、高、stride 和像素保持一致，删除墓碑仍释放被删记录的图标引用。协议继续使用当前 v1 和 `SnapBoard/v1`。
+
+arm64 AOT App Bundle 使用 `/private/tmp` 下随机隔离数据根启动。通过可见 TextEdit 窗口复制唯一文本，并在 Finder 中复制 `data/SOURCE_APPLICATION_ICON_SYNC_REQUIREMENTS.md` 后，SQLite 与主窗口分别显示“文本编辑”和“访达”及原生图标。关键证据如下：
+
+| 来源 | 本机可执行路径 | 归属依据 | Blob SHA-256 | 格式 |
+| --- | --- | --- | --- | --- |
+| 文本编辑 | `/System/Applications/TextEdit.app/Contents/MacOS/TextEdit` | `ForegroundWindowAtChange` | `74482fd5a867827b325b951a1dee89aee1042d0e3e922a9a3fd6a7ded38f7f7b` | v1, 32 x 32, stride 128, 4096 B |
+| 访达 | `/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder` | `ForegroundWindowAtChange` | `7d73b7da2611bcd2d63026bb3c20346f6db226d4af8b6b5c4b8955d8a5b0f6f8` | v1, 32 x 32, stride 128, 4096 B |
+
+两条内容 Blob 的媒体类型均为 `application/vnd.snapboard.source-icon-bgra32`，落盘文件 SHA-256 与数据库键一致。Finder 记录保留了本机文件路径用于本机历史，但同步往返测试证明来源可执行路径不会传到目标设备；App Bundle 路径不进入协议载荷。
+
+arm64 与 x64 均完成 Release build/test 和 Native AOT。arm64 全量测试、以及通过官方 .NET 10.0.302 x64 SDK 在 Rosetta 下执行的 x64 全量测试，结果均为 469 通过、26 跳过、0 失败；x64 Host 明确报告 `Architecture: x64` 和 `RID: osx-x64`。`Verify-NativePublish.sh` 确认两个 RID 的桌面主程序和迁移器都是对应架构 Mach-O，迁移器无参数退出码为 4，未发现 CoreCLR/hostfxr 或托管 helper sidecar。AOT 没有 trim/AOT 警告；仅有已知的 Foundation 与 `_SwiftConcurrencyShims` clang module-cache 调试信息警告，不影响原生运行。
+
+本阶段据此标记完成。x64 结论来自 Apple Silicon 上的 Rosetta x64 SDK 与实际 x86_64 进程，不外推为 Intel 匹配硬件；正式 Windows 与 macOS 两台安装通过真实 WebDAV 的人工可视矩阵仍是更广泛的跨平台验收限制。

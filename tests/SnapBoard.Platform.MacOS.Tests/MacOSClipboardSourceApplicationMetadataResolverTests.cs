@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Platform.Abstractions.Desktop;
 using SnapBoard.Platform.MacOS.Clipboard;
-using SnapBoard.Platform.MacOS.Desktop;
 
 namespace SnapBoard.Platform.MacOS.Tests;
 
@@ -9,33 +9,42 @@ namespace SnapBoard.Platform.MacOS.Tests;
 public sealed class MacOSClipboardSourceApplicationMetadataResolverTests
 {
     [MacOSFact]
-    public async Task ResolvesNativeBundleIconAndPreservesSourceDisplayName()
+    public async Task CapturesCanonicalTextEditAndFinderIconsOnMainThreadAndReusesCache()
     {
-        string? executablePath = FindInstalledApplicationExecutable();
-        if (executablePath is null)
+        (string ProcessName, string ExecutablePath)[] applications =
+        [
+            ("TextEdit", "/System/Applications/TextEdit.app/Contents/MacOS/TextEdit"),
+            ("Finder", "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder"),
+        ];
+        RecordingPlatformMainThreadDispatcher dispatcher = new();
+        MacOSClipboardSourceApplicationMetadataResolver resolver = new(dispatcher);
+
+        foreach ((string processName, string executablePath) in applications)
         {
-            return;
+            Assert.True(File.Exists(executablePath));
+            ClipboardSourceApplicationIdentity identity = new(processName, executablePath);
+            ClipboardSourceApplicationMetadata metadata = await resolver.ResolveAsync(
+                identity,
+                CancellationToken.None);
+
+            Assert.Equal(processName, metadata.DisplayName);
+            ClipboardSourceApplicationIcon icon = Assert.IsType<ClipboardSourceApplicationIcon>(
+                metadata.Icon);
+            Assert.True(ClipboardSourceApplicationIconRules.IsCanonical(icon));
+            Assert.Contains(icon.BgraPixels.ToArray(), pixel => pixel != 0);
+
+            ClipboardSourceApplicationIcon captured =
+                Assert.IsType<ClipboardSourceApplicationIcon>(
+                    await resolver.CaptureAsync(identity, CancellationToken.None));
+            Assert.Same(icon, captured);
+
+            ClipboardSourceApplicationMetadata cached = await resolver.ResolveAsync(
+                identity,
+                CancellationToken.None);
+            Assert.Same(metadata, cached);
         }
 
-        MacOSClipboardSourceApplicationMetadataResolver resolver = new(
-            DirectPlatformMainThreadDispatcher.Instance);
-        ClipboardSourceApplicationMetadata metadata = await resolver.ResolveAsync(
-            new ClipboardSourceApplicationIdentity("test-process", executablePath),
-            CancellationToken.None);
-
-        Assert.Equal("test-process", metadata.DisplayName);
-        ClipboardSourceApplicationIcon icon = Assert.IsType<ClipboardSourceApplicationIcon>(
-            metadata.Icon);
-        Assert.InRange(icon.Width, 1, 256);
-        Assert.InRange(icon.Height, 1, 256);
-        Assert.Equal(icon.Width * 4, icon.Stride);
-        Assert.Equal(icon.Stride * icon.Height, icon.BgraPixels.Length);
-        Assert.Contains(icon.BgraPixels.ToArray(), pixel => pixel != 0);
-
-        ClipboardSourceApplicationMetadata cached = await resolver.ResolveAsync(
-            new ClipboardSourceApplicationIdentity("test-process", executablePath),
-            CancellationToken.None);
-        Assert.Same(metadata, cached);
+        Assert.Equal(applications.Length * 3, dispatcher.AsyncInvocationCount);
     }
 
     [MacOSFact]
@@ -60,26 +69,26 @@ public sealed class MacOSClipboardSourceApplicationMetadataResolverTests
                 "/tmp/does-not-exist.app/Contents/MacOS/Example"));
     }
 
-    private static string? FindInstalledApplicationExecutable()
+    private sealed class RecordingPlatformMainThreadDispatcher : IPlatformMainThreadDispatcher
     {
-        string[] bundles = Directory
-            .EnumerateDirectories("/Applications", "*.app")
-            .OrderBy(path => path.EndsWith("Safari.app", StringComparison.OrdinalIgnoreCase)
-                ? 0
-                : 1)
-            .ToArray();
-        foreach (string bundle in bundles)
+        public int AsyncInvocationCount { get; private set; }
+
+        public bool CheckAccess() => true;
+
+        public T Invoke<T>(Func<T> operation)
         {
-            string contents = Path.Combine(bundle, "Contents", "MacOS");
-            string? executable = Directory.Exists(contents)
-                ? Directory.EnumerateFiles(contents).FirstOrDefault(File.Exists)
-                : null;
-            if (executable is not null)
-            {
-                return executable;
-            }
+            ArgumentNullException.ThrowIfNull(operation);
+            return operation();
         }
 
-        return null;
+        public ValueTask<T> InvokeAsync<T>(
+            Func<T> operation,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(operation);
+            cancellationToken.ThrowIfCancellationRequested();
+            AsyncInvocationCount++;
+            return ValueTask.FromResult(operation());
+        }
     }
 }

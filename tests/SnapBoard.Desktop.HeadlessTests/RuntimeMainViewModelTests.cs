@@ -1,3 +1,4 @@
+using Avalonia.Headless.XUnit;
 using Material.Icons;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Sync;
@@ -186,7 +187,7 @@ public sealed class RuntimeMainViewModelTests
         Assert.Equal(applicationUserModelId, resolver.ApplicationUserModelId);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public async Task PersistedSourceApplicationIconTakesPriorityOverLocalResolver()
     {
         ClipboardHistoryItemSummary summary = CreateSummary(

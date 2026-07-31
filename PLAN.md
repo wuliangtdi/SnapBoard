@@ -3,9 +3,9 @@
 > 文档状态：已批准，进入执行
 > 制定日期：2026-07-26
 > 批准日期：2026-07-26
-> 当前阶段：快速窗口双击快捷键与全屏保护的阶段 B 已完成 macOS 原生实现、纯修饰键修复、自动验证和当前 Apple Silicon 环境内的窗口/AOT/应用内按钮验证；完成定义仍缺物理键盘长按、物理多显示器和 Retina 证据；Linux CI 因 Skia 原生依赖暂时注释，未将 Linux 标记为已验证
-> 实现状态：Windows 保持既有共享两槽快捷键、双击状态机、前台检测和可组合暂停行为；macOS 已接入两个 Carbon Hot Key ID、modifier-only 状态变化边界、NSUserDefaults 当前格式、五态前台窗口检测、共享快捷键控制器、记录前置保护和分离状态文案，不读取开发期快捷键格式，也不使用全局键盘 Hook、Screen Recording 或窗口标题进行判定
-> 本次目标口径：实施 `docs/QUICK_WINDOW_SHORTCUT_AND_FULLSCREEN_REQUIREMENTS.md` 第 13.4 节阶段 B；代码与当前可用环境验证已完成，但整个跨平台功能保持部分完成，不能用单显示器非 Retina 与合成输入结果外推尚缺的真实硬件/物理输入验收
+> 当前阶段：来源应用图标跨设备同步阶段 B 已完成；Windows 与 macOS 新记录均生成同一 32 x 32 BGRA 预乘 Alpha 快照，复用 SQLite v9、内容寻址 Blob 和当前 v1 同步协议
+> 实现状态：macOS 复用既有 `NSWorkspace`/App Bundle 解析器及 AppKit 主线程调度，TextEdit/Finder 实机采集、双向像素往返、arm64/x64 Release 测试与 Native AOT 均已验证；Windows 生产语义未修改
+> 本次目标口径：实施 `docs/SOURCE_APPLICATION_ICON_SYNC_REQUIREMENTS.md` 阶段 B；该跨平台图标功能已完成，协议仍为 v1、远端仍为 `SnapBoard/v1`，不增加兼容、迁移或双协议代码
 > 总体顺序：Windows -> macOS -> Linux
 
 ## 1. 项目目标
@@ -575,14 +575,14 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 - [x] 读取 Text、Unicode、HTML、RTF、Bitmap、File List 和格式清单。
 - [~] 实现来源应用识别和权限失败降级。
 - [x] 完成来源应用图标跨设备同步阶段 A：共享快照模型、SQLite v9、加密 Blob 同步、Windows 原生采集及主/快速窗口快照优先显示已接线并验证。
-- [ ] 完成来源应用图标跨设备同步阶段 B：macOS 原生记录生成同格式快照并完成 macOS 实机与 AOT 验证。
+- [x] 完成来源应用图标跨设备同步阶段 B：macOS 原生记录生成同格式快照，TextEdit/Finder 实机、双向像素往返及 osx-arm64/osx-x64 Release 与 Native AOT 已验证。
 - [x] 实现本应用写入标记和反馈循环抑制。
 - [x] 实现写回剪贴板、纯文本粘贴和自动粘贴。
 - [~] 覆盖管理员窗口、UWP/WinUI、Office、浏览器、远程桌面等兼容性场景。
 
 当前已完成独立 STA 消息线程、message-only window、序列去重、有界队列、有限退避、格式读写、来源标记和 UIPI 保守降级。真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 验证；Windows 11 打包版 Notepad（Microsoft.UI.Xaml）已通过文本监听、纯文本写回、目标恢复和自动粘贴。最新隔离平台探针在 10,000 次事件中无死锁、正常自写事件丢失、反馈循环或 Channel 丢弃，Private Bytes 增长 7.38 MiB，满足该探针的 8 MiB 预算；完整桌面进程曾暴露每个事件触发一次历史全量刷新造成的内存放大，现已用单个可复用定时器合并刷新并通过 10,000 次 Headless 事件测试，但完整 AOT 桌面端到端压力仍需复测。管理员窗口、浏览器、Explorer、Office 和远程桌面仍待验收，详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
-Windows 在 `WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读取阶段按同一剪贴板序列解析 EXE、AUMID、Package Family 和归属依据，避免 UI 切换后把来源错记为 SnapBoard。传统桌面应用继续通过版本资源和 `SHGetFileInfoW` 取名称/图标；Microsoft Store/MSIX 应用优先使用 `shell:AppsFolder\<AUMID>` 的本地化名称和图标，Codex 与截图工具的真实已安装包身份、像素和 GDI 释放已由原生测试覆盖。Windows 新记录会在策略通过后把解析成功的图标规范化为固定 32 x 32 BGRA 快照并写入内容寻址 Blob；主窗口与快速窗口只对进入虚拟化视口的项目后台读取，持久化快照优先于本机路径解析，失败时保留进程名和通用图标。共享层已能在 Windows 和 macOS 消费同步快照，但 macOS 本机新记录的快照生成仍待阶段 B 接线和验证。注册格式 `PNG` 已作为 DIBV5/DIB 后的图片读取与写回路径。Codex 实际复制和截图工具实际截图仍需在新构建上手动复核，因此来源识别条目保持部分完成。
+Windows 在 `WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读取阶段按同一剪贴板序列解析 EXE、AUMID、Package Family 和归属依据，避免 UI 切换后把来源错记为 SnapBoard。传统桌面应用继续通过版本资源和 `SHGetFileInfoW` 取名称/图标；Microsoft Store/MSIX 应用优先使用 `shell:AppsFolder\<AUMID>` 的本地化名称和图标，Codex 与截图工具的真实已安装包身份、像素和 GDI 释放已由原生测试覆盖。Windows 新记录会在策略通过后把解析成功的图标规范化为固定 32 x 32 BGRA 快照并写入内容寻址 Blob；主窗口与快速窗口只对进入虚拟化视口的项目后台读取，持久化快照优先于本机路径解析，失败时保留进程名和通用图标。macOS 现在复用既有 App Bundle 解析结果生成相同规范快照，并通过同一持久化、Blob 和 v1 同步路径供两端消费；本机路径不进入同步载荷。注册格式 `PNG` 已作为 DIBV5/DIB 后的图片读取与写回路径。Codex 实际复制和截图工具实际截图仍需在新构建上手动复核，因此来源识别条目保持部分完成。
 
 退出条件：连续复制 10,000 次不死锁、不漏掉正常事件、不产生无限自复制。
 
@@ -632,7 +632,7 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 - [~] 已覆盖重试、乱序、重复、序号缺口、双设备离线收敛、Tombstone 及服务商迁移的镜像中断后进程级重建续传、commit 中断、部分设备提交、旧 epoch 重放、回滚和故障分类；HTTP 507 配额映射与不可信 ETag 降级已有协议测试，正式跨系统 App 离线矩阵待完成。
 - [~] Apache 2.4.62 标准 WebDAV 双端点、双账号迁移已通过；Nextcloud 与 Synology 兼容性矩阵待完成。
 - [x] 默认只同步文本、HTML、RTF 和受限大小图片；文件列表仅保留无本地路径的引用占位，不上传文件本体。
-- [x] Windows 来源应用图标以固定 4 KiB 规范快照复用加密 Blob 流程跨设备同步；协议版本和 `SnapBoard/v1` 远端目录保持不变，不增加新旧协议兼容分支。
+- [x] Windows 与 macOS 来源应用图标以固定 4 KiB 规范快照复用加密 Blob 流程跨设备同步；协议版本和 `SnapBoard/v1` 远端目录保持不变，不增加新旧协议兼容分支。
 
 Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同步空间，敏感输入在提交后清空，主窗口只展示真实状态并支持手动同步。SQLite v8 在 v7 同步表基础上增加不含 endpoint、用户名或密码的迁移计划与设备状态，v9 为每条记录增加一个来源应用图标 Blob 引用。来源图标描述符直接加入当前 v1 JSON 契约，仍使用 `SnapBoard/v1`、keyed Blob ID 和 AES-256-GCM，不保留旧载荷解析、双协议或远端空间迁移分支。版本化加密 intent、ready、freeze、commit、rollback 和完成标记使用条件创建，旧端 `terminal.enc` 通过单一不可变条件写入仲裁 Completed/Rollback 并发终态，源/目标凭据在 Credential Manager/Keychain 的独立计划槽中暂存、读回验证、提交或回滚。`history.capture`、`history.retention` 与 `sync.pollInterval` 继续使用同一加密事件流和逐键逻辑版本同步。逐设备 Checkpoint 行异常丢失时，SQLite 只从序号自 1 连续的已验证 Inbox 重建最后序号与事件 ID；存在缺口时事务回滚，不跳过未证明的远端事件。共享设置页展示当前端点、设备状态、对象/字节进度和可恢复错误，继续与回滚均使用 owner modal。WebDAV 层限制 HTTPS、同源重定向、证书固定、响应大小和 XML 深度/数量，拒绝 DTD、编码路径逃逸及跨源 href；精确证书指纹只豁免自签名链错误，主机名不匹配仍拒绝。除有状态假远端故障矩阵外，本机 Apache 2.4.62 两个独立 WebDAV 端点与两个不同账号已完成真实迁移、逐密文字节校验及迁移后仅写新端；这仍不能替代 Nextcloud、Synology 或正式 Windows <-> macOS App 双机矩阵。
 
@@ -665,11 +665,11 @@ Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同�
 - [x] macOS 系统唤醒与网络全局状态变化通过平台抽象合并为 `SyncService.RequestSync()`；原生 observer/dynamic store 注册、非托管回调、重复启动与释放后解绑已测试，周期轮询继续作为失败兜底。
 - [~] 实现快速窗口双击快捷键与全屏保护阶段 B：已复用共享接口、状态机、ViewModel、UI 与可组合暂停原因，完成 macOS 原生两槽 Carbon、纯修饰键状态变化边界、NSUserDefaults 当前格式、前台窗口五态检测和保护接线；当前 M4 实机的普通/zoomed/原生全屏 Space/无边框全屏/全屏视频、三轮多 Space 往返、权限允许与拒绝、纯 Option 前后台双击、菜单栏/应用内按钮/`--quick` 放行及手动暂停组合已验证，物理长按、物理多显示器与 Retina 仍待条件。
 
-当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。普通主键继续只处理两个固定 Carbon ID 的 press/release；修饰键作为主键时，活动态只接收 AppKit 本地 `flagsChanged`，非活动态只接收 Carbon `kEventRawKeyModifiersChanged`，再读取已配置修饰键的当前状态完成按下/松开边沿，不订阅 RawKeyDown/RawKeyUp/RawKeyRepeat、普通键或文本，也不安装 CGEventTap/全局 Hook。前台保护先取 `NSWorkspace.frontmostApplication` 的 PID，排除 SnapBoard 自身，再用不弹窗的 `AXIsProcessTrusted`、AX 位置/尺寸/全屏标志、CGWindow 元数据和 NSScreen 点坐标判定，不申请 Screen Recording，也不读取标题、游戏名、文档路径或剪贴板正文。轮询 tick 只读取 `changeCount`；发现变化时额外快照当时的前台 PID，并向有界 Channel 写入轻量事件，正文、SQLite 和网络不进入轮询路径。读取相同 `changeCount` 时才把该 PID 作为 `ForegroundWindowAtChange` 最佳努力来源，通过 `NSRunningApplication` 解析名称与可执行路径；这不是 NSPasteboard owner，后台脚本、快速切换或 PID 失效时必须降级 `Unknown`。App Bundle 图标通过 `NSWorkspace` 在平台主线程解析为固定 32 x 32 BGRA，并使用 256 项有界缓存。共享图片模型新增 PNG/TIFF 编码且 Windows 写入端继续只接受 DIB/DIBV5。剪贴板完整实机结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`，本次快捷键与全屏保护证据见 `docs/PROGRESS.md` 第 30、31 节。
+当前完成范围使用 Native AOT 友好的 `LibraryImport` 和显式 Objective-C/AppKit/CoreGraphics/Accessibility/Security/ServiceManagement 互操作。AppKit 操作通过平台主线程端口调度，原生状态项、窗口原生对象、Carbon 热键、单实例 socket 和监听任务均有明确释放路径。普通主键继续只处理两个固定 Carbon ID 的 press/release；修饰键作为主键时，活动态只接收 AppKit 本地 `flagsChanged`，非活动态只接收 Carbon `kEventRawKeyModifiersChanged`，再读取已配置修饰键的当前状态完成按下/松开边沿，不订阅 RawKeyDown/RawKeyUp/RawKeyRepeat、普通键或文本，也不安装 CGEventTap/全局 Hook。前台保护先取 `NSWorkspace.frontmostApplication` 的 PID，排除 SnapBoard 自身，再用不弹窗的 `AXIsProcessTrusted`、AX 位置/尺寸/全屏标志、CGWindow 元数据和 NSScreen 点坐标判定，不申请 Screen Recording，也不读取标题、游戏名、文档路径或剪贴板正文。轮询 tick 只读取 `changeCount`；发现变化时额外快照当时的前台 PID，并向有界 Channel 写入轻量事件，正文、SQLite 和网络不进入轮询路径。读取相同 `changeCount` 时才把该 PID 作为 `ForegroundWindowAtChange` 最佳努力来源，通过 `NSRunningApplication` 解析名称与可执行路径；这不是 NSPasteboard owner，后台脚本、快速切换或 PID 失效时必须降级 `Unknown`。App Bundle 图标通过 `NSWorkspace` 在平台主线程解析为固定 32 x 32 BGRA，并使用 256 项有界缓存；同一解析器同时作为元数据解析器和快照提供器注册，快照进入共享 SQLite v9、Blob 与 v1 同步路径。TextEdit/Finder 实机和双架构 AOT 结果见 `docs/MACOS_CLIPBOARD_VALIDATION.md`，本次阶段 B 证据见 `docs/PROGRESS.md` 第 40 节。
 
 #### 2.2 跨平台一致性
 
-- [~] 验证 Windows 与 macOS 格式映射和同步互操作：共享固定算法、恢复材料、同步收敛及服务商迁移状态机矩阵已在 macOS 运行；正式 Windows 与 macOS 应用双机互操作及双向迁移尚未执行。
+- [~] 验证 Windows 与 macOS 格式映射和同步互操作：来源应用图标的 Windows -> macOS 与 macOS -> Windows 规范元数据和像素往返已通过两份隔离存储验证，共享固定算法、恢复材料、同步收敛及服务商迁移状态机矩阵已在 macOS 运行；正式 Windows 与 macOS 应用双机互操作及双向迁移尚未执行。
 - [~] 适配 macOS 键盘、菜单、窗口和焦点行为：Command/Option/Control/Shift、状态菜单、目标应用恢复、单显示器窗口重开、zoomed、原生全屏 Space、三轮多 Space 往返、无边框全屏和全屏视频已实测；物理多显示器、Retina 和物理长按仍待验收。
 - [x] 复用核心 UI，只在设置页显示 macOS 术语、权限与 App Bundle 能力差异，Application/UI 不直接依赖 AppKit、Carbon、CoreGraphics 或 Accessibility。
 - [x] 在 APFS 上验证共享 SQLite v1-v5、v4→v5、重复迁移、WAL/外键/busy timeout、损坏恢复、重启一致性、CAS Blob、PNG/TIFF 缩略图、延迟孤儿清理、分页/取消/虚拟化和 100,000 条检索；真实大小写敏感 APFSX 卷上的路径关系保持区分大小写。macOS 新记录保存最佳努力前台进程名称、路径和 `ForegroundWindowAtChange` 依据，无法确定时保持 Unknown；Windows 专属 AUMID/Package Family 继续为 NULL，既有 Unknown 历史不反向猜测或改写。

@@ -163,3 +163,25 @@ dotnet publish src/SnapBoard.Desktop/SnapBoard.Desktop.csproj `
 全量共 495 项：473 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败。Native AOT 输出 0 个 trim/AOT 警告；`SnapBoard.Desktop.exe` 为 40,489,472 字节，`SnapBoard.StorageMigrator.exe` 为 4,514,304 字节。迁移器没有 `.dll`、`.deps.json` 或 `.runtimeconfig.json` sidecar，无参数退出码为 4。主程序使用随机隔离数据根创建 v9 数据库和非零主窗口句柄，并通过 `--exit` 以 0 退出，临时目录随后删除。
 
 本轮没有逐项人工操作 Chrome、Edge、微信、Codex、截图工具和 Store 应用，也没有两份正式安装之间的可视同步验收；这些仍是 Windows 阶段的实机限制。macOS 只验证共享项目继续编译，不能据此推断本机快照生成完成；阶段 B 必须在 macOS 环境执行原生采集、双向同步和 Native AOT。
+
+## 9. macOS 来源应用图标跨设备同步验证
+
+2026-07-31 在 macOS 26.2 (25C56)、Apple M4 arm64、.NET SDK 10.0.302 上完成阶段 B，开发基线为 `6d2c240d043c07dfb95897b2b4adce6a8642271d`。协议保持 v1，远端目录保持 `SnapBoard/v1`，没有新增兼容、迁移或双协议代码。
+
+- macOS 组合根把既有 `MacOSClipboardSourceApplicationMetadataResolver` 同实例注册为元数据解析器和图标提供器；`NSWorkspace`/App Bundle 访问仍经过 `IPlatformMainThreadDispatcher`，并复用原有 256 项有界缓存。
+- 原生测试直接读取系统 TextEdit 与 Finder Bundle，验证固定 32 x 32、stride 128、4096 字节 BGRA 预乘 Alpha、非空像素、AppKit 调度边界以及元数据/图标缓存复用。
+- 双设备端到端测试在当前 v1 载荷上分别执行 Windows -> macOS 与 macOS -> Windows，目标端没有来源可执行路径，宽、高、stride 和 4096 字节像素逐字节一致；图标继续复用加密 Blob，删除墓碑和引用生命周期保持有效。
+- arm64 AOT App Bundle 使用隔离数据根真实采集 TextEdit 与 Finder。数据库记录的来源路径分别为 `/System/Applications/TextEdit.app/Contents/MacOS/TextEdit` 和 `/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder`，归属依据均为 `ForegroundWindowAtChange`；图标 Blob 媒体类型为 `application/vnd.snapboard.source-icon-bgra32`，大小均为 4096 字节，文件 SHA-256 与数据库键一致，AOT 主窗口显示对应来源名称和持久化图标。
+- arm64 SDK 与通过 Rosetta 运行的官方 x64 SDK 都完成 locked restore、Release build 和全量测试。两轮均为 469 项通过、26 项按 Windows 原生环境或外部 WebDAV 条件跳过、0 项失败；x64 Host 报告 `Architecture: x64`、`RID: osx-x64`，build 为 0 警告、0 错误。
+- `osx-arm64` 与使用 x64 SDK 原生发布的 `osx-x64` self-contained Native AOT 均通过 `Verify-NativePublish.sh`；桌面主程序和迁移器分别为 arm64/x86_64 Mach-O，迁移器无参数退出码均为 4，未发现 CoreCLR、hostfxr 或迁移器托管 sidecar。
+
+AOT 产物证据：
+
+| RID | 文件 | 字节 | SHA-256 |
+| --- | --- | ---: | --- |
+| osx-arm64 | SnapBoard.Desktop | 36,252,640 | `d5921f9fc43ddf6d454c6120b696e168a371588dac4c6d6abe62395ceef894d8` |
+| osx-arm64 | SnapBoard.StorageMigrator | 8,356,968 | `eec02eccbe5b4a9b1a104101371bbf61d970d70dafa4a80ff605e7087d179e04` |
+| osx-x64 | SnapBoard.Desktop | 37,281,072 | `9943361f4fb24d4cd65736f29123b0708c32a2328d35e08e9e6a61b55ef4dceb` |
+| osx-x64 | SnapBoard.StorageMigrator | 8,554,496 | `3a4ce9ed359da687b08317a5c2935321a2ef55fbba1416e120e3252a6724e67d` |
+
+两个 RID 均没有 trim/AOT 警告。链接阶段各出现两条来自官方 .NET Apple NativeAOT 静态库的 clang module-cache 调试信息警告（Foundation 与 `_SwiftConcurrencyShims` 的 `.pcm` 不存在）；它们只影响调试信息，仓库已有同类记录，不影响原生文件、启动或校验结论。x64 测试与 AOT 在 Apple Silicon 的 Rosetta x64 运行时执行，不冒充 Intel 匹配硬件；更广泛的两台正式安装、真实 WebDAV 和可视 UI 双机矩阵仍属于整体验收限制，不改变本阶段当前协议的双向像素往返结论。
