@@ -112,17 +112,19 @@ public sealed class WindowsStoragePlatformServiceTests
         {
             SecurityIdentifier currentUser = WindowsIdentity.GetCurrent().User ??
                 throw new InvalidOperationException("The test user SID is unavailable.");
-            DirectorySecurity parentSecurity = new();
-            parentSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-            parentSecurity.SetOwner(currentUser);
-            parentSecurity.AddAccessRule(new FileSystemAccessRule(
+            DirectorySecurity targetCreationSecurity = new();
+            targetCreationSecurity.SetAccessRuleProtection(
+                isProtected: true,
+                preserveInheritance: false);
+            targetCreationSecurity.SetOwner(currentUser);
+            targetCreationSecurity.AddAccessRule(new FileSystemAccessRule(
                 new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
                 FileSystemRights.Modify,
                 InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
                 PropagationFlags.None,
                 AccessControlType.Allow));
-            new DirectoryInfo(parent).SetAccessControl(parentSecurity);
-            Directory.CreateDirectory(target);
+            // Windows 不继承父目录 owner；创建时显式指定用户 owner，DACL 刻意不授予 WRITE_OWNER。
+            FileSystemAclExtensions.CreateDirectory(targetCreationSecurity, target);
 
             DirectorySecurity targetSecurity = new DirectoryInfo(target).GetAccessControl(
                 AccessControlSections.Access | AccessControlSections.Owner);
