@@ -39,6 +39,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private readonly List<ClipboardHistoryItemViewModel> _designItems;
     private readonly IClipboardHistoryService? _historyService;
     private readonly IHistorySettingsService? _historySettingsService;
+    private readonly IClipboardSourceApplicationIconStore? _sourceIconStore;
     private readonly IClipboardSourceApplicationMetadataResolver? _sourceMetadataResolver;
     private readonly ISyncService? _syncService;
     private readonly IApplicationUpdateService? _updateService;
@@ -68,7 +69,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
 
     public MainViewModel(IClipboardHistoryService historyService)
-        : this(historyService, null, null, null, null, initializeServices: true)
+        : this(historyService, null, null, null, null, null, initializeServices: true)
     {
     }
 
@@ -78,6 +79,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         : this(
             historyService,
             sourceMetadataResolver ?? throw new ArgumentNullException(nameof(sourceMetadataResolver)),
+            null,
             null,
             null,
             null,
@@ -96,6 +98,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             syncService ?? throw new ArgumentNullException(nameof(syncService)),
             historySettingsService,
             null,
+            null,
             initializeServices: true)
     {
     }
@@ -106,12 +109,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ISyncService? syncService,
         IHistorySettingsService? historySettingsService,
         IApplicationUpdateService? updateService,
+        IClipboardSourceApplicationIconStore? sourceIconStore,
         bool initializeServices)
     {
         _ = initializeServices;
         ArgumentNullException.ThrowIfNull(historyService);
         _uiContext = SynchronizationContext.Current;
         _historyService = historyService;
+        _sourceIconStore = sourceIconStore;
         _sourceMetadataResolver = sourceMetadataResolver;
         _syncService = syncService;
         _historySettingsService = historySettingsService;
@@ -130,12 +135,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         IClipboardSourceApplicationMetadataResolver? sourceMetadataResolver,
         ISyncService? syncService,
         IHistorySettingsService? historySettingsService,
-        IApplicationUpdateService? updateService) => new(
+        IApplicationUpdateService? updateService,
+        IClipboardSourceApplicationIconStore? sourceIconStore) => new(
             historyService,
             sourceMetadataResolver,
             syncService,
             historySettingsService,
             updateService,
+            sourceIconStore,
             initializeServices: true);
 
     [ObservableProperty]
@@ -631,7 +638,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public async Task LoadSourceApplicationMetadataAsync(ClipboardHistoryItemViewModel item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (_sourceMetadataResolver is null || !item.TryBeginSourceMetadataLoad())
+        if ((_sourceIconStore is null && _sourceMetadataResolver is null) ||
+            !item.TryBeginSourceMetadataLoad())
         {
             return;
         }
@@ -640,6 +648,47 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bool resolved = false;
         try
         {
+            if (_sourceIconStore is not null)
+            {
+                try
+                {
+                    ClipboardSourceApplicationIcon? storedIcon = await _sourceIconStore
+                        .GetAsync(item.Id, _lifetime.Token);
+                    if (storedIcon is not null)
+                    {
+                        iconBitmap = CreateSourceIconBitmap(storedIcon);
+                        if (iconBitmap is not null)
+                        {
+                            if (VisibleItems.Contains(item) &&
+                                Volatile.Read(ref _disposed) == 0)
+                            {
+                                item.ApplySourceApplicationMetadata(
+                                    item.SourceApplication,
+                                    iconBitmap);
+                                iconBitmap = null;
+                            }
+
+                            resolved = true;
+                            return;
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // 持久化快照损坏或暂时不可读时继续使用本机来源解析器降级。
+                }
+            }
+
+            if (_sourceMetadataResolver is null)
+            {
+                resolved = true;
+                return;
+            }
+
             ClipboardSourceApplicationIdentity identity = new(
                 item.SourceApplication,
                 item.SourceExecutablePath,

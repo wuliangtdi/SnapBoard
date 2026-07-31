@@ -41,7 +41,8 @@ internal static class DesktopCompositionRoot
             provider.GetService<IClipboardSourceApplicationMetadataResolver>(),
             provider.GetService<ISyncService>(),
             provider.GetService<IHistorySettingsService>(),
-            provider.GetRequiredService<IApplicationUpdateService>()));
+            provider.GetRequiredService<IApplicationUpdateService>(),
+            provider.GetService<IClipboardSourceApplicationIconStore>()));
 
         if (OperatingSystem.IsWindows())
         {
@@ -95,6 +96,8 @@ internal static class DesktopCompositionRoot
             provider.GetRequiredService<SqliteClipboardHistoryStore>());
         services.AddSingleton<IStorageMigrationBarrier>(provider =>
             provider.GetRequiredService<SqliteClipboardHistoryStore>());
+        services.AddSingleton<IClipboardSourceApplicationIconStore>(provider =>
+            provider.GetRequiredService<SqliteClipboardHistoryStore>());
         services.AddSingleton<ClipboardHistoryChangeNotifier>();
         services.AddSingleton<IClipboardHistoryService, ClipboardHistoryService>();
 
@@ -107,7 +110,13 @@ internal static class DesktopCompositionRoot
         services.AddSingleton<IClipboardCapturePolicy, PayloadSizeClipboardPolicy>();
         services.AddSingleton<IClipboardCapturePolicy, SupportedContentClipboardPolicy>();
         services.AddSingleton<IClipboardCapturePolicyChain, ClipboardCapturePolicyChain>();
-        services.AddSingleton<IClipboardCaptureService, ClipboardCaptureService>();
+        services.AddSingleton<IClipboardCaptureService>(provider => new ClipboardCaptureService(
+            provider.GetRequiredService<IClipboardCapturePolicyChain>(),
+            provider.GetRequiredService<IClipboardHistoryStore>(),
+            provider.GetRequiredService<ClipboardCaptureOptions>(),
+            provider.GetRequiredService<IHistorySettingsService>(),
+            provider.GetRequiredService<ClipboardHistoryChangeNotifier>(),
+            provider.GetService<IClipboardSourceApplicationIconProvider>()));
     }
 
     [SupportedOSPlatform("windows")]
@@ -137,9 +146,11 @@ internal static class DesktopCompositionRoot
             WindowsForegroundWindowStateService>();
         services.AddSingleton<IPlatformSecretStore, WindowsCredentialSecretStore>();
         AddSyncServices(services);
-        services.AddSingleton<
-            IClipboardSourceApplicationMetadataResolver,
-            WindowsClipboardSourceApplicationMetadataResolver>();
+        services.AddSingleton<WindowsClipboardSourceApplicationMetadataResolver>();
+        services.AddSingleton<IClipboardSourceApplicationMetadataResolver>(provider =>
+            provider.GetRequiredService<WindowsClipboardSourceApplicationMetadataResolver>());
+        services.AddSingleton<IClipboardSourceApplicationIconProvider>(provider =>
+            provider.GetRequiredService<WindowsClipboardSourceApplicationMetadataResolver>());
         services.AddSingleton(provider => new ClipboardCaptureCoordinator(
             provider.GetRequiredService<IClipboardMonitor>(),
             provider.GetRequiredService<IClipboardContentReader>(),

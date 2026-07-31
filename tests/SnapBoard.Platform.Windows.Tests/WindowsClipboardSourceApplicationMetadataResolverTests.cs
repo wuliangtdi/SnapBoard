@@ -18,11 +18,17 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolverTests
         string executablePath = Assert.IsType<string>(Environment.ProcessPath);
         WindowsClipboardSourceApplicationMetadataResolver resolver = new();
 
-        var metadata = await resolver.ResolveAsync(
-            new ClipboardSourceApplicationIdentity(
-                Path.GetFileNameWithoutExtension(executablePath),
-                executablePath),
+        ClipboardSourceApplicationIdentity identity = new(
+            Path.GetFileNameWithoutExtension(executablePath),
+            executablePath);
+        ClipboardSourceApplicationMetadata metadata = await resolver.ResolveAsync(
+            identity,
             CancellationToken.None);
+        ClipboardSourceApplicationIcon captured =
+            Assert.IsType<ClipboardSourceApplicationIcon>(
+                await ((IClipboardSourceApplicationIconProvider)resolver).CaptureAsync(
+                    identity,
+                    CancellationToken.None));
 
         Assert.False(string.IsNullOrWhiteSpace(metadata.DisplayName));
         Assert.NotNull(metadata.Icon);
@@ -31,6 +37,7 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolverTests
         Assert.Equal(32 * 4, metadata.Icon.Stride);
         Assert.Equal(32 * 32 * 4, metadata.Icon.BgraPixels.Length);
         Assert.Contains(metadata.Icon.BgraPixels.ToArray(), value => value != 0);
+        Assert.True(ClipboardSourceApplicationIconRules.IsCanonical(captured));
     }
 
     [WindowsFact]

@@ -217,7 +217,12 @@ public sealed partial class SqliteClipboardHistoryStore
                         deleted_at_utc = @deletedAt,
                         updated_at_utc = @deletedAt,
                         total_size_bytes = 0,
-                        thumbnail_blob_hash = NULL
+                        thumbnail_blob_hash = NULL,
+                        source_application_icon_blob_hash = NULL,
+                        source_application_icon_format_version = 0,
+                        source_application_icon_width = 0,
+                        source_application_icon_height = 0,
+                        source_application_icon_stride = 0
                     WHERE id IN (SELECT id FROM pending_clipboard_deletes);
                     """;
                 tombstone.Parameters.AddWithValue(
@@ -339,6 +344,11 @@ public sealed partial class SqliteClipboardHistoryStore
                 FROM clipboard_items i
                 JOIN pending_clipboard_deletes p ON p.id = i.id
                 WHERE i.thumbnail_blob_hash IS NOT NULL
+                UNION ALL
+                SELECT i.source_application_icon_blob_hash
+                FROM clipboard_items i
+                JOIN pending_clipboard_deletes p ON p.id = i.id
+                WHERE i.source_application_icon_blob_hash IS NOT NULL
             )
             SELECT b.hash, b.relative_path, b.ref_count, COUNT(*)
             FROM removed_references r

@@ -574,13 +574,15 @@ UI 定位是安静、紧凑、键盘优先的效率工具，不采用营销页�
 - [x] 使用剪贴板序列号去重，处理剪贴板被占用和延迟渲染。
 - [x] 读取 Text、Unicode、HTML、RTF、Bitmap、File List 和格式清单。
 - [~] 实现来源应用识别和权限失败降级。
+- [x] 完成来源应用图标跨设备同步阶段 A：共享快照模型、SQLite v9、加密 Blob 同步、Windows 原生采集及主/快速窗口快照优先显示已接线并验证。
+- [ ] 完成来源应用图标跨设备同步阶段 B：macOS 原生记录生成同格式快照并完成 macOS 实机与 AOT 验证。
 - [x] 实现本应用写入标记和反馈循环抑制。
 - [x] 实现写回剪贴板、纯文本粘贴和自动粘贴。
 - [~] 覆盖管理员窗口、UWP/WinUI、Office、浏览器、远程桌面等兼容性场景。
 
 当前已完成独立 STA 消息线程、message-only window、序列去重、有界队列、有限退避、格式读写、来源标记和 UIPI 保守降级。真实 delayed-rendering owner 已通过 `WM_RENDERFORMAT` 验证；Windows 11 打包版 Notepad（Microsoft.UI.Xaml）已通过文本监听、纯文本写回、目标恢复和自动粘贴。最新隔离平台探针在 10,000 次事件中无死锁、正常自写事件丢失、反馈循环或 Channel 丢弃，Private Bytes 增长 7.38 MiB，满足该探针的 8 MiB 预算；完整桌面进程曾暴露每个事件触发一次历史全量刷新造成的内存放大，现已用单个可复用定时器合并刷新并通过 10,000 次 Headless 事件测试，但完整 AOT 桌面端到端压力仍需复测。管理员窗口、浏览器、Explorer、Office 和远程桌面仍待验收，详见 `docs/WINDOWS_CLIPBOARD_VALIDATION.md`。
 
-Windows 在 `WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读取阶段按同一剪贴板序列解析 EXE、AUMID、Package Family 和归属依据，避免 UI 切换后把来源错记为 SnapBoard。传统桌面应用继续通过版本资源和 `SHGetFileInfoW` 取名称/图标；Microsoft Store/MSIX 应用优先使用 `shell:AppsFolder\<AUMID>` 的本地化名称和图标，Codex 与截图工具的真实已安装包身份、像素和 GDI 释放已由原生测试覆盖。主窗口与快速窗口只对进入虚拟化视口的项目后台加载，失败时保留进程名和通用图标。注册格式 `PNG` 已作为 DIBV5/DIB 后的图片读取与写回路径。Codex 实际复制和截图工具实际截图仍需在新构建上手动复核，因此来源识别条目保持部分完成。
+Windows 在 `WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读取阶段按同一剪贴板序列解析 EXE、AUMID、Package Family 和归属依据，避免 UI 切换后把来源错记为 SnapBoard。传统桌面应用继续通过版本资源和 `SHGetFileInfoW` 取名称/图标；Microsoft Store/MSIX 应用优先使用 `shell:AppsFolder\<AUMID>` 的本地化名称和图标，Codex 与截图工具的真实已安装包身份、像素和 GDI 释放已由原生测试覆盖。Windows 新记录会在策略通过后把解析成功的图标规范化为固定 32 x 32 BGRA 快照并写入内容寻址 Blob；主窗口与快速窗口只对进入虚拟化视口的项目后台读取，持久化快照优先于本机路径解析，失败时保留进程名和通用图标。共享层已能在 Windows 和 macOS 消费同步快照，但 macOS 本机新记录的快照生成仍待阶段 B 接线和验证。注册格式 `PNG` 已作为 DIBV5/DIB 后的图片读取与写回路径。Codex 实际复制和截图工具实际截图仍需在新构建上手动复核，因此来源识别条目保持部分完成。
 
 退出条件：连续复制 10,000 次不死锁、不漏掉正常事件、不产生无限自复制。
 
@@ -594,7 +596,7 @@ Windows 在 `WM_CLIPBOARDUPDATE` 到达时只快照 owner/foreground PID，读�
 - [x] 实现应用黑名单、敏感格式和大小限制责任链。
 - [x] 实现数据库损坏备份和可诊断的恢复流程。
 
-当前 Schema 为 v7，迁移可重复执行；v5 保存来源 AUMID、Package Family 和归属依据，v6 增加加密同步状态，v7 增加逐设置键的逻辑版本。连接统一启用 WAL、外键和 busy timeout，写事务通过有界单写 Channel 串行化，读取使用短生命周期连接。图片及超过 64 KiB 的表示写入 SHA-256 内容寻址目录，数据库只保存相对路径和引用元数据；缩略图按需解码，删除、清空和保留策略在事务提交后回收无引用文件。启动后延迟两分钟执行后台孤儿清理，文件需超过 24 小时且经数据库精确相对路径复查后才可删除。
+当前 Schema 为 v9，迁移可重复执行；v5 保存来源 AUMID、Package Family 和归属依据，v6 增加加密同步状态，v7 增加逐设置键的逻辑版本，v8 增加 WebDAV 服务商迁移状态，v9 增加来源应用图标 Blob 引用及规范格式元数据。连接统一启用 WAL、外键和 busy timeout，写事务通过有界单写 Channel 串行化，读取使用短生命周期连接。图片、来源应用图标及超过 64 KiB 的表示写入 SHA-256 内容寻址目录，数据库只保存相对路径和引用元数据；缩略图和来源图标按需读取，删除、清空和保留策略在事务提交后回收无引用文件。启动后延迟两分钟执行后台孤儿清理，文件需超过 24 小时且经数据库精确相对路径复查后才可删除。
 
 FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符上限、取消和稳定游标分页。Windows SQLite Schema v6 下重新导入 100,000 条、平均 554.7 字符的生成数据耗时 26,782.90 ms，150 次目标查询 P95 为 2.67 ms，300 次混合搜索 P95 为 2.33 ms、最大 5.79 ms；该数据只证明当前 Windows x64 测试机，不外推其他平台。
 
@@ -630,8 +632,9 @@ FTS5 已覆盖中文、英文、代码、特殊字符、空查询、1,024 字符
 - [~] 已覆盖重试、乱序、重复、序号缺口、双设备离线收敛、Tombstone 及服务商迁移的镜像中断后进程级重建续传、commit 中断、部分设备提交、旧 epoch 重放、回滚和故障分类；HTTP 507 配额映射与不可信 ETag 降级已有协议测试，正式跨系统 App 离线矩阵待完成。
 - [~] Apache 2.4.62 标准 WebDAV 双端点、双账号迁移已通过；Nextcloud 与 Synology 兼容性矩阵待完成。
 - [x] 默认只同步文本、HTML、RTF 和受限大小图片；文件列表仅保留无本地路径的引用占位，不上传文件本体。
+- [x] Windows 来源应用图标以固定 4 KiB 规范快照复用加密 Blob 流程跨设备同步；协议版本和 `SnapBoard/v1` 远端目录保持不变，不增加新旧协议兼容分支。
 
-Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同步空间，敏感输入在提交后清空，主窗口只展示真实状态并支持手动同步。SQLite v8 在 v7 同步表基础上增加不含 endpoint、用户名或密码的迁移计划与设备状态；版本化加密 intent、ready、freeze、commit、rollback 和完成标记使用条件创建，旧端 `terminal.enc` 通过单一不可变条件写入仲裁 Completed/Rollback 并发终态，源/目标凭据在 Credential Manager/Keychain 的独立计划槽中暂存、读回验证、提交或回滚。`history.capture`、`history.retention` 与 `sync.pollInterval` 继续使用同一加密事件流和逐键逻辑版本同步。逐设备 Checkpoint 行异常丢失时，SQLite 只从序号自 1 连续的已验证 Inbox 重建最后序号与事件 ID；存在缺口时事务回滚，不跳过未证明的远端事件。共享设置页展示当前端点、设备状态、对象/字节进度和可恢复错误，继续与回滚均使用 owner modal。WebDAV 层限制 HTTPS、同源重定向、证书固定、响应大小和 XML 深度/数量，拒绝 DTD、编码路径逃逸及跨源 href；精确证书指纹只豁免自签名链错误，主机名不匹配仍拒绝。除有状态假远端故障矩阵外，本机 Apache 2.4.62 两个独立 WebDAV 端点与两个不同账号已完成真实迁移、逐密文字节校验及迁移后仅写新端；这仍不能替代 Nextcloud、Synology 或正式 Windows <-> macOS App 双机矩阵。
+Windows 组合根已接入真实 `SyncService`，设置页可创建或加入同步空间，敏感输入在提交后清空，主窗口只展示真实状态并支持手动同步。SQLite v8 在 v7 同步表基础上增加不含 endpoint、用户名或密码的迁移计划与设备状态，v9 为每条记录增加一个来源应用图标 Blob 引用。来源图标描述符直接加入当前 v1 JSON 契约，仍使用 `SnapBoard/v1`、keyed Blob ID 和 AES-256-GCM，不保留旧载荷解析、双协议或远端空间迁移分支。版本化加密 intent、ready、freeze、commit、rollback 和完成标记使用条件创建，旧端 `terminal.enc` 通过单一不可变条件写入仲裁 Completed/Rollback 并发终态，源/目标凭据在 Credential Manager/Keychain 的独立计划槽中暂存、读回验证、提交或回滚。`history.capture`、`history.retention` 与 `sync.pollInterval` 继续使用同一加密事件流和逐键逻辑版本同步。逐设备 Checkpoint 行异常丢失时，SQLite 只从序号自 1 连续的已验证 Inbox 重建最后序号与事件 ID；存在缺口时事务回滚，不跳过未证明的远端事件。共享设置页展示当前端点、设备状态、对象/字节进度和可恢复错误，继续与回滚均使用 owner modal。WebDAV 层限制 HTTPS、同源重定向、证书固定、响应大小和 XML 深度/数量，拒绝 DTD、编码路径逃逸及跨源 href；精确证书指纹只豁免自签名链错误，主机名不匹配仍拒绝。除有状态假远端故障矩阵外，本机 Apache 2.4.62 两个独立 WebDAV 端点与两个不同账号已完成真实迁移、逐密文字节校验及迁移后仅写新端；这仍不能替代 Nextcloud、Synology 或正式 Windows <-> macOS App 双机矩阵。
 
 退出条件：两台 Windows 设备通过 WebDAV 离线后重连能一致收敛，远端只有密文，并且并发上传不会覆盖其他设备事件。
 

@@ -187,6 +187,83 @@ public sealed class RuntimeMainViewModelTests
     }
 
     [Fact]
+    public async Task PersistedSourceApplicationIconTakesPriorityOverLocalResolver()
+    {
+        ClipboardHistoryItemSummary summary = CreateSummary(
+            "persisted source icon",
+            DateTimeOffset.UtcNow,
+            sourceExecutablePath: @"D:\DifferentInstall\source.exe");
+        FakeHistoryService service = new()
+        {
+            SearchHandler = (_, _) => ValueTask.FromResult(new ClipboardHistoryPage(
+                [summary],
+                null,
+                1)),
+        };
+        FakeSourceApplicationMetadataResolver resolver = new();
+        FakeSourceApplicationIconStore iconStore = new(
+            new ClipboardSourceApplicationIcon(
+                ClipboardSourceApplicationIconRules.Width,
+                ClipboardSourceApplicationIconRules.Height,
+                ClipboardSourceApplicationIconRules.Stride,
+                Enumerable.Repeat(
+                    (byte)0x55,
+                    ClipboardSourceApplicationIconRules.ByteLength).ToArray()));
+        using MainViewModel viewModel = MainViewModel.CreateForServices(
+            service,
+            resolver,
+            syncService: null,
+            historySettingsService: null,
+            updateService: null,
+            sourceIconStore: iconStore);
+        viewModel.Start();
+        await viewModel.WaitForIdleAsync();
+        ClipboardHistoryItemViewModel item = Assert.Single(viewModel.VisibleItems);
+
+        await viewModel.LoadSourceApplicationMetadataAsync(item);
+
+        Assert.True(item.HasSourceIconBitmap);
+        Assert.False(item.HasSourceIconFallback);
+        Assert.Equal(1, iconStore.ReadCount);
+        Assert.Equal(0, resolver.ResolveCount);
+    }
+
+    [Fact]
+    public async Task UnreadablePersistedSourceIconFallsBackToLocalResolver()
+    {
+        ClipboardHistoryItemSummary summary = CreateSummary(
+            "unreadable persisted source icon",
+            DateTimeOffset.UtcNow,
+            sourceExecutablePath: @"C:\Apps\source.exe");
+        FakeHistoryService service = new()
+        {
+            SearchHandler = (_, _) => ValueTask.FromResult(new ClipboardHistoryPage(
+                [summary],
+                null,
+                1)),
+        };
+        FakeSourceApplicationMetadataResolver resolver = new();
+        FakeSourceApplicationIconStore iconStore = new(null) { ThrowOnRead = true };
+        using MainViewModel viewModel = MainViewModel.CreateForServices(
+            service,
+            resolver,
+            syncService: null,
+            historySettingsService: null,
+            updateService: null,
+            sourceIconStore: iconStore);
+        viewModel.Start();
+        await viewModel.WaitForIdleAsync();
+        ClipboardHistoryItemViewModel item = Assert.Single(viewModel.VisibleItems);
+
+        await viewModel.LoadSourceApplicationMetadataAsync(item);
+
+        Assert.Equal("微信", item.SourceApplication);
+        Assert.True(item.HasSourceIconFallback);
+        Assert.Equal(1, iconStore.ReadCount);
+        Assert.Equal(2, resolver.ResolveCount);
+    }
+
+    [Fact]
     public async Task RuntimeViewModelWithoutSourceResolverKeepsGenericApplicationIcon()
     {
         ClipboardHistoryItemSummary summary = CreateSummary(
@@ -345,6 +422,28 @@ public sealed class RuntimeMainViewModelTests
             ExecutablePath = identity.ExecutablePath;
             ApplicationUserModelId = identity.ApplicationUserModelId;
             return ValueTask.FromResult(new ClipboardSourceApplicationMetadata("微信"));
+        }
+    }
+
+    private sealed class FakeSourceApplicationIconStore(
+        ClipboardSourceApplicationIcon? icon) : IClipboardSourceApplicationIconStore
+    {
+        public int ReadCount { get; private set; }
+
+        public bool ThrowOnRead { get; init; }
+
+        public ValueTask<ClipboardSourceApplicationIcon?> GetAsync(
+            ClipboardItemId itemId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
+            if (ThrowOnRead)
+            {
+                throw new IOException("synthetic persisted icon failure");
+            }
+
+            return ValueTask.FromResult(icon);
         }
     }
 

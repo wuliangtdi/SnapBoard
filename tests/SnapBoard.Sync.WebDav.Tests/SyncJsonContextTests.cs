@@ -34,6 +34,47 @@ public sealed class SyncJsonContextTests
     }
 
     [Fact]
+    public void SourceGeneratedContextRoundTripsSourceApplicationIconDescriptor()
+    {
+        SyncClipboardItemPayload expected = new(
+            new string('a', 64),
+            SyncPayloadKind.Text,
+            DisplayCategory: 1,
+            CapturedAtUnixMilliseconds: 123456789,
+            PreviewText: "source icon",
+            SearchableText: "source icon",
+            SourceApplication: "source-app",
+            SourceApplicationUserModelId: null,
+            SourcePackageFamilyName: null,
+            SourceAttributionKind: 0,
+            Representations: [],
+            Thumbnail: null,
+            TotalSizeBytes: 11,
+            SourceApplicationIcon: new SyncSourceApplicationIconPayload(
+                new SyncBlobReferencePayload(
+                    new string('b', 64),
+                    SyncProtocol.SourceApplicationIconMediaType,
+                    SyncProtocol.SourceApplicationIconSizeBytes),
+                SyncProtocol.SourceApplicationIconFormatVersion,
+                SyncProtocol.SourceApplicationIconWidth,
+                SyncProtocol.SourceApplicationIconHeight,
+                SyncProtocol.SourceApplicationIconStride));
+
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            expected,
+            SyncJsonContext.Default.SyncClipboardItemPayload);
+        SyncClipboardItemPayload actual = Assert.IsType<SyncClipboardItemPayload>(
+            JsonSerializer.Deserialize(
+                json,
+                SyncJsonContext.Default.SyncClipboardItemPayload));
+
+        Assert.Equal(expected.SourceApplicationIcon, actual.SourceApplicationIcon);
+        Assert.Equal(expected.ContentHash, actual.ContentHash);
+        Assert.Equal(1, SyncProtocol.CurrentVersion);
+        Assert.Equal("v1", SyncProtocol.VersionDirectoryName);
+    }
+
+    [Fact]
     public void SourceGeneratedContextRoundTripsSynchronizedSetting()
     {
         SyncEventEnvelope expected = new(

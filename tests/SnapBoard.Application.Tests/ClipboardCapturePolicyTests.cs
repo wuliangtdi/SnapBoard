@@ -328,6 +328,60 @@ public sealed class ClipboardCapturePolicyTests
         Assert.Equal(result.SaveResult.ItemId, published?.ItemId);
     }
 
+    [Fact]
+    public async Task CaptureRetriesAndPersistsCanonicalSourceApplicationIcon()
+    {
+        ClipboardCaptureOptions options = new();
+        RetentionFailureStore store = new();
+        ClipboardSourceApplicationIcon expected = CreateSourceApplicationIcon(0x5A);
+        FakeSourceApplicationIconProvider provider = new(call => call == 1 ? null : expected);
+        ClipboardCaptureService service = new(
+            CreateChain(options),
+            store,
+            options,
+            new RetentionFailureSettingsService(),
+            new ClipboardHistoryChangeNotifier(),
+            provider);
+
+        ClipboardCaptureResult result = await service.ProcessAsync(
+            new ClipboardReadResult(
+                ClipboardReadStatus.Success,
+                CreateSnapshot(text: "capture source icon")),
+            CancellationToken.None);
+
+        Assert.Equal(ClipboardCaptureStatus.Stored, result.Status);
+        Assert.Equal(2, provider.CaptureCount);
+        ClipboardSourceApplicationIcon actual = Assert.IsType<ClipboardSourceApplicationIcon>(
+            store.LastSavedItem?.SourceApplicationIcon);
+        Assert.Equal(expected.BgraPixels.ToArray(), actual.BgraPixels.ToArray());
+    }
+
+    [Fact]
+    public async Task SourceApplicationIconFailureDoesNotBlockClipboardBodySave()
+    {
+        ClipboardCaptureOptions options = new();
+        RetentionFailureStore store = new();
+        FakeSourceApplicationIconProvider provider = new(_ =>
+            throw new IOException("synthetic source icon failure"));
+        ClipboardCaptureService service = new(
+            CreateChain(options),
+            store,
+            options,
+            new RetentionFailureSettingsService(),
+            new ClipboardHistoryChangeNotifier(),
+            provider);
+
+        ClipboardCaptureResult result = await service.ProcessAsync(
+            new ClipboardReadResult(
+                ClipboardReadStatus.Success,
+                CreateSnapshot(text: "body survives icon failure")),
+            CancellationToken.None);
+
+        Assert.Equal(ClipboardCaptureStatus.Stored, result.Status);
+        Assert.Equal(1, store.SaveCount);
+        Assert.Null(store.LastSavedItem?.SourceApplicationIcon);
+    }
+
     private static ClipboardCapturePolicyChain CreateChain(ClipboardCaptureOptions options) => new(
         [
             new CurrentApplicationClipboardPolicy(),
@@ -336,6 +390,12 @@ public sealed class ClipboardCapturePolicyTests
             new PayloadSizeClipboardPolicy(options),
             new SupportedContentClipboardPolicy(options),
         ]);
+
+    private static ClipboardSourceApplicationIcon CreateSourceApplicationIcon(byte value) => new(
+        ClipboardSourceApplicationIconRules.Width,
+        ClipboardSourceApplicationIconRules.Height,
+        ClipboardSourceApplicationIconRules.Stride,
+        Enumerable.Repeat(value, ClipboardSourceApplicationIconRules.ByteLength).ToArray());
 
     private static ClipboardContentSnapshot CreateSnapshot(
         string? processName = "source-app",
@@ -372,12 +432,15 @@ public sealed class ClipboardCapturePolicyTests
     {
         public int SaveCount { get; private set; }
 
+        public ClipboardCapturedItem? LastSavedItem { get; private set; }
+
         public ValueTask<ClipboardHistorySaveResult> SaveAsync(
             ClipboardCapturedItem item,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             SaveCount++;
+            LastSavedItem = item;
             return ValueTask.FromResult(new ClipboardHistorySaveResult(item.Id, false));
         }
 
@@ -439,6 +502,22 @@ public sealed class ClipboardCapturePolicyTests
 
         public ValueTask<int> CleanupOrphanedBlobsAsync(
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class FakeSourceApplicationIconProvider(
+        Func<int, ClipboardSourceApplicationIcon?> capture) :
+        IClipboardSourceApplicationIconProvider
+    {
+        public int CaptureCount { get; private set; }
+
+        public ValueTask<ClipboardSourceApplicationIcon?> CaptureAsync(
+            ClipboardSourceApplicationIdentity identity,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CaptureCount++;
+            return ValueTask.FromResult(capture(CaptureCount));
+        }
     }
 
     private sealed class RetentionFailureSettingsService : IHistorySettingsService

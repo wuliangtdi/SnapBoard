@@ -941,6 +941,11 @@ public sealed partial class SyncService
             AddBlobReference(references, syncEvent.Item.Thumbnail);
         }
 
+        if (syncEvent.Item.SourceApplicationIcon is not null)
+        {
+            AddBlobReference(references, syncEvent.Item.SourceApplicationIcon.Blob);
+        }
+
         return references.Values.ToArray();
     }
 

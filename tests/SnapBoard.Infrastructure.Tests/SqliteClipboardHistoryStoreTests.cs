@@ -5,6 +5,8 @@ using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Infrastructure.Persistence;
+using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Sync.Contracts;
 
 namespace SnapBoard.Infrastructure.Tests;
 
@@ -41,6 +43,7 @@ public sealed class SqliteClipboardHistoryStoreTests
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
+    [InlineData(9)]
     public async Task EverySchemaVersionCanBeCreatedAndRepeatedMigrationIsIdempotent(
         int targetVersion)
     {
@@ -109,6 +112,29 @@ public sealed class SqliteClipboardHistoryStoreTests
             await ExecuteScalarInt64Async(
                 migrated,
                 "SELECT COUNT(*) FROM pragma_table_info('clipboard_items') WHERE name = 'capture_count';"));
+    }
+
+    [Fact]
+    public async Task CurrentSchemaContainsSourceApplicationIconSnapshotFields()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+
+        Assert.Equal(
+            5L,
+            await ExecuteScalarInt64Async(
+                connection,
+                """
+                SELECT COUNT(*)
+                FROM pragma_table_info('clipboard_items')
+                WHERE name IN (
+                    'source_application_icon_blob_hash',
+                    'source_application_icon_format_version',
+                    'source_application_icon_width',
+                    'source_application_icon_height',
+                    'source_application_icon_stride');
+                """));
     }
 
     [Fact]
@@ -401,6 +427,7 @@ public sealed class SqliteClipboardHistoryStoreTests
                     null,
                     largePayload),
             ]);
+        invalid.SourceApplicationIcon = CreateSourceApplicationIcon(0x7C);
 
         await Assert.ThrowsAsync<SqliteException>(async () =>
             await context.Store.SaveAsync(invalid, CancellationToken.None));
@@ -442,6 +469,168 @@ public sealed class SqliteClipboardHistoryStoreTests
         Assert.Equal(2L, await ExecuteScalarInt64Async(
             connection,
             "SELECT COUNT(*) FROM clipboard_items WHERE is_deleted = 1;"));
+    }
+
+    [Fact]
+    public async Task SourceApplicationIconIsDeduplicatedPersistedAndReleased()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"SnapBoard.Infrastructure.Tests-{Guid.NewGuid():N}");
+        ClipboardSourceApplicationIcon expected = CreateSourceApplicationIcon(0x4D);
+        ClipboardCapturedItem firstItem = CreateTextItem("source icon first");
+        firstItem.SourceApplicationIcon = expected;
+        ClipboardCapturedItem secondItem = CreateTextItem("source icon second");
+        secondItem.SourceApplicationIcon = expected;
+        string relativePath;
+        await using (HistoryStoreTestContext first = await HistoryStoreTestContext.CreateAsync(
+            root,
+            deleteOnDispose: false))
+        {
+            await first.Store.SaveAsync(firstItem, CancellationToken.None);
+            await first.Store.SaveAsync(secondItem, CancellationToken.None);
+            Assert.Equal(
+                expected.BgraPixels.ToArray(),
+                (await first.Store.GetAsync(firstItem.Id, CancellationToken.None))
+                    ?.BgraPixels.ToArray());
+
+            await using SqliteConnection connection = await first.ConnectionFactory
+                .OpenConnectionAsync(CancellationToken.None);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT relative_path, ref_count
+                FROM content_blobs
+                WHERE media_type = @mediaType;
+                """;
+            command.Parameters.AddWithValue(
+                "@mediaType",
+                SyncProtocol.SourceApplicationIconMediaType);
+            await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            relativePath = reader.GetString(0);
+            Assert.Equal(2L, reader.GetInt64(1));
+            Assert.False(await reader.ReadAsync());
+        }
+
+        await using HistoryStoreTestContext second = await HistoryStoreTestContext.CreateAsync(root);
+        ClipboardSourceApplicationIcon restored =
+            Assert.IsType<ClipboardSourceApplicationIcon>(
+                await second.Store.GetAsync(firstItem.Id, CancellationToken.None));
+        Assert.Equal(expected.BgraPixels.ToArray(), restored.BgraPixels.ToArray());
+        string fullPath = Path.Combine(second.Paths.BlobDirectory, relativePath);
+        Assert.True(File.Exists(fullPath));
+
+        Assert.True(await second.Store.SoftDeleteAsync(firstItem.Id, CancellationToken.None));
+        Assert.True(File.Exists(fullPath));
+        Assert.True(await second.Store.SoftDeleteAsync(secondItem.Id, CancellationToken.None));
+        Assert.False(File.Exists(fullPath));
+        await using SqliteConnection finalConnection = await second.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        Assert.Equal(
+            0L,
+            await ExecuteScalarInt64Async(
+                finalConnection,
+                "SELECT COUNT(*) FROM content_blobs;"));
+    }
+
+    [Fact]
+    public async Task AdjacentDuplicateAddsOnlyMissingSourceApplicationIcon()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        ClipboardCapturedItem first = CreateTextItem("adjacent source icon");
+        ClipboardCapturedItem second = CreateTextItem("adjacent source icon");
+        ClipboardSourceApplicationIcon expected = CreateSourceApplicationIcon(0x2A);
+        second.SourceApplicationIcon = expected;
+
+        await context.Store.SaveAsync(first, CancellationToken.None);
+        ClipboardHistorySaveResult merged = await context.Store.SaveAsync(
+            second,
+            CancellationToken.None);
+        Assert.True(merged.WasMerged);
+        Assert.Equal(first.Id, merged.ItemId);
+        Assert.Equal(
+            expected.BgraPixels.ToArray(),
+            (await context.Store.GetAsync(first.Id, CancellationToken.None))?.BgraPixels.ToArray());
+
+        ClipboardCapturedItem third = CreateTextItem("adjacent source icon");
+        third.SourceApplicationIcon = CreateSourceApplicationIcon(0x6B);
+        Assert.True((await context.Store.SaveAsync(third, CancellationToken.None)).WasMerged);
+        Assert.Equal(
+            expected.BgraPixels.ToArray(),
+            (await context.Store.GetAsync(first.Id, CancellationToken.None))?.BgraPixels.ToArray());
+
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        Assert.Equal(
+            1L,
+            await ExecuteScalarInt64Async(
+                connection,
+                "SELECT COUNT(*) FROM content_blobs;"));
+        Assert.Equal(
+            1L,
+            await ExecuteScalarInt64Async(
+                connection,
+                "SELECT ref_count FROM content_blobs;"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ClearAndRetentionReleaseSourceApplicationIconReference(
+        bool useRetention)
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        ClipboardCapturedItem item = CreateTextItem(
+            "bulk source icon deletion",
+            DateTimeOffset.UtcNow.AddHours(-2));
+        item.SourceApplicationIcon = CreateSourceApplicationIcon(0x31);
+        await context.Store.SaveAsync(item, CancellationToken.None);
+
+        int removed = useRetention
+            ? await context.Store.ApplyRetentionAsync(
+                new ClipboardRetentionPolicy(
+                    maximumItemCount: int.MaxValue,
+                    maximumAge: TimeSpan.FromHours(1),
+                    maximumStorageBytes: long.MaxValue,
+                    preservePinnedItems: true),
+                DateTimeOffset.UtcNow,
+                CancellationToken.None)
+            : await context.Store.ClearAsync(
+                includePinned: true,
+                CancellationToken.None);
+
+        Assert.Equal(1, removed);
+        Assert.Null(await context.Store.GetAsync(item.Id, CancellationToken.None));
+        await using SqliteConnection connection = await context.ConnectionFactory
+            .OpenConnectionAsync(CancellationToken.None);
+        Assert.Equal(
+            0L,
+            await ExecuteScalarInt64Async(
+                connection,
+                "SELECT COUNT(*) FROM content_blobs;"));
+    }
+
+    [Fact]
+    public async Task CorruptSourceApplicationIconBlobIsRejectedWithoutReturningPixels()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        ClipboardCapturedItem item = CreateTextItem("corrupt source icon");
+        item.SourceApplicationIcon = CreateSourceApplicationIcon(0x52);
+        await context.Store.SaveAsync(item, CancellationToken.None);
+        string relativePath = await ReadBlobPathAsync(
+            context,
+            """
+            SELECT b.relative_path
+            FROM clipboard_items i
+            JOIN content_blobs b ON b.hash = i.source_application_icon_blob_hash
+            WHERE i.id = @id;
+            """,
+            item.Id);
+        await File.WriteAllBytesAsync(
+            Path.Combine(context.Paths.BlobDirectory, relativePath),
+            new byte[ClipboardSourceApplicationIconRules.ByteLength]);
+
+        Assert.Null(await context.Store.GetAsync(item.Id, CancellationToken.None));
     }
 
     [Fact]
@@ -1053,6 +1242,12 @@ public sealed class SqliteClipboardHistoryStoreTests
     private static byte[] CreateLargePayload() => Enumerable
         .Repeat((byte)'x', 70 * 1024)
         .ToArray();
+
+    private static ClipboardSourceApplicationIcon CreateSourceApplicationIcon(byte value) => new(
+        ClipboardSourceApplicationIconRules.Width,
+        ClipboardSourceApplicationIconRules.Height,
+        ClipboardSourceApplicationIconRules.Stride,
+        Enumerable.Repeat(value, ClipboardSourceApplicationIconRules.ByteLength).ToArray());
 
     private static ClipboardCapturedItem CreateImageItem(
         string seed,

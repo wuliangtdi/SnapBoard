@@ -137,3 +137,29 @@ Windows 原生探针最新干净样本为 100 次预热和 10,000 次事件，�
 - 正式 ViewModel 的分页、筛选、取消、旧查询隔离、按需图片，以及 10,000 次 `HistoryChanged` 静默期一次刷新。
 
 100,000 条独立性能命令导入耗时 15,289.62 ms；150 次目标查询 P95 1.04 ms、最大 1.72 ms，300 次全部查询 P95 1.01 ms、最大 2.23 ms，满足 `< 80 ms` 和 `<= 200 ms`。真实外部应用、AOT、资源与未执行项见 `docs/MACOS_CLIPBOARD_VALIDATION.md`；性能命令不是 `dotnet test` 的一部分，发布验证必须单独运行。
+
+## 8. Windows 来源应用图标跨设备同步验证
+
+2026-07-31 在 Windows 11 x64、.NET SDK 10.0.302 上完成阶段 A。同步协议保持 v1，远端目录保持 `SnapBoard/v1`，没有旧载荷兼容或远端空间迁移代码。自动测试重点覆盖：
+
+- Windows EXE、Explorer 和已安装 AppsFolder 应用产生固定 32 x 32、stride 128、4096 字节 BGRA 快照，HICON/GDI 资源释放和空缓存重试保持有效。
+- 图标提供器首次为空只重试一次；异常、无身份或非规范像素不阻断剪贴板正文保存。
+- SQLite v9 字段、SHA-256 Blob 去重、重启读取、相邻重复只补缺失图标、事务失败清理、损坏 Blob 拒绝，以及软删除、清空、保留期和远端墓碑的引用释放。
+- 当前源生成 JSON 的图标描述符往返；非法媒体类型、长度、格式版本、尺寸或 stride 被拒绝。
+- Outbox 引用图标 Blob；同步服务先处理 Blob 再处理事件。两份独立数据目录的端到端测试不传源 EXE 路径，目标目录仍读到逐字节相同的图标，删除墓碑后本地图标引用消失。
+- 主窗口和快速窗口共用的 ViewModel 优先读取持久化快照；本地安装路径不同不会覆盖同步快照，快照不可读时回退本机解析器且不崩溃。
+
+发布级命令全部通过：
+
+```powershell
+dotnet restore SnapBoard.slnx --locked-mode
+dotnet format SnapBoard.slnx --verify-no-changes --no-restore
+dotnet build SnapBoard.slnx --configuration Release --no-restore
+dotnet test SnapBoard.slnx --configuration Release --no-build --no-restore
+dotnet publish src/SnapBoard.Desktop/SnapBoard.Desktop.csproj `
+  -c Release -r win-x64 --self-contained true --no-restore -p:PublishAot=true
+```
+
+全量共 495 项：473 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败。Native AOT 输出 0 个 trim/AOT 警告；`SnapBoard.Desktop.exe` 为 40,489,472 字节，`SnapBoard.StorageMigrator.exe` 为 4,514,304 字节。迁移器没有 `.dll`、`.deps.json` 或 `.runtimeconfig.json` sidecar，无参数退出码为 4。主程序使用随机隔离数据根创建 v9 数据库和非零主窗口句柄，并通过 `--exit` 以 0 退出，临时目录随后删除。
+
+本轮没有逐项人工操作 Chrome、Edge、微信、Codex、截图工具和 Store 应用，也没有两份正式安装之间的可视同步验收；这些仍是 Windows 阶段的实机限制。macOS 只验证共享项目继续编译，不能据此推断本机快照生成完成；阶段 B 必须在 macOS 环境执行原生采集、双向同步和 Native AOT。

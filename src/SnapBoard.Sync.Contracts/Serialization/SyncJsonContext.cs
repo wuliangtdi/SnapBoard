@@ -17,6 +17,7 @@ namespace SnapBoard.Sync.Contracts.Serialization;
 [JsonSerializable(typeof(SyncRepresentationPayload))]
 [JsonSerializable(typeof(SyncRepresentationPayload[]))]
 [JsonSerializable(typeof(SyncBlobReferencePayload))]
+[JsonSerializable(typeof(SyncSourceApplicationIconPayload))]
 [JsonSerializable(typeof(SyncSpaceMetadata))]
 [JsonSerializable(typeof(SyncDeviceCheckpoint))]
 [JsonSerializable(typeof(SyncProviderMigrationIntent))]

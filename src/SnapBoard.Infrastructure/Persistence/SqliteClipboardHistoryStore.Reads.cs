@@ -1,8 +1,11 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
+using SnapBoard.Sync.Contracts;
 
 namespace SnapBoard.Infrastructure.Persistence;
 
@@ -373,6 +376,62 @@ public sealed partial class SqliteClipboardHistoryStore
         return relativePath is null
             ? ReadOnlyMemory<byte>.Empty
             : await _blobStore.ReadAsync(relativePath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<ClipboardSourceApplicationIcon?> GetSourceApplicationIconCoreAsync(
+        SqliteConnection connection,
+        ClipboardItemId itemId,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT b.hash, b.relative_path, b.media_type, b.size_bytes,
+                   i.source_application_icon_format_version,
+                   i.source_application_icon_width,
+                   i.source_application_icon_height,
+                   i.source_application_icon_stride
+            FROM clipboard_items i
+            JOIN content_blobs b ON b.hash = i.source_application_icon_blob_hash
+            WHERE i.id = @id AND i.is_deleted = 0;
+            """;
+        command.Parameters.AddWithValue("@id", itemId.ToString());
+        await using SqliteDataReader reader = await command
+            .ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ||
+            !string.Equals(
+                reader.GetString(2),
+                SyncProtocol.SourceApplicationIconMediaType,
+                StringComparison.Ordinal) ||
+            reader.GetInt64(3) != SyncProtocol.SourceApplicationIconSizeBytes ||
+            reader.GetInt32(4) != SyncProtocol.SourceApplicationIconFormatVersion ||
+            reader.GetInt32(5) != SyncProtocol.SourceApplicationIconWidth ||
+            reader.GetInt32(6) != SyncProtocol.SourceApplicationIconHeight ||
+            reader.GetInt32(7) != SyncProtocol.SourceApplicationIconStride)
+        {
+            return null;
+        }
+
+        string expectedHash = reader.GetString(0);
+        string relativePath = reader.GetString(1);
+        await reader.DisposeAsync().ConfigureAwait(false);
+        ReadOnlyMemory<byte> pixels = await _blobStore
+            .ReadAsync(relativePath, cancellationToken)
+            .ConfigureAwait(false);
+        if (pixels.Length != SyncProtocol.SourceApplicationIconSizeBytes ||
+            !string.Equals(
+                Convert.ToHexStringLower(SHA256.HashData(pixels.Span)),
+                expectedHash,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return new ClipboardSourceApplicationIcon(
+            SyncProtocol.SourceApplicationIconWidth,
+            SyncProtocol.SourceApplicationIconHeight,
+            SyncProtocol.SourceApplicationIconStride,
+            pixels);
     }
 
     private static async ValueTask<string?> GetSettingCoreAsync(

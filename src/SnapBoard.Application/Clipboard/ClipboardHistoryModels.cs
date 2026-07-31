@@ -1,4 +1,5 @@
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Application.Clipboard;
 
@@ -59,6 +60,8 @@ public sealed class ClipboardCapturedItem
     public int SourceAccessStatus { get; init; }
 
     public int SourceAttributionKind { get; init; }
+
+    public ClipboardSourceApplicationIcon? SourceApplicationIcon { get; set; }
 
     public required ClipboardContentHash ContentHash { get; init; }
 

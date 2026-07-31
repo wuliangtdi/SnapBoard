@@ -17,6 +17,13 @@ public sealed record SyncBlobReferencePayload(
     string MediaType,
     long SizeBytes);
 
+public sealed record SyncSourceApplicationIconPayload(
+    SyncBlobReferencePayload Blob,
+    int FormatVersion,
+    int Width,
+    int Height,
+    int Stride);
+
 /// <summary>
 /// 剪贴板内容的加密载荷。文件系统路径有意不属于远端协议。
 /// </summary>
@@ -33,7 +40,8 @@ public sealed record SyncClipboardItemPayload(
     int SourceAttributionKind,
     SyncRepresentationPayload[] Representations,
     SyncBlobReferencePayload? Thumbnail,
-    long TotalSizeBytes);
+    long TotalSizeBytes,
+    SyncSourceApplicationIconPayload? SourceApplicationIcon = null);
 
 public sealed record SyncSpaceMetadata(
     int ProtocolVersion,

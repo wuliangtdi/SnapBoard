@@ -1,8 +1,8 @@
 # SnapBoard 执行进度
 
 > 最后更新：2026-07-31
-> 当前阶段：共享 WebDAV 服务商迁移与 macOS 对等实现已关闭代码目标；macOS 来源应用最佳努力识别、原生图标和“闪剪”系统身份已落地。跨平台分架构自动更新、GitHub/官方多源、P-256 签名 feed、设置 UI、安装编排及本机 `osx-arm64` Velopack 包已落地；正式已安装版本升级、自建官方源、远程 Runner、系统代码签名与发布继续收口
-> 本次目标状态：已完成当前可用环境内的实现与验证；其余项目均为缺少对应设备、服务或发布身份的外部验收，继续如实列为待验证，但不阻塞本开发目标关闭
+> 当前阶段：来源应用图标跨设备同步的 Windows 与共享层已完成；macOS 可以消费同步快照，但本机新记录生成快照仍待原生阶段实施。共享 WebDAV 服务商迁移、跨平台更新与安装编排继续保持既有状态
+> 本次目标状态：Windows 原生采集、SQLite v9、当前 v1 同步载荷、加密 Blob 生命周期、主/快速窗口消费、自动测试与 win-x64 Native AOT 已验证；macOS 阶段和真实双安装外部应用矩阵未完成
 > 总体状态：进行中
 > 规则：只有代码、自动测试和目标平台验证同时满足时，功能才标记完成。
 
@@ -14,11 +14,11 @@
 | Phase 1.0 工程骨架 | 进行中 | 本机 Release 构建、测试和 macOS/Windows Native AOT 已通过；Ubuntu Build/Test、`linux-x64` AOT 和 Release Linux 产品包暂时注释，待补齐 Skia Linux 原生依赖后恢复 |
 | Phase 1.1 AOT/内存基线 | 进行中 | 最终历史构建三轮可见峰值 PWS 155.74/155.33/138.97 MiB，关闭窗口后为 103.32/110.13/94.82 MiB；Private Bytes 为 136.59/135.54/127.82 MiB，内存门槛未完成 |
 | Phase 1.2 UI 生命周期 | 进行中 | 单实例、后台启动、主/快速/设置窗口、自定义原生热键、暂停和退出已实现，用户可见应用名统一为“闪剪”；托盘点击、Windows 任务管理器实机显示、物理热键、多显示器/DPI、真实开机启动与 8 小时长稳待验收 |
-| Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
-| Phase 1.4 本地历史与检索 | 已完成 | SQLite v5、单写队列、恢复、CAS Blob、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已在 Windows/macOS 验证 |
-| Phase 1.5 快速粘贴体验 | 进行中 | 正式路径已接真实历史、虚拟化、分页、取消、按需缩略图、打包应用名称/图标及高频变化合并刷新；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
-| Phase 1.6-1.8 | 进行中 | 加密同步、SQLite v8、历史策略、真实 UI、共享 WebDAV 服务商迁移及 macOS 恢复触发已落地，Apache 标准 WebDAV 实测通过；Nextcloud/Synology、正式跨系统 App、设备撤销/密钥轮换、长期资源及发布待完成 |
-| Phase 2 macOS | 进行中 | arm64 剪贴板、最佳努力来源名称/图标、系统“闪剪”身份、APFS 历史、存储迁移、Keychain 同步、共享服务商迁移、系统恢复监听、生命周期和开发包已验证，x64 AOT 与 macos-15-intel CI 已通过；内存目标、物理睡眠/断网、8 小时、Intel 实体机、Developer ID、公证和正式跨系统设备矩阵待完成 |
+| Phase 1.3 Windows 剪贴板 | 进行中 | delayed rendering、Notepad/WinUI、事件时来源身份、规范来源图标快照、注册 PNG 及 10,000 次功能压力通过；Codex/截图工具手动复核、完整桌面资源与外部应用矩阵未完成 |
+| Phase 1.4 本地历史与检索 | 已完成 | SQLite v9、单写队列、恢复、CAS Blob、来源图标快照、PNG/TIFF 缩略图、FTS5、策略链及 100,000 条检索已验证；本次不回填或兼容旧数据 |
+| Phase 1.5 快速粘贴体验 | 进行中 | 主/快速窗口优先按需显示持久化来源图标快照，本机解析与通用图标依次降级；数字快捷选择、标签编辑、搜索高亮与完整富预览待完成 |
+| Phase 1.6-1.8 | 进行中 | 当前 v1 加密同步已加入来源图标 Blob 且远端仍为 `SnapBoard/v1`；SQLite v9、历史策略、真实 UI、服务商迁移及 macOS 恢复触发已落地，正式跨系统 App 与长期发布矩阵待完成 |
+| Phase 2 macOS | 进行中 | 现有共享层可读取 Windows 同步来的来源图标快照；macOS 本机来源名称/原生图标解析已存在，但尚未注册为持久化快照提供器，阶段 B 实现与双向实机/AOT 验证待完成 |
 | Phase 3 Linux | 未开始 | X11 与 Wayland 分级支持 |
 
 ## 2. Phase 1.0 检查表
@@ -58,11 +58,11 @@
 | --- | --- | --- |
 | NuGet restore | 通过 | 已启用锁文件和漏洞审计告警即错误 |
 | Release build | 通过 | 本机 0 警告、0 错误 |
-| 全量自动测试 | 通过 | macOS arm64 共 307 项：287 项通过、20 项 Windows 原生测试按平台跳过、0 项失败；Application 10/10、Infrastructure 95/95、WebDAV 38/38、macOS 49/49、Desktop Headless 51/51、Architecture 2/2；真实 Apache 用例已启用执行而非跳过 |
+| 全量自动测试 | 通过 | 2026-07-31 Windows 当前代码共 495 项：473 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败；来源图标覆盖采集、SQLite、同步、Windows 原生和 Headless UI |
 | macOS 存储与同步测试 | 通过 | macOS 原生项目 49/49 且无跳过；覆盖 APFS/POSIX mode/真实扩展 ACL/链接/卷/进程身份、真实大小写敏感 APFSX 路径关系、真实 Keychain 完整工作流、系统恢复原生事件源、legacy 启动、设置 modal/迁移事务和有状态双设备离线收敛 |
 | `osx-arm64` Native AOT | 本机通过 | 64 位文件系统 ABI 修复后的主程序 34,573,888 字节，迁移器 8,326,528 字节，均为 arm64 Mach-O；无 CoreCLR/helper 托管配置，helper 无参数退出码 4，挂载 DMG 后隔离 bootstrap 启动及 `--exit` 通过。0 个 trim/AOT 分析告警；2 个 clang module-cache 调试信息告警来自 .NET 10.0.10 官方 Apple NativeAOT 静态库，已记录且未 suppression。正式签名/公证未完成 |
 | `osx-x64` Native AOT | CI 通过 | 本机 Rosetta 预检和 GitHub `macos-15-intel` AOT 均通过；主程序与迁移器为 x86_64 Mach-O，无 CoreCLR/helper 托管配置，helper 无参数退出码 4。Intel 实体机交互验收仍待执行 |
-| `win-x64` Native AOT | 本机通过 | 最新独立包主程序 40,080,384 字节、嵌套迁移器 4,513,280 字节；无 `coreclr.dll`/`clrjit.dll`，迁移器无框架依赖配置，0 个 AOT/裁剪警告；已用全新隔离数据根启动完整主窗口并确认进程响应，Runner 待验证 |
+| `win-x64` Native AOT | 本机通过 | 来源图标阶段 A 产物主程序 40,489,472 字节、独立迁移器 4,514,304 字节；0 个 trim/AOT 警告，迁移器无 `.dll`、`.deps.json` 或 `.runtimeconfig.json`；随机隔离数据根创建 v9 数据库、主窗口句柄非零并通过 `--exit` 以 0 退出 |
 | `linux-x64` Native AOT | 暂停 | CI 矩阵暂时注释；恢复 `SkiaSharp.NativeAssets.Linux` 锁定依赖后再由 Ubuntu Runner 验证 |
 | Windows 窗口/后台内存 | 未达标 | 最终 AOT 三次关闭窗口后 PWS 为 103.32/110.13/94.82 MiB，Private Bytes 为 136.59/135.54/127.82 MiB；19 分钟样本最终 PWS 88.29 MiB、Private Bytes 120.99 MiB，不能声称整体内存门槛通过 |
 | macOS 窗口/后台内存 | 未达标 | AOT 平台探针 10,000 次增长 5.09 MiB、100,000 次增长 0.45 MiB，事件路径通过；完整桌面纯后台 41.4 MiB，首次开窗后关窗约 94-96 MiB，仍高于 80 MB 目标且有超过 100 MB 的历史波动；8 小时未执行 |
@@ -137,12 +137,12 @@ SQLite v8 只保存计划 ID、epoch、远端指纹、阶段、水位和进度�
 
 ## 5. 下一执行顺序
 
-1. 使用正式 Windows 与 macOS App 执行双向发起、离线恢复、部分提交恢复及回滚矩阵；共享状态机测试不能替代该双机门槛。
-2. 使用 Nextcloud 与 Synology 执行认证、路径、ETag、配额、限流、重试和损坏响应矩阵；Apache 标准 WebDAV 已通过。
-3. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，并在真实合盖/唤醒及网络接口断开恢复场景验收已实现的立即同步触发。
-4. 在新构建上手动复核 Codex 文字复制、截图工具图片/来源，并用隔离数据目录重跑完整 AOT 桌面 10,000 次压力、三次资源采样和 8 小时长稳。
-5. 在对应硬件补齐 Windows ARM64、macOS 同协议/Keychain、macOS Intel 和 Linux 验证；不得从当前 Windows x64 结果外推。
-6. 上述发布门槛完成后再进入 Windows 签名、安装包、自动更新和正式发布。
+1. 从包含本提交的最新 main 在 macOS 环境实施 `docs/SOURCE_APPLICATION_ICON_SYNC_REQUIREMENTS.md` 阶段 B，只接入本机快照生成，不重做共享协议或兼容旧数据。
+2. 使用正式 Windows 与 macOS App 执行来源图标双向同步，以及既有服务商迁移的离线恢复、部分提交恢复和回滚矩阵；共享测试不能替代双机门槛。
+3. 使用 Nextcloud 与 Synology 执行认证、路径、ETag、配额、限流、重试和损坏响应矩阵；Apache 标准 WebDAV 已通过。
+4. 完成设备撤销、密钥轮换、远端 Checkpoint/Blob 安全回收，并在真实合盖/唤醒及网络接口断开恢复场景验收已实现的立即同步触发。
+5. 在新构建上手动复核 Chrome、Edge、微信、Codex、截图工具和 Store 应用的真实复制来源图标，并用隔离数据目录重跑完整 AOT 桌面压力与长稳。
+6. 在对应硬件补齐 Windows ARM64、macOS Intel 和 Linux 验证；不得从当前 Windows x64 结果外推。
 
 ## 6. 2026-07-26 执行记录：第 2 版命令中心
 
@@ -1206,7 +1206,35 @@ Windows 实机迁移：
   - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
 ```
 
-## 39. 更新规则
+## 39. 2026-07-31 执行记录：来源应用图标跨设备同步阶段 A
+
+```text
+日期：2026-07-31
+阶段/任务：来源应用图标跨设备同步的 Windows 与共享层
+状态：[x] Windows 原生采集、共享持久化/同步/UI、自动测试与 win-x64 Native AOT 完成；[ ] macOS 本机快照生成待实施
+开发基线：9da2f80（开发前 main 与 origin/main 一致）
+
+实现内容：
+  - 新增平台无关的 32 x 32 BGRA8888 预乘 Alpha 快照模型和提供器端口。Windows 复用既有 Shell/AppsFolder 解析器，不建立第二套应用识别逻辑；首次空结果只重试一次，失败不阻断正文保存。
+  - SQLite 当前格式为 v9。每条记录最多引用一个 4096 字节来源图标 Blob，并保存格式版本、宽、高和 stride；相同像素按 SHA-256 去重。相邻重复只在旧记录缺图标时补入，删除、清空、自动清理、远端墓碑和事务回滚均维护精确引用计数。
+  - 当前同步协议仍为 v1，远端仍为 SnapBoard/v1。SyncClipboardItemPayload 直接增加可空图标描述符，复用 keyed Blob ID、AES-256-GCM、先 Blob 后事件、下载暂存和原子应用流程；没有旧 JSON 解析、双协议分支、远端目录迁移或历史回填。
+  - 主窗口和快速窗口通过同一 ViewModel 路径按需读取持久化快照。验证快照优先于本机路径解析；快照缺失、损坏或不可读时才使用本机解析器和通用图标。
+  - Desktop 只在 Windows 注册 IClipboardSourceApplicationIconProvider。macOS 共享层可以显示 Windows 同步快照，但本机新记录生成快照未注册，整个跨平台功能未标记完成。
+
+验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format SnapBoard.slnx --verify-no-changes --no-restore 和 Release build 通过；build 0 警告、0 错误。
+  - 全量 495 项：473 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败。项目分布为 Application 19、Architecture 2、Domain 4、Infrastructure 110 通过/1 跳过、Linux 1、macOS 70 通过/21 跳过、Windows 103、WebDAV 39、Update 17、Desktop Headless 108。
+  - 回归覆盖规范快照采集、一次重试和异常降级；v9 schema；Blob 去重、重启、相邻补入、损坏拒绝、软删除/清空/自动清理；当前 JSON 往返和非法描述符；Outbox/下载/墓碑；不同本机路径的双设备像素保持；快照优先和本机回退。
+  - win-x64 self-contained PublishAot 通过，0 个 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,489,472 字节，SHA-256 1098C9EA99E78DC4604BD116DCCCF5E67FE5005C6C9D45CD540C80DD039EB21A；SnapBoard.StorageMigrator.exe 为 4,514,304 字节，SHA-256 A42ACB8E78BEEE72B5A8895FF62EB81B98797512F5037CA19437BC08967CC014。
+  - 迁移器没有 .dll、.deps.json 或 .runtimeconfig.json，独立运行无参数退出码为 4。主程序使用随机隔离数据根启动，主窗口句柄非零、创建一个 v9 SQLite 数据库，并通过 --exit 以 0 退出；临时目录已删除。
+
+限制：
+  - Chrome、Edge、微信、Codex、截图工具和 Store 应用的真实复制及两份正式安装间同步尚未逐项人工操作；现有自动测试和真实 Shell 图标测试不能替代该矩阵。
+  - macOS 本机快照生成、macOS -> Windows 往返和 macOS Native AOT 属于阶段 B，必须从合入本阶段后的最新 main 在 macOS 环境继续。
+  - 本次不生成或提交 Data/、临时数据库、构建产物、恢复材料、凭据或 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md。
+```
+
+## 40. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

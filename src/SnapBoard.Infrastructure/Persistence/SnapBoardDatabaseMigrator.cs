@@ -394,9 +394,17 @@ public sealed class SnapBoardDatabaseMigrator
             "CREATE INDEX ix_sync_provider_migrations_space_epoch ON sync_provider_migrations(space_id, epoch DESC);",
             "CREATE INDEX ix_sync_provider_migrations_state ON sync_provider_migrations(state, updated_at_utc);",
         ]),
+        new(9, "source-application-icon-snapshot-v9",
+        [
+            "ALTER TABLE clipboard_items ADD COLUMN source_application_icon_blob_hash TEXT NULL REFERENCES content_blobs(hash);",
+            "ALTER TABLE clipboard_items ADD COLUMN source_application_icon_format_version INTEGER NOT NULL DEFAULT 0 CHECK (source_application_icon_format_version >= 0);",
+            "ALTER TABLE clipboard_items ADD COLUMN source_application_icon_width INTEGER NOT NULL DEFAULT 0 CHECK (source_application_icon_width >= 0);",
+            "ALTER TABLE clipboard_items ADD COLUMN source_application_icon_height INTEGER NOT NULL DEFAULT 0 CHECK (source_application_icon_height >= 0);",
+            "ALTER TABLE clipboard_items ADD COLUMN source_application_icon_stride INTEGER NOT NULL DEFAULT 0 CHECK (source_application_icon_stride >= 0);",
+        ]),
     ];
 
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     public async ValueTask<int> MigrateAsync(
         SqliteConnection connection,

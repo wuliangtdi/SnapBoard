@@ -1024,7 +1024,12 @@ public sealed partial class SqliteClipboardHistoryStore
             SELECT content_hash, primary_kind, display_category, captured_at_utc,
                    preview_text, searchable_text, source_process_name,
                    source_application_user_model_id, source_package_family_name,
-                   source_attribution_kind, thumbnail_blob_hash, total_size_bytes
+                   source_attribution_kind, thumbnail_blob_hash, total_size_bytes,
+                   source_application_icon_blob_hash,
+                   source_application_icon_format_version,
+                   source_application_icon_width,
+                   source_application_icon_height,
+                   source_application_icon_stride
             FROM clipboard_items
             WHERE id = @itemId AND is_deleted = 0;
             """;
@@ -1041,6 +1046,11 @@ public sealed partial class SqliteClipboardHistoryStore
         int sourceAttributionKind;
         string? thumbnailHash;
         long totalSizeBytes;
+        string? sourceApplicationIconHash;
+        int sourceApplicationIconFormatVersion;
+        int sourceApplicationIconWidth;
+        int sourceApplicationIconHeight;
+        int sourceApplicationIconStride;
         await using (SqliteDataReader itemReader = await itemCommand
             .ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false))
@@ -1066,6 +1076,13 @@ public sealed partial class SqliteClipboardHistoryStore
             sourceAttributionKind = itemReader.GetInt32(9);
             thumbnailHash = itemReader.IsDBNull(10) ? null : itemReader.GetString(10);
             totalSizeBytes = itemReader.GetInt64(11);
+            sourceApplicationIconHash = itemReader.IsDBNull(12)
+                ? null
+                : itemReader.GetString(12);
+            sourceApplicationIconFormatVersion = itemReader.GetInt32(13);
+            sourceApplicationIconWidth = itemReader.GetInt32(14);
+            sourceApplicationIconHeight = itemReader.GetInt32(15);
+            sourceApplicationIconStride = itemReader.GetInt32(16);
         }
 
         List<SyncRepresentationPayload> representations = [];
@@ -1119,6 +1136,20 @@ public sealed partial class SqliteClipboardHistoryStore
                     thumbnailHash,
                     cancellationToken)
                 .ConfigureAwait(false);
+        SyncSourceApplicationIconPayload? sourceApplicationIcon =
+            sourceApplicationIconHash is null
+                ? null
+                : new SyncSourceApplicationIconPayload(
+                    await ReadBlobReferenceAsync(
+                            connection,
+                            transaction,
+                            sourceApplicationIconHash,
+                            cancellationToken)
+                        .ConfigureAwait(false),
+                    sourceApplicationIconFormatVersion,
+                    sourceApplicationIconWidth,
+                    sourceApplicationIconHeight,
+                    sourceApplicationIconStride);
         bool fileReference = primaryKind == SyncPayloadKind.FileReference;
         return new SyncClipboardItemPayload(
             contentHash,
@@ -1133,7 +1164,8 @@ public sealed partial class SqliteClipboardHistoryStore
             sourceAttributionKind,
             representations.ToArray(),
             thumbnail,
-            fileReference ? 0 : totalSizeBytes);
+            fileReference ? 0 : totalSizeBytes,
+            sourceApplicationIcon);
     }
 
     private static async ValueTask<SyncBlobReferencePayload> ReadBlobReferenceAsync(
@@ -1751,6 +1783,26 @@ public sealed partial class SqliteClipboardHistoryStore
                 blobReferences.Add(thumbnail);
             }
 
+            PreparedSourceApplicationIcon? sourceApplicationIcon = null;
+            if (payload.SourceApplicationIcon is { } sourceApplicationIconPayload)
+            {
+                StagedBlob iconBlob = await ReadAvailableBlobAsync(
+                        connection,
+                        transaction,
+                        sourceApplicationIconPayload.Blob.Hash,
+                        sourceApplicationIconPayload.Blob.MediaType,
+                        sourceApplicationIconPayload.Blob.SizeBytes,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                blobReferences.Add(iconBlob);
+                sourceApplicationIcon = new PreparedSourceApplicationIcon(
+                    iconBlob,
+                    sourceApplicationIconPayload.FormatVersion,
+                    sourceApplicationIconPayload.Width,
+                    sourceApplicationIconPayload.Height,
+                    sourceApplicationIconPayload.Stride);
+            }
+
             ClipboardCapturedItem item = new()
             {
                 Id = itemId,
@@ -1787,6 +1839,7 @@ public sealed partial class SqliteClipboardHistoryStore
                     transaction,
                     item,
                     thumbnail?.Hash,
+                    sourceApplicationIcon,
                     cancellationToken)
                 .ConfigureAwait(false);
             await InsertRepresentationsAsync(
@@ -2008,6 +2061,9 @@ public sealed partial class SqliteClipboardHistoryStore
                     UNION ALL
                     SELECT thumbnail_blob_hash FROM clipboard_items
                     WHERE id = @itemId AND thumbnail_blob_hash IS NOT NULL
+                    UNION ALL
+                    SELECT source_application_icon_blob_hash FROM clipboard_items
+                    WHERE id = @itemId AND source_application_icon_blob_hash IS NOT NULL
                 )
                 SELECT b.hash, b.relative_path, b.ref_count, COUNT(*)
                 FROM removed_references r
@@ -2065,7 +2121,12 @@ public sealed partial class SqliteClipboardHistoryStore
                     deleted_at_utc = @deletedAt,
                     updated_at_utc = @deletedAt,
                     total_size_bytes = 0,
-                    thumbnail_blob_hash = NULL
+                    thumbnail_blob_hash = NULL,
+                    source_application_icon_blob_hash = NULL,
+                    source_application_icon_format_version = 0,
+                    source_application_icon_width = 0,
+                    source_application_icon_height = 0,
+                    source_application_icon_stride = 0
                 WHERE id = @itemId AND is_deleted = 0;
                 """;
             tombstone.Parameters.AddWithValue("@itemId", itemId.ToString());
@@ -2368,6 +2429,7 @@ public sealed partial class SqliteClipboardHistoryStore
         ValidateRemoteSourceIdentity(item.SourceApplication);
         ValidateRemoteSourceIdentity(item.SourceApplicationUserModelId);
         ValidateRemoteSourceIdentity(item.SourcePackageFamilyName);
+        ValidateIncomingSourceApplicationIcon(item.SourceApplicationIcon);
         if (item.PrimaryKind == SyncPayloadKind.FileReference)
         {
             if (item.Representations.Length != 0 || item.Thumbnail is not null ||
@@ -2433,6 +2495,27 @@ public sealed partial class SqliteClipboardHistoryStore
             if (item.Thumbnail.SizeBytes is <= 0 or > SyncProtocol.MaximumBlobPlaintextBytes)
             {
                 throw new InvalidDataException("A remote thumbnail size is invalid.");
+            }
+        }
+    }
+
+    private static void ValidateIncomingSourceApplicationIcon(
+        SyncSourceApplicationIconPayload? sourceIcon)
+    {
+        if (sourceIcon is not null)
+        {
+            ValidateBlobHash(sourceIcon.Blob.Hash, nameof(sourceIcon.Blob.Hash));
+            if (!string.Equals(
+                    sourceIcon.Blob.MediaType,
+                    SyncProtocol.SourceApplicationIconMediaType,
+                    StringComparison.Ordinal) ||
+                sourceIcon.Blob.SizeBytes != SyncProtocol.SourceApplicationIconSizeBytes ||
+                sourceIcon.FormatVersion != SyncProtocol.SourceApplicationIconFormatVersion ||
+                sourceIcon.Width != SyncProtocol.SourceApplicationIconWidth ||
+                sourceIcon.Height != SyncProtocol.SourceApplicationIconHeight ||
+                sourceIcon.Stride != SyncProtocol.SourceApplicationIconStride)
+            {
+                throw new InvalidDataException("A remote source application icon is invalid.");
             }
         }
     }

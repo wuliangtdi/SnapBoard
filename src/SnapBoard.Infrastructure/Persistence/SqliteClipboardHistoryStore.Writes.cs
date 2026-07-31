@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Sync.Contracts;
 
 namespace SnapBoard.Infrastructure.Persistence;
@@ -21,9 +22,31 @@ public sealed partial class SqliteClipboardHistoryStore
         if (adjacent is { IsPinned: false } &&
             string.Equals(adjacent.ContentHash, item.ContentHash.Value, StringComparison.Ordinal))
         {
-            await MergeAdjacentItemAsync(connection, adjacent.Id, item, cancellationToken)
-                .ConfigureAwait(false);
-            return new ClipboardHistorySaveResult(ParseItemId(adjacent.Id), true);
+            PreparedSourceApplicationIcon? sourceIcon = adjacent.SourceApplicationIconBlobHash is null
+                ? await PrepareSourceApplicationIconAsync(item, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+            try
+            {
+                await MergeAdjacentItemAsync(
+                        connection,
+                        adjacent.Id,
+                        item,
+                        sourceIcon,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return new ClipboardHistorySaveResult(ParseItemId(adjacent.Id), true);
+            }
+            catch
+            {
+                if (sourceIcon is not null)
+                {
+                    await CleanupFailedStagingAsync(connection, [sourceIcon.Blob])
+                        .ConfigureAwait(false);
+                }
+
+                throw;
+            }
         }
 
         PreparedContent prepared = await PrepareContentAsync(
@@ -52,6 +75,7 @@ public sealed partial class SqliteClipboardHistoryStore
                     transaction,
                     item,
                     prepared.Thumbnail?.Hash,
+                    prepared.SourceApplicationIcon,
                     cancellationToken)
                 .ConfigureAwait(false);
             await InsertRepresentationsAsync(
@@ -113,7 +137,7 @@ public sealed partial class SqliteClipboardHistoryStore
     {
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, is_pinned, content_hash
+            SELECT id, is_pinned, content_hash, source_application_icon_blob_hash
             FROM clipboard_items
             WHERE is_deleted = 0
             ORDER BY captured_at_utc DESC, id DESC
@@ -123,7 +147,11 @@ public sealed partial class SqliteClipboardHistoryStore
             .ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? new AdjacentItem(reader.GetString(0), reader.GetInt64(1) != 0, reader.GetString(2))
+            ? new AdjacentItem(
+                reader.GetString(0),
+                reader.GetInt64(1) != 0,
+                reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3))
             : null;
     }
 
@@ -131,6 +159,7 @@ public sealed partial class SqliteClipboardHistoryStore
         SqliteConnection connection,
         string identifier,
         ClipboardCapturedItem item,
+        PreparedSourceApplicationIcon? sourceIcon,
         CancellationToken cancellationToken)
     {
         await using SqliteTransaction transaction =
@@ -138,6 +167,17 @@ public sealed partial class SqliteClipboardHistoryStore
                 .ConfigureAwait(false);
         try
         {
+            if (sourceIcon is not null)
+            {
+                await AddBlobReferenceAsync(
+                        connection,
+                        transaction,
+                        sourceIcon.Blob,
+                        item.CapturedAt,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             await using (SqliteCommand update = connection.CreateCommand())
             {
                 update.Transaction = transaction;
@@ -153,6 +193,29 @@ public sealed partial class SqliteClipboardHistoryStore
                         source_package_family_name = @sourcePackageFamilyName,
                         source_access_status = @sourceAccessStatus,
                         source_attribution_kind = @sourceAttributionKind,
+                        source_application_icon_blob_hash = COALESCE(
+                            source_application_icon_blob_hash,
+                            @sourceApplicationIconBlobHash),
+                        source_application_icon_format_version = CASE
+                            WHEN source_application_icon_blob_hash IS NULL
+                                THEN @sourceApplicationIconFormatVersion
+                            ELSE source_application_icon_format_version
+                        END,
+                        source_application_icon_width = CASE
+                            WHEN source_application_icon_blob_hash IS NULL
+                                THEN @sourceApplicationIconWidth
+                            ELSE source_application_icon_width
+                        END,
+                        source_application_icon_height = CASE
+                            WHEN source_application_icon_blob_hash IS NULL
+                                THEN @sourceApplicationIconHeight
+                            ELSE source_application_icon_height
+                        END,
+                        source_application_icon_stride = CASE
+                            WHEN source_application_icon_blob_hash IS NULL
+                                THEN @sourceApplicationIconStride
+                            ELSE source_application_icon_stride
+                        END,
                         preview_text = @previewText,
                         searchable_text = @searchableText,
                         display_category = @displayCategory,
@@ -166,8 +229,12 @@ public sealed partial class SqliteClipboardHistoryStore
                     WHERE id = @id AND is_deleted = 0 AND is_pinned = 0;
                     """;
                 AddItemMetadataParameters(update, item);
+                AddSourceApplicationIconParameters(update, sourceIcon);
                 update.Parameters.AddWithValue("@id", identifier);
-                await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                if (await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+                {
+                    throw new InvalidDataException("Adjacent clipboard item changed concurrently.");
+                }
             }
 
             await using (SqliteCommand deleteFts = connection.CreateCommand())
@@ -296,7 +363,20 @@ public sealed partial class SqliteClipboardHistoryStore
                 }
             }
 
-            return new PreparedContent(representations, thumbnail, blobReferences);
+            PreparedSourceApplicationIcon? sourceIcon = await PrepareSourceApplicationIconAsync(
+                    item,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (sourceIcon is not null)
+            {
+                blobReferences.Add(sourceIcon.Blob);
+            }
+
+            return new PreparedContent(
+                representations,
+                thumbnail,
+                sourceIcon,
+                blobReferences);
         }
         catch
         {
@@ -304,6 +384,31 @@ public sealed partial class SqliteClipboardHistoryStore
             await CleanupFailedStagingAsync(connection, blobReferences).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private async ValueTask<PreparedSourceApplicationIcon?>
+        PrepareSourceApplicationIconAsync(
+            ClipboardCapturedItem item,
+            CancellationToken cancellationToken)
+    {
+        ClipboardSourceApplicationIcon? icon = item.SourceApplicationIcon;
+        if (icon is null || !ClipboardSourceApplicationIconRules.IsCanonical(icon))
+        {
+            return null;
+        }
+
+        StagedBlob blob = await _blobStore
+            .StageAsync(
+                icon.BgraPixels,
+                SyncProtocol.SourceApplicationIconMediaType,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new PreparedSourceApplicationIcon(
+            blob,
+            SyncProtocol.SourceApplicationIconFormatVersion,
+            icon.Width,
+            icon.Height,
+            icon.Stride);
     }
 
     private static async ValueTask AddBlobReferenceAsync(
@@ -340,6 +445,7 @@ public sealed partial class SqliteClipboardHistoryStore
         SqliteTransaction transaction,
         ClipboardCapturedItem item,
         string? thumbnailHash,
+        PreparedSourceApplicationIcon? sourceIcon,
         CancellationToken cancellationToken)
     {
         await using SqliteCommand command = connection.CreateCommand();
@@ -369,6 +475,11 @@ public sealed partial class SqliteClipboardHistoryStore
                 deleted_at_utc,
                 total_size_bytes,
                 thumbnail_blob_hash,
+                source_application_icon_blob_hash,
+                source_application_icon_format_version,
+                source_application_icon_width,
+                source_application_icon_height,
+                source_application_icon_stride,
                 capture_count,
                 search_order_key)
             VALUES (
@@ -395,6 +506,11 @@ public sealed partial class SqliteClipboardHistoryStore
                 NULL,
                 @totalSizeBytes,
                 @thumbnailHash,
+                @sourceApplicationIconBlobHash,
+                @sourceApplicationIconFormatVersion,
+                @sourceApplicationIconWidth,
+                @sourceApplicationIconHeight,
+                @sourceApplicationIconStride,
                 1,
                 @searchOrderBase + COALESCE((
                     SELECT MAX(search_order_key - @searchOrderBase) + 1
@@ -407,8 +523,30 @@ public sealed partial class SqliteClipboardHistoryStore
         command.Parameters.AddWithValue("@contentHash", item.ContentHash.Value);
         command.Parameters.AddWithValue("@totalSizeBytes", item.TotalSizeBytes);
         command.Parameters.AddWithValue("@thumbnailHash", (object?)thumbnailHash ?? DBNull.Value);
+        AddSourceApplicationIconParameters(command, sourceIcon);
         AddItemMetadataParameters(command, item);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AddSourceApplicationIconParameters(
+        SqliteCommand command,
+        PreparedSourceApplicationIcon? sourceIcon)
+    {
+        command.Parameters.AddWithValue(
+            "@sourceApplicationIconBlobHash",
+            (object?)sourceIcon?.Blob.Hash ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@sourceApplicationIconFormatVersion",
+            sourceIcon?.FormatVersion ?? 0);
+        command.Parameters.AddWithValue(
+            "@sourceApplicationIconWidth",
+            sourceIcon?.Width ?? 0);
+        command.Parameters.AddWithValue(
+            "@sourceApplicationIconHeight",
+            sourceIcon?.Height ?? 0);
+        command.Parameters.AddWithValue(
+            "@sourceApplicationIconStride",
+            sourceIcon?.Stride ?? 0);
     }
 
     private static void AddItemMetadataParameters(
@@ -853,6 +991,7 @@ public sealed partial class SqliteClipboardHistoryStore
                             transaction,
                             item,
                             thumbnailHash: null,
+                            sourceIcon: null,
                             cancellationToken)
                         .ConfigureAwait(false);
                     await InsertRepresentationsAsync(
@@ -901,7 +1040,18 @@ public sealed partial class SqliteClipboardHistoryStore
         }
     }
 
-    private sealed record AdjacentItem(string Id, bool IsPinned, string ContentHash);
+    private sealed record AdjacentItem(
+        string Id,
+        bool IsPinned,
+        string ContentHash,
+        string? SourceApplicationIconBlobHash);
+
+    private sealed record PreparedSourceApplicationIcon(
+        StagedBlob Blob,
+        int FormatVersion,
+        int Width,
+        int Height,
+        int Stride);
 
     private sealed record PreparedRepresentation(
         ClipboardCapturedRepresentation Source,
@@ -916,11 +1066,15 @@ public sealed partial class SqliteClipboardHistoryStore
     private sealed class PreparedContent(
         IReadOnlyList<PreparedRepresentation> representations,
         StagedBlob? thumbnail,
+        PreparedSourceApplicationIcon? sourceApplicationIcon,
         IReadOnlyList<StagedBlob> blobReferences)
     {
         public IReadOnlyList<PreparedRepresentation> Representations { get; } = representations;
 
         public StagedBlob? Thumbnail { get; } = thumbnail;
+
+        public PreparedSourceApplicationIcon? SourceApplicationIcon { get; } =
+            sourceApplicationIcon;
 
         public IReadOnlyList<StagedBlob> BlobReferences { get; } = blobReferences;
 

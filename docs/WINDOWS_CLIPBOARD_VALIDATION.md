@@ -104,3 +104,15 @@ DelayedRendering=Passed; ReadStatus=Success; Reason=None; TextMatched=True
 - 数字快捷选择、标签编辑、搜索高亮和完整富格式预览；当前普通/纯文本粘贴、分页、筛选、置顶和删除已保留。
 - Windows ARM64、macOS 和 Linux 必须在各自目标环境单独验证，不能由本轮 Windows x64 结果推断。
 - 当前桌面会话的 Windows Graphics Capture 两次返回 D3D11 `0x887A0005`，GDI 窗口捕获为黑帧；因此来源名称/图标有自动与原生像素证据，但现有用户历史的最终可视截图仍待稳定桌面会话复核。
+
+## 8. 2026-07-31 来源应用图标跨设备同步阶段 A
+
+阶段 A 已在 `codex/source-application-icon-sync-windows` 完成 Windows 与共享层实现。来源图标固定为 32 x 32 BGRA8888 预乘 Alpha、stride 128、4096 字节，并作为 SHA-256 内容寻址 Blob 保存。SQLite 当前格式为 v9；删除、清空、自动清理、远端墓碑和回滚均维护图标引用。主窗口与快速窗口优先读取持久化快照，本机 Shell 解析只在快照缺失或坏损时降级。
+
+同步协议仍为 v1，远端仍为 `SnapBoard/v1`。当前 `SyncClipboardItemPayload` 直接携带可空图标描述符，图标复用 keyed Blob ID、AES-256-GCM 和先 Blob 后事件流程；未增加旧 JSON、双协议、远端空间迁移或历史回填。双设备内存远端测试证明目标数据目录没有源 EXE 路径时仍得到逐字节相同的图标快照，墓碑应用后引用被释放。
+
+验证结果：全量 495 项中 473 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败；Windows 平台项目 103/103，Infrastructure 110/111（1 条外部 WebDAV 条件跳过），Desktop Headless 108/108。locked restore、format、Release build 和 win-x64 Native AOT 全部通过，build 0 警告、0 错误，publish 0 个 trim/AOT 警告。
+
+当前 AOT `SnapBoard.Desktop.exe` 为 40,489,472 字节，SHA-256 为 `1098C9EA99E78DC4604BD116DCCCF5E67FE5005C6C9D45CD540C80DD039EB21A`；独立 `SnapBoard.StorageMigrator.exe` 为 4,514,304 字节，SHA-256 为 `A42ACB8E78BEEE72B5A8895FF62EB81B98797512F5037CA19437BC08967CC014`。迁移器无 `.dll`、`.deps.json` 或 `.runtimeconfig.json`，无参数退出码为 4。主程序使用随机隔离数据根启动后主窗口句柄非零、创建一个 v9 数据库，并通过 `--exit` 以 0 退出；隔离目录已删除。
+
+未覆盖限制：本轮没有逐项人工操作 Chrome、Edge、微信、Codex、截图工具和 Store 应用，也没有两份正式安装间的可视同步验收。macOS 本机新记录生成快照和 macOS -> Windows 往返属于阶段 B，不能由本轮 Windows 结果推断完成。

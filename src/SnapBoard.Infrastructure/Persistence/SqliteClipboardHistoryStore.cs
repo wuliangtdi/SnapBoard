@@ -6,11 +6,13 @@ using SnapBoard.Application.Storage;
 using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Domain.Sync;
+using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Infrastructure.Persistence;
 
 public sealed partial class SqliteClipboardHistoryStore :
     IClipboardHistoryStore,
+    IClipboardSourceApplicationIconStore,
     IStorageMigrationBarrier,
     ISyncStore,
     IAsyncDisposable,
@@ -107,6 +109,15 @@ public sealed partial class SqliteClipboardHistoryStore :
         ClipboardItemId itemId,
         CancellationToken cancellationToken) => new(
             GetThumbnailCoreAsync(itemId, cancellationToken));
+
+    public ValueTask<ClipboardSourceApplicationIcon?> GetAsync(
+        ClipboardItemId itemId,
+        CancellationToken cancellationToken) => RunReadAsync(
+            (connection, token) => GetSourceApplicationIconCoreAsync(
+                connection,
+                itemId,
+                token),
+            cancellationToken);
 
     public async ValueTask<bool> SetPinnedAsync(
         ClipboardItemId itemId,

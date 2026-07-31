@@ -7,8 +7,11 @@ public sealed class ClipboardCaptureService(
     IClipboardHistoryStore store,
     ClipboardCaptureOptions options,
     IHistorySettingsService historySettings,
-    ClipboardHistoryChangeNotifier notifier) : IClipboardCaptureService
+    ClipboardHistoryChangeNotifier notifier,
+    IClipboardSourceApplicationIconProvider? sourceIconProvider = null) : IClipboardCaptureService
 {
+    private static readonly TimeSpan SourceIconRetryDelay = TimeSpan.FromMilliseconds(50);
+
     public async ValueTask<ClipboardCaptureResult> ProcessAsync(
         ClipboardReadResult readResult,
         CancellationToken cancellationToken)
@@ -45,6 +48,12 @@ public sealed class ClipboardCaptureService(
                 "normalization-empty");
         }
 
+        item.SourceApplicationIcon = await CaptureSourceIconAsync(
+                item,
+                sourceIconProvider,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         ClipboardHistorySaveResult saveResult;
         try
         {
@@ -75,5 +84,53 @@ public sealed class ClipboardCaptureService(
                 : ClipboardCaptureStatus.Stored,
             saveResult.WasMerged ? "adjacent-duplicate" : "stored",
             saveResult);
+    }
+
+    private static async ValueTask<ClipboardSourceApplicationIcon?> CaptureSourceIconAsync(
+        ClipboardCapturedItem item,
+        IClipboardSourceApplicationIconProvider? sourceIconProvider,
+        CancellationToken cancellationToken)
+    {
+        if (sourceIconProvider is null)
+        {
+            return null;
+        }
+
+        ClipboardSourceApplicationIdentity identity = new(
+            item.SourceProcessName ?? string.Empty,
+            item.SourceExecutablePath,
+            item.SourceApplicationUserModelId,
+            item.SourcePackageFamilyName);
+        if (string.IsNullOrWhiteSpace(identity.ExecutablePath) &&
+            string.IsNullOrWhiteSpace(identity.ApplicationUserModelId))
+        {
+            return null;
+        }
+
+        try
+        {
+            ClipboardSourceApplicationIcon? icon = await sourceIconProvider
+                .CaptureAsync(identity, cancellationToken)
+                .ConfigureAwait(false);
+            if (icon is null)
+            {
+                await Task.Delay(SourceIconRetryDelay, cancellationToken).ConfigureAwait(false);
+                icon = await sourceIconProvider
+                    .CaptureAsync(identity, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return icon is not null && ClipboardSourceApplicationIconRules.IsCanonical(icon)
+                ? icon
+                : null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

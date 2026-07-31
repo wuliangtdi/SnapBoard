@@ -1,4 +1,5 @@
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
 
 namespace SnapBoard.Application.Clipboard;
 
@@ -65,6 +66,13 @@ public interface IClipboardHistoryStore
         CancellationToken cancellationToken);
 
     ValueTask<int> CleanupOrphanedBlobsAsync(CancellationToken cancellationToken);
+}
+
+public interface IClipboardSourceApplicationIconStore
+{
+    ValueTask<ClipboardSourceApplicationIcon?> GetAsync(
+        ClipboardItemId itemId,
+        CancellationToken cancellationToken);
 }
 
 public interface IClipboardHistoryService

@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
+using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Sync.Contracts;
 using SnapBoard.Sync.Contracts.Serialization;
 
@@ -123,6 +124,110 @@ public sealed class SqliteSyncStoreTests
         finally
         {
             ZeroOutbox(outbox);
+        }
+    }
+
+    [Fact]
+    public async Task LocalUpsertReferencesCanonicalSourceApplicationIconBlob()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        Guid spaceId = Guid.NewGuid();
+        Guid deviceId = Guid.NewGuid();
+        await context.Store.ConfigureAsync(
+            spaceId,
+            deviceId,
+            keyVersion: 1,
+            enabled: true,
+            CancellationToken.None);
+        ClipboardSourceApplicationIcon expected = CreateSourceApplicationIcon(0x35);
+        ClipboardCapturedItem item = CreateTextItem(
+            "source icon outbox",
+            @"C:\private\source.exe");
+        item.SourceApplicationIcon = expected;
+
+        await context.Store.SaveAsync(item, CancellationToken.None);
+        IReadOnlyList<SyncOutboxItem> outbox = await context.Store.ReadOutboxBatchAsync(
+            10,
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            CancellationToken.None);
+        try
+        {
+            SyncOutboxItem entry = Assert.Single(outbox);
+            SyncSourceApplicationIconPayload icon =
+                Assert.IsType<SyncSourceApplicationIconPayload>(
+                    entry.Event.Item?.SourceApplicationIcon);
+            Assert.Equal(SyncProtocol.SourceApplicationIconMediaType, icon.Blob.MediaType);
+            Assert.Equal(SyncProtocol.SourceApplicationIconSizeBytes, icon.Blob.SizeBytes);
+            Assert.Equal(SyncProtocol.SourceApplicationIconFormatVersion, icon.FormatVersion);
+            Assert.Equal(SyncProtocol.SourceApplicationIconWidth, icon.Width);
+            Assert.Equal(SyncProtocol.SourceApplicationIconHeight, icon.Height);
+            Assert.Equal(SyncProtocol.SourceApplicationIconStride, icon.Stride);
+            Assert.Equal(-1, entry.SerializedEvent.AsSpan().IndexOf("private"u8));
+
+            using SyncBlobLease lease = Assert.IsType<SyncBlobLease>(
+                await context.Store.OpenBlobAsync(icon.Blob.Hash, CancellationToken.None));
+            Assert.Equal(expected.BgraPixels.ToArray(), lease.Content.ToArray());
+        }
+        finally
+        {
+            ZeroOutbox(outbox);
+        }
+    }
+
+    [Fact]
+    public async Task RemoteUpsertRejectsNonCanonicalSourceApplicationIconDescriptor()
+    {
+        await using HistoryStoreTestContext context = await HistoryStoreTestContext.CreateAsync();
+        Guid spaceId = Guid.NewGuid();
+        Guid localDeviceId = Guid.NewGuid();
+        Guid remoteDeviceId = Guid.NewGuid();
+        await ConfigureRemoteAsync(context, spaceId, localDeviceId, remoteDeviceId);
+        byte[] pixels = CreateSourceApplicationIcon(0x63).BgraPixels.ToArray();
+        string hash = Hash(pixels);
+        await context.Store.StageDownloadedBlobAsync(
+            hash,
+            SyncProtocol.SourceApplicationIconMediaType,
+            pixels,
+            CancellationToken.None);
+        SyncEventEnvelope baseline = CreateRemoteUpsert(
+            spaceId,
+            remoteDeviceId,
+            Guid.NewGuid(),
+            sequence: 1,
+            logicalTimestamp: 1,
+            "invalid icon stride");
+        SyncEventEnvelope invalid = baseline with
+        {
+            Item = baseline.Item! with
+            {
+                SourceApplicationIcon = new SyncSourceApplicationIconPayload(
+                    new SyncBlobReferencePayload(
+                        hash,
+                        SyncProtocol.SourceApplicationIconMediaType,
+                        pixels.LongLength),
+                    SyncProtocol.SourceApplicationIconFormatVersion,
+                    SyncProtocol.SourceApplicationIconWidth,
+                    SyncProtocol.SourceApplicationIconHeight,
+                    SyncProtocol.SourceApplicationIconStride + 4),
+            },
+        };
+        byte[] serialized = Serialize(invalid);
+        try
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(async () =>
+                await context.Store.ApplyRemoteEventAsync(
+                    invalid,
+                    serialized,
+                    "\"invalid-icon\"",
+                    CancellationToken.None));
+            Assert.Empty((await context.Store.SearchAsync(
+                new ClipboardHistoryQuery { PageSize = 10 },
+                CancellationToken.None)).Items);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(serialized);
+            CryptographicOperations.ZeroMemory(pixels);
         }
     }
 
@@ -751,6 +856,12 @@ public sealed class SqliteSyncStoreTests
             TotalSizeBytes = utf8.LongLength,
         };
     }
+
+    private static ClipboardSourceApplicationIcon CreateSourceApplicationIcon(byte value) => new(
+        ClipboardSourceApplicationIconRules.Width,
+        ClipboardSourceApplicationIconRules.Height,
+        ClipboardSourceApplicationIconRules.Stride,
+        Enumerable.Repeat(value, ClipboardSourceApplicationIconRules.ByteLength).ToArray());
 
     private static byte[] Serialize(SyncEventEnvelope syncEvent) =>
         JsonSerializer.SerializeToUtf8Bytes(

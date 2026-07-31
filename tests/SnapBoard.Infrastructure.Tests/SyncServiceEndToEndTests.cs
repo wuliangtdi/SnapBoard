@@ -5,6 +5,7 @@ using SnapBoard.Application.Clipboard;
 using SnapBoard.Application.Sync;
 using SnapBoard.Domain.Clipboard;
 using SnapBoard.Infrastructure.Sync;
+using SnapBoard.Platform.Abstractions.Clipboard;
 using SnapBoard.Platform.Abstractions.Security;
 
 namespace SnapBoard.Infrastructure.Tests;
@@ -360,13 +361,15 @@ public sealed class SyncServiceEndToEndTests
             Assert.Equal(SyncSetupStatus.Success, joined.Status);
             Assert.NotEqual(created.DeviceId, joined.DeviceId);
 
+            ClipboardSourceApplicationIcon expectedIcon = CreateSourceApplicationIcon(0x48);
             ClipboardCapturedItem item = CreateHtmlItem(html);
+            item.SourceApplicationIcon = expectedIcon;
             await firstContext.Store.SaveAsync(item, CancellationToken.None);
             SyncStatusSnapshot firstUpload = await first.SynchronizeNowAsync(
                 CancellationToken.None);
             Assert.Equal(SyncServiceState.Idle, firstUpload.State);
             Assert.Equal(2, firstUpload.UploadedEvents);
-            Assert.Single(remote.Blobs);
+            Assert.Equal(2, remote.Blobs.Count);
             Assert.Collection(remote.Events, _ => { }, _ => { });
 
             SyncStatusSnapshot secondDownload = await second.SynchronizeNowAsync(
@@ -377,9 +380,14 @@ public sealed class SyncServiceEndToEndTests
                 new ClipboardHistoryQuery { PageSize = 10 },
                 CancellationToken.None)).Items);
             Assert.Equal(item.Id, downloaded.Id);
+            Assert.Null(downloaded.SourceExecutablePath);
             ClipboardHistoryContent downloadedContent = Assert.IsType<ClipboardHistoryContent>(
                 await secondContext.Store.GetContentAsync(item.Id, CancellationToken.None));
             Assert.Equal(html, downloadedContent.Html.ToArray());
+            ClipboardSourceApplicationIcon downloadedIcon =
+                Assert.IsType<ClipboardSourceApplicationIcon>(
+                    await secondContext.Store.GetAsync(item.Id, CancellationToken.None));
+            Assert.Equal(expectedIcon.BgraPixels.ToArray(), downloadedIcon.BgraPixels.ToArray());
 
             Assert.True(await firstContext.Store.SoftDeleteAsync(
                 item.Id,
@@ -393,6 +401,7 @@ public sealed class SyncServiceEndToEndTests
             Assert.Empty((await secondContext.Store.SearchAsync(
                 new ClipboardHistoryQuery { PageSize = 10 },
                 CancellationToken.None)).Items);
+            Assert.Null(await secondContext.Store.GetAsync(item.Id, CancellationToken.None));
 
             SyncConfigurationSnapshot secondConfiguration =
                 Assert.IsType<SyncConfigurationSnapshot>(
@@ -846,6 +855,12 @@ public sealed class SyncServiceEndToEndTests
         };
     }
 
+    private static ClipboardSourceApplicationIcon CreateSourceApplicationIcon(byte value) => new(
+        ClipboardSourceApplicationIconRules.Width,
+        ClipboardSourceApplicationIconRules.Height,
+        ClipboardSourceApplicationIconRules.Stride,
+        Enumerable.Repeat(value, ClipboardSourceApplicationIconRules.ByteLength).ToArray());
+
     private static async Task SynchronizeUntilConvergedAsync(
         SyncService first,
         SyncService second)
@@ -962,7 +977,8 @@ public sealed class SyncServiceEndToEndTests
 
         public IReadOnlyCollection<byte[]> Events => _events.Values;
 
-        public IReadOnlyCollection<byte[]> Blobs => _blobs.Values;
+        public Dictionary<(Guid SpaceId, string BlobId), byte[]>.ValueCollection Blobs =>
+            _blobs.Values;
 
         public int MaximumConcurrentEnsures => Volatile.Read(ref _maximumConcurrentEnsures);
 

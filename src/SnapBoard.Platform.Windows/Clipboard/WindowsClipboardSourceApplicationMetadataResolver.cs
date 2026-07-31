@@ -10,7 +10,8 @@ namespace SnapBoard.Platform.Windows.Clipboard;
 
 [SupportedOSPlatform("windows")]
 public sealed class WindowsClipboardSourceApplicationMetadataResolver :
-    IClipboardSourceApplicationMetadataResolver
+    IClipboardSourceApplicationMetadataResolver,
+    IClipboardSourceApplicationIconProvider
 {
     private const int IconSize = 32;
     private const int MaximumCacheEntries = 256;
@@ -118,6 +119,11 @@ public sealed class WindowsClipboardSourceApplicationMetadataResolver :
             return new ClipboardSourceApplicationMetadata(fallbackName);
         }
     }
+
+    public async ValueTask<ClipboardSourceApplicationIcon?> CaptureAsync(
+        ClipboardSourceApplicationIdentity identity,
+        CancellationToken cancellationToken) =>
+        (await ResolveAsync(identity, cancellationToken).ConfigureAwait(false)).Icon;
 
     private async Task<ClipboardSourceApplicationMetadata> ResolveOnBackgroundAsync(
         ClipboardSourceApplicationIdentity identity,
