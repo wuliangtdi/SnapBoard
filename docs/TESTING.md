@@ -193,3 +193,13 @@ AOT 产物证据：
 `StorageMigrationExecutorTests.MigratesSourceApplicationIconBlobReferences` 通过完整复制、迁移器进程确认和目标库复检，覆盖一个图标引用及三条记录共享一个图标 Blob。测试同时断言迁移状态为 `Completed`、目标记录的 4096 字节像素保持不变，且目标库引用计数分别为 1 和 3。该测试只使用共享 SQLite 与伪平台服务，会进入 GitHub 的 Windows、Apple Silicon macOS 和 Intel macOS 测试矩阵。
 
 本轮 locked restore、format、Release build 和完整测试通过：全量 497 项中 475 项通过、22 项按平台或外部服务条件跳过、0 项失败。`win-x64` Native AOT 为 0 个 trim/AOT 警告；桌面主程序和独立迁移器均生成，迁移器无托管 sidecar且无参数退出码为 4。GitHub CI run 30625363781 的 Windows、macOS arm64、macOS Intel 构建/测试及三个对应 RID 的 Native AOT 全部成功；v0.1.3 Release run 30625720554 也完成全部四个 job 并发布 31 个附件。
+
+## 11. Avalonia 12.1.1 与构建依赖升级验证
+
+2026-08-01 在 Windows 11 x64、.NET SDK 10.0.302 上升级 Avalonia、Desktop、Fonts.Inter、Themes.Fluent 和 Headless.XUnit 12.1.0 -> 12.1.1，并把中央声明但当前没有项目引用的 Irihi.Ursa 与 Irihi.Ursa.Themes.Semi 2.1.0 -> 2.2.0。使用 `dotnet restore SnapBoard.slnx --force-evaluate` 完整重新解析锁定依赖后，只有 Desktop、Desktop.HeadlessTests 和 PerformanceTests 三份锁文件发生实际依赖图变化；其余锁文件没有版本或哈希变化。
+
+GitHub 工作流同时升级 `actions/checkout` v6 -> v7、`actions/setup-dotnet` v5 -> v6；`actions/upload-artifact` v7 与 `actions/download-artifact` v8 已是当前主版本。Windows 原生按键和剪贴板测试会操作同一真实桌面资源，解决方案并行测试曾分别出现按键消息超时和剪贴板被抢占；单项复跑通过，改用 `--maxcpucount:1` 后完整 497 项稳定为 475 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败。因此 CI 使用相同串行项目调度，未减少或跳过任何测试。
+
+发布级验证通过：locked restore、format、Release build 均成功，build 为 0 警告、0 错误；直接与传递 NuGet 漏洞审计为 0。`win-x64` Native AOT 为 0 个 trim/AOT 警告，`SnapBoard.Desktop.exe` 为 40,494,080 字节、SHA-256 `18908B3A38F7029915BF82131528E987406833C80C6E0807A758027CA29DC202`；独立 `SnapBoard.StorageMigrator.exe` 为 4,514,816 字节、SHA-256 `BD216E5137DE61EEC20A1B605ED86C47CD52D15E59BB8CEC595CB1388F9C77E1`。迁移器没有 `.dll`、`.deps.json` 或 `.runtimeconfig.json` sidecar，无参数退出码为 4。主程序使用随机隔离 bootstrap 根启动，取得非零主窗口句柄、创建一个 v9 SQLite 数据库，并通过第二实例 `--exit` 让两进程以 0 退出。
+
+完整直接依赖检查仅剩 SkiaSharp 3.119.4 -> 4.151.0 和 SQLitePCLRaw.bundle_e_sqlite3 2.1.12 -> 3.0.5。两者本轮明确保留：Avalonia.Skia 12.1.1 仍声明 SkiaSharp 3.119.4，Microsoft.Data.Sqlite 10.0.10 仍声明 SQLitePCLRaw 2.1.11 系列；跨越两条原生/AOT 链的大版本会脱离上游已验证组合。SDK 10.0.302 与仓库工具 Velopack 1.2.0 均为当前稳定版。macOS Native AOT 和更新后的 GitHub 工作流尚未在本机执行，必须由下一次 GitHub CI/Release 验证，不能由 Windows build 外推。

@@ -1300,7 +1300,39 @@ Native AOT：
   - Data/ 和 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md 保持未跟踪且不进入提交。
 ```
 
-## 42. 更新规则
+## 42. 2026-08-01 执行记录：Avalonia 与构建依赖升级
+
+```text
+日期：2026-08-01
+阶段/任务：升级 UI 依赖、重新生成锁文件并核查全部直接依赖与 GitHub Actions
+状态：[x] Windows 本机依赖解析、完整测试与 win-x64 Native AOT 完成；[ ] 更新后的 GitHub 三平台 CI 待首次推送验证
+开发基线：072cf40a12ebafbd90b80620b839cd7ab481d1b5（开发前 main 与 origin/main 一致）
+
+升级内容：
+  - Avalonia、Avalonia.Desktop、Avalonia.Fonts.Inter、Avalonia.Themes.Fluent 和 Avalonia.Headless.XUnit 从 12.1.0 升级到 12.1.1。
+  - Irihi.Ursa 和 Irihi.Ursa.Themes.Semi 的中央版本从 2.1.0 升级到 2.2.0；当前没有项目引用这两个包，因此不伪造运行时/UI 验证结论。
+  - 使用 --force-evaluate 重新解析全解决方案锁定依赖；只有 Desktop、Desktop.HeadlessTests 和 PerformanceTests 三份锁文件发生实际版本/哈希变化，其余文件不提交换行噪声。
+  - CI 和 Release 的 actions/checkout 从 v6 升级到 v7，actions/setup-dotnet 从 v5 升级到 v6；upload-artifact v7、download-artifact v8 保持当前版本。
+  - Windows 原生按键和剪贴板用例共享真实桌面资源。解决方案并行运行可跨测试进程争用，CI 测试命令改为 --maxcpucount:1；测试数量、过滤条件和用例内容均未改变。
+
+其他依赖核查：
+  - 全部直接 NuGet 包、.NET SDK、仓库本地工具和 GitHub Actions 均已检查。SDK 10.0.302、Velopack 1.2.0 以及除下述两项外的直接包均为当前稳定版。
+  - SkiaSharp 4.151.0 暂不升级：Avalonia.Skia 12.1.1 仍依赖 3.119.4，直接跨主版本会使渲染原生资产脱离上游组合。
+  - SQLitePCLRaw.bundle_e_sqlite3 3.0.5 暂不升级：Microsoft.Data.Sqlite 10.0.10 仍依赖 2.1.11 系列，仓库当前 2.1.12 已是同系列更新；跨主版本会改变 SQLite 原生/AOT 链路。
+
+验证：
+  - dotnet restore SnapBoard.slnx --locked-mode、dotnet format SnapBoard.slnx --verify-no-changes --no-restore 和 Release build 通过；build 0 警告、0 错误。
+  - 串行完整测试共 497 项：475 项通过、22 项按 macOS 原生环境或外部 WebDAV 条件跳过、0 项失败；Desktop Headless 108/108、Windows 103/103。
+  - 直接与传递 NuGet 漏洞审计为 0。
+  - win-x64 self-contained PublishAot 通过，0 个 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,494,080 字节，SHA-256 18908B3A38F7029915BF82131528E987406833C80C6E0807A758027CA29DC202；SnapBoard.StorageMigrator.exe 为 4,514,816 字节，SHA-256 BD216E5137DE61EEC20A1B605ED86C47CD52D15E59BB8CEC595CB1388F9C77E1。
+  - 迁移器没有 .dll、.deps.json 或 .runtimeconfig.json sidecar，无参数退出码为 4。主程序使用随机隔离 bootstrap 根启动，主窗口句柄非零、创建一个 v9 SQLite 数据库，第二实例 --exit 与主实例均以 0 退出。
+
+限制：
+  - Windows 本机不能替代 osx-arm64/osx-x64 Native AOT；更新后的 checkout/setup-dotnet 也必须由下一次 GitHub workflow 真实运行确认。
+  - 本轮不提交 artifacts/、Data/ 或 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md。
+```
+
+## 43. 更新规则
 
 - 每完成一个退出条件，当天更新本文件和 `PLAN.md` 对应复选框。
 - 测试失败、AOT 告警、性能超标和平台权限限制必须记录，不能只留在终端输出。

@@ -32,9 +32,9 @@ jobs:
           # - ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
           cache: true
@@ -47,7 +47,7 @@ jobs:
         run: dotnet build SnapBoard.slnx --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test SnapBoard.slnx --configuration Release --no-build --no-restore
+        run: dotnet test SnapBoard.slnx --configuration Release --no-build --no-restore --maxcpucount:1
 
   native-aot:
     name: Native AOT (${{ matrix.rid }})
@@ -67,9 +67,9 @@ jobs:
           #   rid: linux-x64
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
           cache: true

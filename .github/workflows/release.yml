@@ -29,9 +29,9 @@ jobs:
           #   archive: SnapBoard-linux-x64.tar.gz
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
           cache: true
@@ -187,9 +187,9 @@ jobs:
             rid: osx-x64
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
           cache: true
@@ -352,7 +352,7 @@ jobs:
       UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.SNAPBOARD_UPDATE_SIGNING_PRIVATE_KEY_PEM }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v8
         with:
