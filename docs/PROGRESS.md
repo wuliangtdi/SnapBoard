@@ -1305,7 +1305,7 @@ Native AOT：
 ```text
 日期：2026-08-01
 阶段/任务：升级 UI 依赖、重新生成锁文件并核查全部直接依赖与 GitHub Actions
-状态：[x] Windows 本机依赖解析、完整测试与 win-x64 Native AOT 完成；[ ] 更新后的 GitHub 三平台 CI 待首次推送验证
+状态：[x] Windows 本机验证、GitHub 三平台 CI、三个 RID Native AOT 与 v0.1.4 Release 完成
 开发基线：072cf40a12ebafbd90b80620b839cd7ab481d1b5（开发前 main 与 origin/main 一致）
 
 升级内容：
@@ -1326,9 +1326,11 @@ Native AOT：
   - 直接与传递 NuGet 漏洞审计为 0。
   - win-x64 self-contained PublishAot 通过，0 个 trim/AOT 警告。SnapBoard.Desktop.exe 为 40,494,080 字节，SHA-256 18908B3A38F7029915BF82131528E987406833C80C6E0807A758027CA29DC202；SnapBoard.StorageMigrator.exe 为 4,514,816 字节，SHA-256 BD216E5137DE61EEC20A1B605ED86C47CD52D15E59BB8CEC595CB1388F9C77E1。
   - 迁移器没有 .dll、.deps.json 或 .runtimeconfig.json sidecar，无参数退出码为 4。主程序使用随机隔离 bootstrap 根启动，主窗口句柄非零、创建一个 v9 SQLite 数据库，第二实例 --exit 与主实例均以 0 退出。
+  - GitHub CI run 30696518333 在提交 16088f0 上完成；Windows、macOS arm64、macOS Intel 的构建/测试，以及 win-x64、osx-arm64、osx-x64 Native AOT 六个 job 最终全绿。首次 macOS Intel 尝试中 SQLite FTS 取消时序用例因查询先完成而未抛取消异常，只重跑失败 job 后通过，没有修改代码或标签。
+  - v0.1.4 Release run 30696534024 四个 job 全绿；公开 Release 为非草稿、非预发布，共 31 个附件且全部 uploaded。Windows 可选目录 MSI、Native AOT ZIP、两个 macOS 架构的 DMG/PKG、Velopack 包和已签名更新源均已生成。
 
 限制：
-  - Windows 本机不能替代 osx-arm64/osx-x64 Native AOT；更新后的 checkout/setup-dotnet 也必须由下一次 GitHub workflow 真实运行确认。
+  - 首次 macOS Intel 测试尝试中 SQLite FTS 取消时序用例暴露性能时序偶发风险；失败 job 原样重跑后通过，但仍保留该风险记录。
   - 本轮不提交 artifacts/、Data/ 或 docs/MACOS_PARITY_IMPLEMENTATION_CHECKLIST.md。
 ```
 
